@@ -1,507 +1,174 @@
-# **Smart Drilling Automation Software Requirements Document (SRS)**  
-**Version: 1.0**  
-**Date: 2024/06/29**  
-**Prepared by: AI and Drilling Automation Development Team**  
+# **Software Requirements Specification (SRS)**  
+**Project:** **Intelligent Drilling Rig Automation System (Land Rig, 1000 HP)**  
 
 ---
 
 ## **1. Introduction**  
-This document specifies the requirements for the **Digital Twin software for a 1000 HP onshore drilling rig**. The system includes **predictive maintenance, real-time optimization, data validation, data reconciliation, and LWD/MWD data collection**.
 
-### **1.1. Purpose**  
-- Develop an intelligent system for **monitoring, predicting, and optimizing drilling operations**.  
-- **Reduce rig downtime** using predictive maintenance.  
-- **Improve drilling efficiency** through real-time decision-making.  
-- **Integrate sensor, PLC, DCS, SCADA, LWD, and MWD data**.
+### **1.1 Purpose**  
+This document outlines the requirements for an **Intelligent Drilling Automation System** for a **1000 HP land-based drilling rig**, integrating **real-time monitoring, optimization, predictive maintenance, and data validation & reconciliation (DVR)**. The system leverages **Apache Kafka** for real-time data streaming and provides a **LabVIEW/React-based dashboard** for operational control and analytics.  
 
-### **1.2. Scope**  
-- **Real-time monitoring** of drilling parameters.  
-- **Failure prediction** using machine learning.  
-- **Optimization of drilling parameters** (WOB, RPM, mud flow, etc.).  
-- **Integration with control systems (PLC/DCS/SCADA)**.  
-- **Support for LWD/MWD data**.
+### **1.2 Scope**  
+The system includes:  
+- **Real-time sensor monitoring** (WOB, RPM, torque, mud flow, pressure)  
+- **AI-driven optimization** (automated parameter tuning for efficiency)  
+- **Predictive maintenance** (failure forecasting, RUL estimation)  
+- **Data Validation & Reconciliation (DVR)** (error detection, data correction)  
+- **Kafka-based stream processing** (scalable real-time analytics)  
+- **Management dashboard** (LabVIEW for operators, React for engineers)  
 
----
+### **1.3 Definitions & Acronyms**  
 
-## **2. General Requirements**
-
-### **2.1. Functional Requirements**
-
-| **ID** | **Requirement** | **Description** |
-|--------|-----------------|-----------------|
-| FR-001 | **Real-time sensor data monitoring** | Data collection with < 1 sec delay |
-| FR-002 | **Equipment failure prediction** | Use ML algorithms for failure prediction |
-| FR-003 | **Drilling parameter optimization** | Auto-adjust WOB, RPM, pump pressure |
-| FR-004 | **Data validation** | Noise and invalid data detection |
-| FR-005 | **PLC/DCS/SCADA integration** | Modbus TCP/IP, OPC UA protocol support |
-| FR-006 | **LWD/MWD support** | Receive gamma, resistivity, vibration data |
-| FR-007 | **Management dashboard** | Graphical display with real-time alerts |
-| FR-008 | **Historical data storage and analysis** | Use time-series DBs like InfluxDB |
-
-### **2.2. Non-Functional Requirements**
-
-| **ID** | **Requirement** | **Description** |
-|--------|-----------------|-----------------|
-| NFR-001 | **Performance** | Data processing with < 500ms latency |
-| NFR-002 | **Reliability** | Uptime ≥ 99.9% |
-| NFR-003 | **Security** | User authentication, data encryption |
-| NFR-004 | **Scalability** | Support adding new sensors without code changes |
+| Term | Definition |  
+|------|------------|  
+| **WOB** | Weight on Bit (drilling efficiency metric) |  
+| **RPM** | Rotations per Minute (drill string speed) |  
+| **DVR** | Data Validation & Reconciliation |  
+| **RUL** | Remaining Useful Life (predictive maintenance) |  
+| **Kafka** | Apache Kafka (real-time data streaming) |  
+| **ML/DL** | Machine Learning / Deep Learning |  
 
 ---
 
-## **3. Required Sensors**
+## **2. Overall Description**  
 
-### **3.1. Rig Core Sensors**
+### **2.1 System Overview**  
+The system provides:  
+✔ **Real-time drilling parameter monitoring**  
+✔ **AI-driven optimization** (automated drilling parameter adjustments)  
+✔ **Predictive maintenance** (equipment health monitoring)  
+✔ **Data quality assurance** (DVR for sensor reliability)  
+✔ **Multi-role dashboard** (LabVIEW for rig operators, React for engineers)  
 
-| **Sensor Type** | **Measured Parameter** | **Communication Protocol** |
-|-----------------|------------------------|-----------------------------|
-| Pressure Sensor | Mud pressure | 4-20mA / Modbus RTU |
-| Flow Meter | Mud flow rate | Modbus TCP |
-| Load Cell | Weight on bit (WOB) | CAN Bus |
-| Encoder | Rotational speed (RPM) | RS-485 |
-| Accelerometer | Rig vibrations | SPI/I2C |
-| Thermometer | Engine and hydraulic temp | Modbus RTU |
-| Gas Sensor | Hazardous gases detection | HART Protocol |
+### **2.2 Key Features**  
 
-### **3.2. LWD/MWD Sensors**
+| Feature | Description |  
+|---------|------------|  
+| **Real-Time Monitoring** | Live visualization of WOB, RPM, torque, pressure, mud flow |  
+| **Optimization Engine** | **Reinforcement Learning (RL)** for optimal drilling parameters |  
+| **Predictive Maintenance** | **LSTM/XGBoost** for RUL prediction & anomaly detection |  
+| **Data Validation (DVR)** | **Statistical/ML-based error detection & correction** |  
+| **Kafka Stream Processing** | Real-time data ingestion, filtering, aggregation |  
+| **Alerting System** | Threshold-based & AI-driven alerts (SMS/Email/UI) |  
 
-| **Sensor Type** | **Measured Parameter** | **Communication Protocol** |
-|-----------------|------------------------|-----------------------------|
-| Gamma | Gamma radiation | WITS/WITSML |
-| Resistivity | Formation resistivity | WITSML |
-| Vibration | Bit vibration | Mud Pulse Telemetry |
-| Downhole Pressure | Downhole pressure | EM Telemetry |
+### **2.3 User Roles**  
 
----
-
-## **4. Required Algorithms**
-
-### **4.1. Machine Learning Algorithms**
-
-- **Predictive Maintenance:**  
-  - Random Forest / LSTM for failure pattern detection.  
-- **Drilling Optimization:**  
-  - Reinforcement Learning for parameter adjustment.  
-- **Anomaly Detection:**  
-  - Isolation Forest / Autoencoders.
-
-### **4.2. Real-Time Data Processing**
-
-- **Kalman Filter** for noise reduction.  
-- **Fast Fourier Transform (FFT)** for vibration analysis.
+| Role | Access Level |  
+|------|-------------|  
+| **Rig Operator** | LabVIEW dashboard (real-time control) |  
+| **Drilling Engineer** | React dashboard (analytics, optimization) |  
+| **Maintenance Team** | Predictive alerts & maintenance logs |  
+| **Management** | High-level KPIs & reports |  
 
 ---
 
-## **5. Control Systems Integration (PLC/DCS/SCADA)**
+## **3. Functional Requirements**  
 
-### **5.1. Communication Methods**
+### **3.1 Real-Time Monitoring**  
+- **FR-01:** Display **WOB, RPM, torque, pressure, mud flow** in ≤ **500ms latency**  
+- **FR-02:** **Interactive drill-down charts** (Plotly/D3.js in React)  
+- **FR-03:** **LabVIEW HMI** for rig operators  
 
-| **System** | **Protocol** | **Connection Method** |
-|------------|--------------|-----------------------|
-| PLC | Modbus TCP/IP | Ethernet |
-| DCS | OPC UA | Secure WebSocket |
-| SCADA | MQTT | Broker-Based |
-| LWD/MWD | WITSML | REST API |
+### **3.2 AI-Driven Optimization**  
+- **FR-04:** **Reinforcement Learning (PPO/SAC)** for parameter optimization  
+- **FR-05:** **Digital Twin integration** (simulate changes before applying)  
+- **FR-06:** **Auto-adjustment of WOB/RPM** within safety limits  
 
-### **5.2. Example PLC Integration Code (Python)**
+### **3.3 Predictive Maintenance**  
+- **FR-07:** **LSTM/Transformer-based RUL prediction** (top drive, mud pumps)  
+- **FR-08:** **Isolation Forest for anomaly detection** (vibration, temp)  
+- **FR-09:** **Maintenance scheduling recommendations**  
 
-```python
-import pyModbusTCP
+### **3.4 Data Validation & Reconciliation (DVR)**  
+- **FR-10:** **Statistical checks (PCA, Z-score)** for sensor error detection  
+- **FR-11:** **ML-based imputation** for missing/corrupted data  
+- **FR-12:** **Reconciliation reports** (data correction logs)  
 
-client = pyModbusTCP.ModbusClient(host="PLC_IP", port=502)
-wob = client.read_holding_registers(0, 1)  # Read WOB
-client.write_single_register(1, 2500)      # Set RPM
-```
-## 6. Summary
+### **3.5 Kafka Stream Processing**  
+- **FR-13:** **Ingest 10,000+ sensor readings/sec**  
+- **FR-14:** **Real-time aggregation & filtering**  
+- **FR-15:** **Integration with ML models** (Spark/Flink for AI inference)  
 
-This document comprehensively covers the requirements for developing a **drilling digital twin**, including sensors, algorithms, PLC/DCS connectivity, and LWD/MWD data analysis.
-
-**Next Steps:**
-
-- Design the system architecture
-- Develop a prototype
-- Perform integration testing with the actual rig
-
----
-
-# **Digital Twin System Architecture for Drilling Automation**  
-**Version: 1.0**  
-**Date: 2024/06/29**  
+### **3.6 Dashboard & Alerts**  
+- **FR-16:** **Role-based dashboards** (LabVIEW for ops, React for engineers)  
+- **FR-17:** **Automated alerts** (SMS/Email/UI) for critical events  
 
 ---
 
-## 1. Overall Architecture  
-The system is designed as a **layered architecture with microservices** to fulfill real-time monitoring, failure prediction, optimization, and integration with existing hardware.
+## **4. Non-Functional Requirements**  
 
-### 1.1. High-Level Architecture Diagram
+### **4.1 Performance**  
+- **≤ 500ms latency** for real-time data  
+- **Support 50+ concurrent users**  
 
-```mermaid
-flowchart TB
+### **4.2 Reliability**  
+- **99.9% uptime** (redundant Kafka clusters)  
+- **Data loss < 0.1%** (Kafka replication)  
 
-%% User Layer
-subgraph User_Layer ["User Layer"]
-    UL1["Dashboard"]
-    UL2["Mobile App"]
-    UL3["Reporting Tools"]
-end
+### **4.3 Security**  
+- **JWT authentication**  
+- **Role-based access control (RBAC)**  
 
-%% Application Layer
-subgraph Application_Layer ["Application Layer"]
-    AL1["Predictive Maintenance<br/>(ML Models)"]
-    AL2["Real-Time Optimization<br/>(AI Algorithms)"]
-    AL3["Data Validation & Reconciliation"]
-end
-
-%% Integration Layer
-subgraph Integration_Layer ["Integration Layer"]
-    IL1["Data Ingestion<br/>(Sensors/PLC)"]
-    IL2["API Gateway<br/>(REST/gRPC)"]
-    IL3["Stream Processing"]
-end
-
-%% Data Layer
-subgraph Data_Layer ["Data Layer"]
-    DL1["Time-Series DB<br/>(InfluxDB)"]
-    DL2["Data Warehouse<br/>(PostgreSQL)"]
-    DL3["Cache<br/>(Redis)"]
-end
-
-%% Edge Layer
-subgraph Edge_Layer ["Edge Layer"]
-    EL1["PLC/DCS<br/>(Modbus/OPC UA)"]
-    EL2["LWD/MWD<br/>(WITSML)"]
-    EL3["IoT Gateways<br/>(MQTT)"]
-end
-
-%% Connections: Top-down per architecture
-UL1 --> AL1
-UL2 --> AL2
-UL3 --> AL3
-
-AL1 --> IL1
-AL2 --> IL2
-AL3 --> IL3
-
-IL1 --> DL1
-IL2 --> DL2
-IL3 --> DL3
-
-DL1 --> EL1
-DL2 --> EL2
-DL3 --> EL3
-```
-
+### **4.4 Scalability**  
+- **Kubernetes deployment** for future scaling  
+- **Support additional rigs**  
 
 ---
 
-## 2. Layer Details
+## **5. External Interfaces**  
 
-### 2.1. Edge Layer (Hardware and Communication)  
-**Role:** Collect data from sensors and industrial control systems.  
-**Components:**  
+### **5.1 User Interfaces**  
+- **LabVIEW HMI** (operators)  
+- **React Dashboard** (engineers)  
 
-- **PLC/DCS:**  
-  - Protocols: Modbus TCP/IP, OPC UA  
-  - Data read: WOB, RPM, pump pressure, temperature  
+### **5.2 Hardware Interfaces**  
+- **Modbus/OPC-UA** for sensor integration  
+- **PLC connectivity**  
 
-- **LWD/MWD:**  
-  - Protocol: WITSML (REST API or WebSocket)  
-  - Data: Gamma, formation resistivity, bit vibration  
-
-- **IoT Gateway:**  
-  - Software: Node-RED or Kafka Connect  
-  - Role: Protocol translation to MQTT/HTTP  
-
-### 2.2. Data Layer  
-**Role:** Store and manage real-time and historical data.  
-
-| Component        | Technology      | Purpose                             |
-|------------------|-----------------|-----------------------------------|
-| Time-Series DB    | InfluxDB        | Store high-frequency sensor data  |
-| Data Warehouse   | PostgreSQL      | Store analytics data and metadata |
-| Cache            | Redis           | Reduce latency on frequent access |
-
-### 2.3. Integration Layer  
-**Role:** Stream data processing and cross-layer communication.  
-
-| Component       | Technology           | Purpose                              |
-|-----------------|----------------------|------------------------------------|
-| Data Ingestion  | Apache Kafka / MQTT Broker | Collect sensor data             |
-| Stream Processing | Apache Flink / Spark Streaming | Real-time processing        |
-| API Gateway    | Kong / Nginx          | Manage internal/external APIs       |
-
-### 2.4. Application Layer  
-**Role:** Run AI models and business logic.  
-
-| Service              | Technology                  | Description                          |
-|----------------------|-----------------------------|------------------------------------|
-| Predictive Maintenance | Python (TensorFlow/PyTorch) | LSTM models for failure prediction |
-| Real-Time Optimization | Reinforcement Learning      | Auto-tune drilling parameters      |
-| Data Validation       | Rule Engine (Drools)         | Detect invalid/noisy data           |
-
-### 2.5. User Layer  
-**Role:** Present information and interact with operators.  
-
-| Component     | Technology             | Purpose                          |
-|---------------|-----------------------|--------------------------------|
-| Dashboard     | Grafana + React.js    | Real-time monitoring UI         |
-| Mobile App   | Flutter               | Instant alerts and reporting    |
-| Reporting    | Power BI              | Historical data analysis        |
+### **5.3 Software Interfaces**  
+- **Kafka** (streaming)  
+- **InfluxDB** (time-series data)  
+- **PostgreSQL** (metadata & reports)  
 
 ---
 
-## 3. Data Flow  
-1. **Data Collection:**  
-   Sensors → PLC → MQTT/Kafka → Stream Processing.  
+## **6. AI & Algorithm Requirements**  
 
-2. **Real-Time Processing:**  
-   Noise filtering → Anomaly detection → Store in InfluxDB.  
+### **6.1 Optimization Algorithms**  
+| Algorithm | Use Case |  
+|-----------|---------|  
+| **Reinforcement Learning (PPO/SAC)** | Real-time drilling optimization |  
+| **Bayesian Optimization** | Parameter tuning |  
 
-3. **Analysis & Decision Making:**  
-   ML models → Failure prediction → Commands sent to PLC.  
+### **6.2 Predictive Maintenance Models**  
+| Model | Use Case |  
+|-------|---------|  
+| **LSTM/Transformer** | RUL prediction |  
+| **XGBoost/Isolation Forest** | Failure classification & anomaly detection |  
 
-4. **Display & Alerts:**  
-   Grafana dashboard → Notifications via Telegram/Email.  
-
----
-
-## 4. Security Considerations  
-- **Data Encryption:** Use TLS/SSL for all communications.  
-- **Authentication:** OAuth 2.0 for API access control.  
-- **Hardware Security:** Industrial firewall between PLC and IT network.  
-
----
-
-## 5. Recommended Development Tools  
-
-| Goal                  | Technology / Tools        |
-|-----------------------|--------------------------|
-| Backend Development   | Python (FastAPI)          |
-| Stream Processing     | Apache Flink              |
-| Container Management  | Docker + Kubernetes       |
-| Monitoring            | Prometheus + Grafana      |
-| CI/CD                 | GitLab CI                 |
+### **6.3 Data Validation (DVR) Methods**  
+| Method | Use Case |  
+|--------|---------|  
+| **PCA-based outlier detection** | Sensor error detection |  
+| **Kalman Filter** | Data reconciliation |  
 
 ---
 
-## 6. Summary  
-This architecture is designed to be scalable, real-time, and secure for the drilling digital twin system.  
-
-**Next Steps:**  
-- Prototype implementation using Docker and Kafka.  
-- Integration testing with simulated PLC.  
+## **7. Future Enhancements**  
+- **Edge AI deployment** (NVIDIA Jetson for local inference)  
+- **Autonomous drilling** (closed-loop AI control)  
+- **Blockchain for audit logs**  
 
 ---
 
-# **Prototype Implementation of Drilling Digital Twin System**  
-**Next Step: Initial Implementation and Integration Testing**  
+### **Version Control**  
+| Version | Date | Changes |  
+|---------|------|---------|  
+| 1.0 | 2025-07-19 | Initial SRS (Drilling Automation) |  
+
+**Approved by:** [Your Name]  
+**Date:** [YYYY-MM-DD]  
 
 ---
 
-## 1. Setting Up the Development Environment
-
-### 1.1. Hardware/Software Requirements  
-- **Server:**  
-  - Minimum specs: **4 CPU cores, 16GB RAM, 100GB SSD** (or cloud like AWS/GCP).  
-  - OS: **Ubuntu 22.04 LTS**.  
-- **Required Software:**  
-  - Docker + Docker-Compose  
-  - Python 3.10+  
-  - Apache Kafka  
-  - InfluxDB 2.0  
-
-### 1.2. Installing Tools  
-
-```bash
-# Install Docker and Docker-Compose
-sudo apt update && sudo apt install docker.io docker-compose -y
-sudo systemctl enable docker
-
-# Install Python and necessary libraries
-sudo apt install python3-pip
-pip3 install fastapi kafka-python influxdb-client pymodbus torch scikit-learn
-
-# Clone and run Kafka + InfluxDB with Docker
-git clone https://github.com/digital-twin-oil/docker-compose.git
-cd docker-compose
-docker-compose up -d
-```
-
-## 2. Implementing Key Services
-
-### 2.1. Data Ingestion (Collecting Data from Sensors and PLC)
-
-```python
-from pyModbusTCP.client import ModbusClient
-import time
-
-def read_plc_data():
-    plc = ModbusClient(host="192.168.1.100", port=502, auto_open=True)
-    while True:
-        wob = plc.read_holding_registers(0, 1)[0]
-        rpm = plc.read_holding_registers(1, 1)[0]
-        print(f"WOB: {wob} kg, RPM: {rpm}")
-        time.sleep(1)
-
-if __name__ == "__main__":
-    read_plc_data()
-```
-
-### 2.2. Stream Processing with Apache Kafka
-
-**Producer:**
-
-```python
-from kafka import KafkaProducer
-import json
-
-producer = KafkaProducer(
-    bootstrap_servers='localhost:9092',
-    value_serializer=lambda v: json.dumps(v).encode('utf-8')
-)
-
-def send_sensor_data():
-    data = {"sensor_id": "pressure_1", "value": 250, "unit": "psi"}
-    producer.send('sensor-data', data)
-
-send_sensor_data()
-```
-
-**Consumer:**
-
-```python
-from kafka import KafkaConsumer
-import json
-
-consumer = KafkaConsumer('sensor-data', bootstrap_servers='localhost:9092')
-
-for msg in consumer:
-    data = json.loads(msg.value)
-    print(f"Received: {data}")
-```
-
----
-
-## 3. Setting Up Database and Data Storage
-
-### 3.1. Configuring InfluxDB
-
-```python
-from influxdb_client import InfluxDBClient
-from datetime import datetime
-
-client = InfluxDBClient(url="http://localhost:8086", token="my-token", org="my-org")
-write_api = client.write_api()
-
-data = {
-    "measurement": "drilling",
-    "tags": {"sensor": "wob"},
-    "fields": {"value": 1200},
-    "time": datetime.utcnow()
-}
-
-write_api.write(bucket="drilling-data", record=data)
-```
-
----
-
-## 4. Implementing AI Models
-
-### 4.1. Failure Prediction Model (LSTM)
-
-```python
-import torch
-import torch.nn as nn
-
-class LSTMModel(nn.Module):
-    def __init__(self, input_size=5, hidden_size=64):
-        super().__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, batch_first=True)
-        self.fc = nn.Linear(hidden_size, 1)
-
-    def forward(self, x):
-        out, _ = self.lstm(x)
-        return torch.sigmoid(self.fc(out[:, -1]))
-
-model = LSTMModel()
-criterion = nn.BCELoss()
-optimizer = torch.optim.Adam(model.parameters())
-```
-
-### 4.2. Real-Time Optimization (Reinforcement Learning)
-
-```python
-import gym
-from stable_baselines3 import PPO
-
-env = gym.make("DrillingEnv-v0")
-model = PPO("MlpPolicy", env, verbose=1)
-model.learn(total_timesteps=10000)
-model.save("drilling_optimizer")
-```
-
----
-
-## 5. Integration Testing with Simulated PLC
-
-### 5.1. Using a PLC Simulator (ModbusPal)
-
-```bash
-java -jar modbuspal.jar
-```
-
-**Registers Configuration:**
-- Register address 0: WOB (1500)
-- Register address 1: RPM (80)
-
-### 5.2. End-to-End Test
-
-1. Send data from PLC to Kafka
-2. Process data with Flink/Spark
-3. Store in InfluxDB
-4. Visualize in Grafana
-
----
-
-## 6. Monitoring and Debugging
-
-- **Grafana Dashboard:** Connect to InfluxDB for real-time monitoring.
-- **Prometheus:** Monitor CPU, memory, latency.
-
-```yaml
-services:
-  grafana:
-    image: grafana/grafana
-    ports:
-      - "3000:3000"
-  prometheus:
-    image: prom/prometheus
-    volumes:
-      - "./prometheus.yml:/etc/prometheus/prometheus.yml"
-```
-
----
-
-## 7. Summary and Next Steps
-
-**Prototype Results:**
-- Verified communication with simulated PLC and sensors.
-- Tested ML models on sample data.
-
-**Next:**
-- Test on a real rig.
-- Add real LWD/MWD sensors.
-- Optimize AI models with real data.
-
-**End of Initial Deployment Phase 🚀**
-
-```mermaid
-graph TD
-    A[PLC/DCS] -->|Modbus| B(Kafka)
-    C[LWD/MWD] -->|WITSML| B
-    B --> D[Flink Processing]
-    D --> E[InfluxDB]
-    E --> F[Grafana Dashboard]
-    D --> G[ML Models]
-    G --> H[Real-Time Actions]
-```
+This **SRS** defines a **modern, AI-driven drilling automation system** with **real-time optimization, predictive maintenance, and Kafka-based stream processing**, ensuring **efficiency, reliability, and scalability**. 🚀

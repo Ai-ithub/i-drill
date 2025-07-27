@@ -5,7 +5,7 @@ __pycache__/
 # Log files
 *.log
 
-# Data files (should be in a central storage, not Git)
+# Data Files (should be in a central storage, not Git)
 *.csv
 *.parquet
 *.zip
