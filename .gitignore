@@ -1,0 +1,24 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Log files
+*.log
+
+# Data files (should be in a central storage, not Git)
+*.csv
+*.parquet
+*.zip
+
+# IDE & OS files
+.idea/
+.vscode/
+*.DS_Store
+
+# Virtual environment
+.venv/
+venv/
+
+# Reports and temporary files
+*.docx
+*.txt
