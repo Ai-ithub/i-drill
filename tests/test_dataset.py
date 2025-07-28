@@ -2,7 +2,7 @@ import pytest
 import pandas as pd
 import numpy as np
 from datetime import datetime
-from src.Scripts.Dataset import generate_chunk, failure_types
+from scripts.Dataset import generate_chunk, failure_types
 
 @pytest.fixture
 def sample_df():
@@ -26,7 +26,7 @@ def test_maintenance_flag_ratio(sample_df):
 
 def test_failure_type_consistency(sample_df):
     # A list of valid failure types, imported from the source script
-    from src.Scripts.Dataset import failure_types
+    from scripts.Dataset import failure_types
     
     for index, row in sample_df.iterrows():
         flag = row['Maintenance_Flag']

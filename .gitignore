@@ -1,24 +1,26 @@
-# Python cache
+# Python
 __pycache__/
 *.pyc
+.venv/
+venv/
+*.egg-info/
 
-# Log files
-*.log
+# Pytest
+.pytest_cache/
 
-# Data Files (should be in a central storage, not Git)
+# IDE
+.idea/
+.vscode/
+
+# Data (should not be in Git)
+data/
+dataset/
+output_fastparquet/
 *.csv
 *.parquet
 *.zip
 
-# IDE & OS files
-.idea/
-.vscode/
-*.DS_Store
-
-# Virtual environment
-.venv/
-venv/
-
-# Reports and temporary files
+# Logs and Reports
+*.log
 *.docx
 *.txt
