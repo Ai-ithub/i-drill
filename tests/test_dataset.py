@@ -2,7 +2,7 @@ import pytest
 import pandas as pd
 import numpy as np
 from datetime import datetime
-from Dataset import generate_chunk, failure_types
+from src.Scripts.Dataset import generate_chunk, failure_types
 
 @pytest.fixture
 def sample_df():
@@ -25,11 +25,25 @@ def test_maintenance_flag_ratio(sample_df):
     assert 0.04 <= ratio <= 0.06  # حدود ۵٪ باید Maintenance داشته باشن
 
 def test_failure_type_consistency(sample_df):
-    for flag, ftype in zip(sample_df['Maintenance_Flag'], sample_df['Failure_Type']):
-        if flag == 0:
-            assert ftype == 'None'
-        else:
-            assert ftype in failure_types
+    # A list of valid failure types, imported from the source script
+    from src.Scripts.Dataset import failure_types
+    
+    for index, row in sample_df.iterrows():
+        flag = row['Maintenance_Flag']
+        ftype = row['Failure_Type']
+        
+        try:
+            if flag == 0:
+                assert ftype == 'None'
+            else: # flag == 1
+                assert ftype in failure_types
+        except AssertionError:
+            print(f"\n\n--- TEST FAILED AT ROW {index} ---")
+            print("Problematic Data Row:")
+            print(row)
+            print("-----------------------------------\n")
+            # Re-raise the exception to ensure the test still fails
+            raise
 
 def test_missing_values_restriction(sample_df):
     forbidden_columns = ['Timestamp', 'Rig_ID', 'Failure_Type']
