@@ -1,6 +1,6 @@
 # mock_kafka_batch.py
 
-from dvr_controller import process_data
+from processing.dvr_controller import process_data
 
 # Simulated micro-batch of incoming sensor data
 data_batch = [
