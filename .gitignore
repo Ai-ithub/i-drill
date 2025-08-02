@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Pytest
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+
+# Data (should not be in Git)
+data/
+dataset/
+output_fastparquet/
+*.csv
+*.parquet
+*.zip
+
+# Logs and Reports
+*.log
+*.docx
+*.txt
