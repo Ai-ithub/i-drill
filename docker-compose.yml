@@ -1,0 +1,72 @@
+version: "3.9"
+services:
+  fastapi:
+    build: ../Project/I-Drill
+    container_name: i-drill-fastapi
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app/backend/app  # Adjusted volume mount
+    environment:
+      - PYTHONPATH=/app
+      # ... (keep your existing environment variables)
+
+  # ... (keep your postgres and influxdb services unchanged)
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: i-drill-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: i-drill-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"  # Important for development
+    depends_on:
+      - zookeeper
+
+  producer:
+    build: ../Project/I-Drill
+    container_name: i-drill-producer
+    working_dir: /app/backend/app/kafka
+    command: python producer.py
+    environment:
+      - PYTHONPATH=/app
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    volumes:
+      - ./backend/app/kafka:/app/backend/app/kafka  # Only mount Kafka directory
+    depends_on:
+      - kafka
+      - zookeeper
+
+  consumer:
+    build: ../Project/I-Drill
+    container_name: i-drill-consumer
+    working_dir: /app/backend/app/kafka
+    command: python consumer.py
+    environment:
+      - PYTHONPATH=/app
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    volumes:
+      - ./backend/app/kafka:/app/backend/app/kafka  # Only mount Kafka directory
+    depends_on:
+      - kafka
+      - zookeeper
+
+volumes:
+  postgres_data:
+    driver: local
+  influxdb_data:
+    driver: local
