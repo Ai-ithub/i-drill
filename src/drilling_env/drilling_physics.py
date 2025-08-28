@@ -9,6 +9,33 @@ import numpy as np
 from typing import Dict, Tuple, Optional
 from enum import Enum
 
+# Constants for DrillingPhysics
+MAX_WOB = 50000  # Maximum Weight on Bit (Newtons)
+MAX_RPM = 200    # Maximum RPM
+MAX_FLOW_RATE = 0.1  # Maximum flow rate (m³/s)
+BASE_TEMPERATURE = 20  # Base temperature (°C)
+TEMP_GRADIENT = 0.025  # Temperature gradient (°C/m)
+MAX_TEMPERATURE = 200  # Maximum temperature (°C)
+BIT_WEAR_RATE = 0.0001  # Base bit wear rate per hour
+WOB_WEAR_FACTOR = 1e-8  # WOB impact on wear
+RPM_WEAR_FACTOR = 1e-5  # RPM impact on wear
+TEMP_WEAR_FACTOR = 0.01  # Temperature impact on wear
+PRESSURE_GRADIENT = 10000  # Pressure gradient (Pa/m)
+ATMOSPHERIC_PRESSURE = 101325  # Atmospheric pressure (Pa)
+FLOW_PRESSURE_FACTOR = 1e8  # Flow rate impact on pressure
+VIBRATION_BASE = 0.1  # Base vibration level
+VIBRATION_WOB_FACTOR = 2e-6  # WOB impact on vibration
+VIBRATION_RPM_FACTOR = 0.002  # RPM impact on vibration
+VIBRATION_WEAR_FACTOR = 0.5  # Wear impact on vibration
+VIBRATION_THRESHOLD_AXIAL = 0.8  # Axial vibration threshold
+VIBRATION_THRESHOLD_LATERAL = 0.7  # Lateral vibration threshold
+VIBRATION_THRESHOLD_TORSIONAL = 0.6  # Torsional vibration threshold
+WOB_THRESHOLD_HIGH = 40000  # High WOB threshold
+RPM_THRESHOLD_HIGH = 150  # High RPM threshold
+FLOW_THRESHOLD_LOW = 0.02  # Low flow rate threshold
+BIT_WEAR_THRESHOLD = 0.8  # High bit wear threshold
+EFFECTIVE_WOB_ANGLE_FACTOR = 0.1  # Angle impact on effective WOB
+
 class FormationType(Enum):
     """انواع مختلف سازند"""
     SOFT_SAND = 'soft_sand'           # ماسه نرم
@@ -53,8 +80,8 @@ class DrillingPhysics:
     def __init__(self):
         # پارامترهای ثابت فیزیکی
         self.bit_diameter = 0.2159     # قطر مته (متر) - معادل 8.5 اینچ
-        self.max_wob = 50000           # حداکثر وزن روی مته (نیوتن)
-        self.max_rpm = 200             # حداکثر سرعت چرخش
+        self.max_wob = MAX_WOB         # حداکثر وزن روی مته (نیوتن)
+        self.max_rpm = MAX_RPM         # حداکثر سرعت چرخش
         
         # تعریف گیره حفاری
         self.drill_collar = DrillCollar(
@@ -66,7 +93,7 @@ class DrillingPhysics:
         # پارامترهای گل حفاری
         self.mud_density = 1200        # چگالی گل (کیلوگرم بر متر مکعب)
         self.mud_viscosity = 0.03      # ویسکوزیته گل (پاسکال ثانیه)
-        self.min_mud_temp = 20         # حداقل دمای گل (درجه سانتیگراد)
+        self.min_mud_temp = BASE_TEMPERATURE  # حداقل دمای گل (درجه سانتیگراد)
         self.max_mud_temp = 80         # حداکثر دمای گل (درجه سانتیگراد)
         
         # ضرایب معادلات
@@ -118,12 +145,12 @@ class DrillingPhysics:
         # وضعیت اولیه
         self.current_formation = FormationType.SOFT_SAND
         self.current_condition = AbnormalCondition.NORMAL
-        self.current_temp = 30
+        self.current_temp = BASE_TEMPERATURE
     
     def update_temperature(self, depth: float) -> float:
         """محاسبه دما براساس عمق"""
         # گرادیان دمایی: 2.5 درجه per 100 متر
-        temp_gradient = 0.025  # درجه سانتیگراد بر متر
+        temp_gradient = TEMP_GRADIENT  # درجه سانتیگراد بر متر
         self.current_temp = self.min_mud_temp + (depth * temp_gradient)
         return min(self.current_temp, self.max_mud_temp)
     
@@ -134,12 +161,25 @@ class DrillingPhysics:
                                 bit_wear: float,
                                 vibrations: Dict[str, float]) -> AbnormalCondition:
         """بررسی و تشخیص شرایط غیرعادی"""
-        max_vibration = max(vibrations.values())
-        
-        if max_vibration > 0.8:
+        # بررسی ارتعاشات بیش از حد
+        if (vibrations['axial'] > VIBRATION_THRESHOLD_AXIAL or 
+            vibrations['lateral'] > VIBRATION_THRESHOLD_LATERAL or 
+            vibrations['torsional'] > VIBRATION_THRESHOLD_TORSIONAL):
             return AbnormalCondition.VIBRATION
-        elif bit_wear > 0.7 and wob > 0.8 * self.max_wob:
+        
+        # بررسی WOB و RPM بالا
+        if wob > WOB_THRESHOLD_HIGH and rpm > RPM_THRESHOLD_HIGH:
             return AbnormalCondition.BIT_BALLING
+        
+        # بررسی جریان کم
+        if flow_rate < FLOW_THRESHOLD_LOW:
+            return AbnormalCondition.FORMATION_CHANGE
+        
+        # بررسی فرسایش بالای مته
+        if bit_wear > BIT_WEAR_THRESHOLD:
+            return AbnormalCondition.BIT_BALLING
+        
+        # بررسی stick-slip
         elif rpm < 0.2 * self.max_rpm and wob > 0.7 * self.max_wob:
             return AbnormalCondition.STICK_SLIP
         else:
@@ -250,7 +290,7 @@ class DrillingPhysics:
         )
         
         # افزایش نرخ فرسایش با افزایش دما
-        temp_factor = 1.0 + 0.002 * (self.current_temp - self.min_mud_temp)
+        temp_factor = 1.0 + TEMP_WEAR_FACTOR * 0.1 * (self.current_temp - self.min_mud_temp)
         
         # محاسبه فرسایش جدید
         wear_increment = base_wear_rate * time_hours * temp_factor
@@ -269,6 +309,15 @@ class DrillingPhysics:
         formation_props = self.formation_properties[formation_type]
         permeability = formation_props['permeability']
         
+        # فشار هیدرواستاتیک
+        hydrostatic_pressure = depth * PRESSURE_GRADIENT
+        
+        # فشار اتمسفری
+        atmospheric_pressure = ATMOSPHERIC_PRESSURE
+        
+        # افت فشار ناشی از جریان
+        flow_pressure_loss = flow_rate * FLOW_PRESSURE_FACTOR
+        
         # تأثیر دما بر ویسکوزیته
         temp_factor = 1.0 - 0.002 * (self.current_temp - self.min_mud_temp)
         effective_viscosity = self.mud_viscosity * temp_factor
@@ -281,7 +330,10 @@ class DrillingPhysics:
         # اعمال تأثیر تراوایی سازند
         formation_factor = 1.0 + (1.0 - permeability)
         
-        return base_pressure * formation_factor
+        # محاسبه فشار کل
+        total_pressure = hydrostatic_pressure + atmospheric_pressure + flow_pressure_loss + (base_pressure * formation_factor)
+        
+        return total_pressure
     
     def calculate_vibrations(self, wob: float, rpm: float, bit_wear: float) -> Dict[str, float]:
         """محاسبه ارتعاشات سیستم حفاری"""
@@ -294,7 +346,7 @@ class DrillingPhysics:
         torsional_base = (normalized_wob * normalized_rpm)**0.9
         
         # افزایش ارتعاشات با فرسایش مته
-        wear_factor = 1 + bit_wear
+        wear_factor = 1 + bit_wear * VIBRATION_WEAR_FACTOR
         
         return {
             'axial': min(1.0, axial_base * wear_factor),
@@ -314,7 +366,7 @@ class DrillingPhysics:
         # محدود کردن اعمال کنترلی
         wob = min(action['wob'], self.max_wob)
         rpm = min(action['rpm'], self.max_rpm)
-        flow_rate = min(action['flow_rate'], 0.1)
+        flow_rate = min(action['flow_rate'], MAX_FLOW_RATE)
         
         # محاسبه پارامترهای اصلی با در نظر گرفتن زاویه انحراف
         rop = self.calculate_rop(wob, rpm, angle)
@@ -355,4 +407,4 @@ class DrillingPhysics:
             'effective_wob': effective_wob
         }
         
-        return new_state, new_state 
+        return new_state, new_state
