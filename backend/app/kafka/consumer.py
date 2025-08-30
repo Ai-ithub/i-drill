@@ -28,7 +28,7 @@ def create_consumer():
         'enable.auto.commit': True
     }
     consumer = Consumer(consumer_conf)
-    consumer.subscribe([TOPIC_NAME])
+    consumer.subscribe(["oil_rig_sensor_data"])
     return consumer
 
 
