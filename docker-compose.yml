@@ -1,7 +1,7 @@
 version: "3.9"
 services:
   fastapi:
-    build: ../Project/I-Drill
+    build: .
     container_name: i-drill-fastapi
     ports:
       - "8000:8000"
@@ -38,7 +38,7 @@ services:
       - zookeeper
 
   producer:
-    build: ../Project/I-Drill
+    build: .
     container_name: i-drill-producer
     working_dir: /app/backend/app/kafka
     command: python producer.py
@@ -52,7 +52,7 @@ services:
       - zookeeper
 
   consumer:
-    build: ../Project/I-Drill
+    build: .
     container_name: i-drill-consumer
     working_dir: /app/backend/app/kafka
     command: python consumer.py
