@@ -11,4 +11,4 @@ COPY . .
 
 # Set default environment variables
 ENV PYTHONPATH=/app
-ENV KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+ENV KAFKA_BOOTSTRAP_SERVERS=localhost:9092
