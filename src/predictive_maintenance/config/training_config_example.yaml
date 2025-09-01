@@ -1,0 +1,157 @@
+# Example Training Configuration for Wellbore Image Generation
+# Copy this file and modify according to your needs
+
+model:
+  generator:
+    latent_dim: 512
+    num_layers: 8
+    hidden_dim: 512
+    output_channels: 3
+    image_size: 256
+    use_spectral_norm: false
+    use_self_attention: true
+    attention_layers: [4, 6]
+  
+  discriminator:
+    input_channels: 3
+    hidden_dim: 64
+    num_layers: 6
+    image_size: 256
+    use_spectral_norm: true
+    use_self_attention: true
+    attention_layers: [2, 4]
+
+training:
+  # Basic training parameters
+  epochs: 1000
+  batch_size: 16
+  learning_rate: 0.0002
+  beta1: 0.5
+  beta2: 0.999
+  
+  # Device configuration
+  device: "cuda"  # "cuda" or "cpu"
+  device_id: 0
+  multi_gpu: false
+  gpu_ids: [0]
+  
+  # Loss configuration
+  loss_type: "wgan_gp"  # "wgan_gp", "lsgan", "vanilla"
+  adversarial_weight: 1.0
+  gradient_penalty_weight: 10.0
+  feature_matching_weight: 0.0
+  
+  # Training schedule
+  discriminator_steps: 1
+  generator_steps: 1
+  warmup_epochs: 10
+  
+  # Optimization
+  gradient_clipping: 1.0
+  mixed_precision: false
+  gradient_accumulation_steps: 1
+  
+  # Checkpointing and evaluation
+  save_frequency: 100
+  eval_frequency: 50
+  log_frequency: 10
+  
+  # Early stopping
+  early_stopping:
+    enabled: true
+    patience: 200
+    min_delta: 0.001
+    monitor: "fid_score"
+    mode: "min"
+
+data:
+  # Data paths
+  train_dir: "data/train"
+  val_dir: "data/val"
+  test_dir: "data/test"
+  
+  # Data loading
+  image_size: 256
+  batch_size: 16
+  num_workers: 4
+  pin_memory: true
+  prefetch_factor: 2
+  
+  # Data augmentation
+  augmentation:
+    enabled: true
+    horizontal_flip: true
+    vertical_flip: false
+    rotation_range: 10
+    brightness_range: 0.1
+    contrast_range: 0.1
+    saturation_range: 0.1
+    hue_range: 0.05
+    noise_std: 0.01
+  
+  # Data filtering
+  min_image_size: 64
+  max_image_size: 1024
+  allowed_formats: ["jpg", "jpeg", "png", "bmp"]
+
+logging:
+  # Logging configuration
+  log_dir: "logs"
+  level: "INFO"  # "DEBUG", "INFO", "WARNING", "ERROR"
+  
+  # TensorBoard
+  tensorboard:
+    enabled: true
+    log_dir: "logs/tensorboard"
+    log_images: true
+    log_frequency: 50
+  
+  # Weights & Biases (optional)
+  wandb:
+    enabled: false
+    project: "wellbore-gan"
+    entity: null
+    tags: ["stylegan2", "wellbore"]
+
+checkpoints:
+  # Checkpoint configuration
+  save_dir: "checkpoints"
+  keep_best: 5
+  keep_latest: 3
+  save_optimizer: true
+  
+  # Model export
+  export_onnx: false
+  export_torchscript: false
+
+evaluation:
+  # Evaluation configuration
+  metrics: ["fid", "is", "lpips", "ssim", "psnr"]
+  num_samples: 1000
+  batch_size: 32
+  
+  # FID configuration
+  fid:
+    feature_dim: 2048
+    device: "cuda"
+  
+  # Inception Score configuration
+  inception_score:
+    splits: 10
+    device: "cuda"
+  
+  # LPIPS configuration
+  lpips:
+    net: "alex"  # "alex", "vgg", "squeeze"
+    device: "cuda"
+
+# Reproducibility
+random_seed: 42
+deterministic: false
+benchmark: true
+
+# Performance
+performance:
+  compile_model: false  # PyTorch 2.0+ feature
+  channels_last: false
+  autocast: false
