@@ -1,0 +1,157 @@
+# Example Inference Configuration for Wellbore Image Generation
+# Copy this file and modify according to your needs
+
+generation:
+  # Basic generation parameters
+  num_images: 100
+  batch_size: 8
+  output_dir: "generated"
+  image_format: "png"  # "png", "jpg", "jpeg"
+  image_quality: 95  # For JPEG format (1-100)
+  
+  # Reproducibility
+  seed: null  # Set to integer for reproducible results
+  
+  # Generation modes
+  mode: "random"  # "random", "interpolation", "style_mixing"
+  
+  # Style mixing (when mode is "style_mixing")
+  style_mixing:
+    num_styles: 2
+    mixing_layers: [4, 8]  # Which layers to mix
+  
+  # Interpolation (when mode is "interpolation")
+  interpolation:
+    start_seed: 0
+    end_seed: 1
+    num_steps: 10
+    interpolation_type: "linear"  # "linear", "spherical"
+  
+  # Truncation trick
+  truncation:
+    enabled: true
+    psi: 0.7  # Truncation strength (0.0-1.0)
+    cutoff: 8  # Layer cutoff for truncation
+
+model:
+  # Model configuration
+  model_path: "checkpoints/best_model.pth"
+  
+  # Device configuration
+  device: "cuda"  # "cuda" or "cpu"
+  device_id: 0
+  
+  # Model optimization
+  compile_model: false  # PyTorch 2.0+ feature
+  half_precision: false  # Use FP16 for faster inference
+  
+  # Model architecture (should match training config)
+  generator:
+    latent_dim: 512
+    num_layers: 8
+    hidden_dim: 512
+    output_channels: 3
+    image_size: 256
+
+post_processing:
+  # Post-processing options
+  enabled: true
+  
+  # Image enhancement
+  enhance:
+    enabled: false
+    brightness: 0.0  # -1.0 to 1.0
+    contrast: 0.0    # -1.0 to 1.0
+    saturation: 0.0  # -1.0 to 1.0
+    gamma: 1.0       # 0.1 to 3.0
+  
+  # Noise reduction
+  denoise:
+    enabled: false
+    method: "gaussian"  # "gaussian", "bilateral", "nlm"
+    strength: 0.1
+  
+  # Sharpening
+  sharpen:
+    enabled: false
+    strength: 0.1
+  
+  # Resize
+  resize:
+    enabled: false
+    target_size: [512, 512]
+    method: "lanczos"  # "nearest", "bilinear", "bicubic", "lanczos"
+
+output:
+  # Output configuration
+  save_latents: false  # Save latent vectors
+  save_metadata: true  # Save generation metadata
+  
+  # Naming convention
+  filename_template: "generated_{index:06d}"  # Use {index}, {seed}, {timestamp}
+  
+  # Directory structure
+  create_subdirs: false
+  subdir_size: 1000  # Images per subdirectory
+  
+  # Progress tracking
+  show_progress: true
+  log_frequency: 10
+
+validation:
+  # Validation options
+  validate_outputs: true
+  
+  # Quality checks
+  min_pixel_value: 0.0
+  max_pixel_value: 1.0
+  check_nan: true
+  check_inf: true
+  
+  # Size validation
+  expected_size: [256, 256]
+  expected_channels: 3
+
+# Batch processing
+batch_processing:
+  # For large-scale generation
+  enabled: false
+  total_images: 10000
+  images_per_batch: 100
+  save_frequency: 1000  # Save progress every N images
+  
+  # Memory management
+  clear_cache_frequency: 100
+  max_memory_usage: 0.8  # Fraction of GPU memory
+
+# Logging
+logging:
+  level: "INFO"
+  log_file: "logs/inference.log"
+  
+  # Performance logging
+  log_timing: true
+  log_memory: true
+
+# Advanced options
+advanced:
+  # Latent space exploration
+  latent_exploration:
+    enabled: false
+    method: "pca"  # "pca", "tsne", "umap"
+    num_components: 2
+    save_plot: true
+  
+  # Style analysis
+  style_analysis:
+    enabled: false
+    analyze_layers: [2, 4, 6, 8]
+    save_activations: false
+  
+  # Custom hooks
+  custom_hooks:
+    enabled: false
+    pre_generation: null
+    post_generation: null
+    pre_save: null
+    post_save: null
