@@ -64,15 +64,15 @@ def generate_chunk(device_id, start_idx, chunk_size, total_records):
     for _ in range(n_missing):
         i = random.randint(0, df.shape[0] - 1)
         j = random.randint(0, df.shape[1] - 1)
-        if df.columns[j] in ['Timestamp', 'Rig_ID', 'Failure_Type']:
+        if df.columns[j] in ['Timestamp', 'Rig_ID', 'Failure_Type', 'Maintenance_Flag']:
             continue
         df.iat[i, j] = np.nan
 
     n_noisy = int(n_cells * 0.03)
-    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    float_cols = df.select_dtypes(include=['float64']).columns
     for _ in range(n_noisy):
         i = random.randint(0, df.shape[0] - 1)
-        j = random.choice(numeric_cols)
+        j = random.choice(float_cols)
         original = df.at[i, j]
         if pd.isna(original):
             continue
@@ -99,7 +99,8 @@ def generate_device_data(device_id):
 
         print(f"Device {device_id} - Chunk {chunk_idx} saved.")
 
-for device_id in range(1, num_devices + 1):
-    generate_device_data(device_id)
+if __name__ == "__main__":
+    for device_id in range(1, num_devices + 1):
+        generate_device_data(device_id)
 
-print("Data generation with fastparquet completed.")
+    print("Data generation with fastparquet completed.")
