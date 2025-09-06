@@ -12,15 +12,11 @@ venv/
 .idea/
 .vscode/
 
-# Data (should not be in Git)
+# Data & Models (Artifacts)
 data/
-dataset/
 output_fastparquet/
-*.csv
-*.parquet
-*.zip
-
+models/*.zip
+models/*.onnx
+.env
 # Logs and Reports
 *.log
-*.docx
-*.txt
