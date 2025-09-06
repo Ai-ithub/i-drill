@@ -1,0 +1,29 @@
+{
+  "name": "I-Drill Development Environment",
+
+  // به Codespaces می‌گوید که از فایل docker-compose ما برای ساخت محیط استفاده کند
+  "dockerComposeFile": "../docker-compose.yml",
+
+  // نام سرویسی که می‌خواهیم VS Code به آن متصل شود (سرویس اصلی اپلیکیشن ما)
+  "service": "fastapi",
+
+  // پوشه‌ای که بعد از باز شدن Codespace، در VS Code باز خواهد شد
+  "workspaceFolder": "/app",
+
+  // تنظیمات VS Code که می‌خواهیم به صورت خودکار در Codespace اعمال شوند
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python"
+      }
+    }
+  },
+
+  // پورت‌هایی که می‌خواهیم به صورت خودکار از کانتینر به کامپیوتر ما منتقل شوند
+  "forwardPorts": [8000, 5432, 8086]
+}
