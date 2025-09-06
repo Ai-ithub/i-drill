@@ -1,5 +1,5 @@
 import pytest
-from src.processing.dvr_controller import process_data
+from src.i_drill.processing.dvr_controller import process_data
 
 # Test case for valid data
 def test_process_data_valid_record():

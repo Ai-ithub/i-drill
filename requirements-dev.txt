@@ -1,0 +1,9 @@
+# requirements-dev.txt - Development Dependencies
+
+# Include all production requirements
+-r requirements.txt
+
+# Testing
+pytest
+
+# (In the future you can add other tools like black, flake8, mypy here.)

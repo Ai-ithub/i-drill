@@ -13,11 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11"] # You can add more python versions
+        python-version: ["3.11"]
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
@@ -27,9 +27,9 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install -e .  # Install our project in editable mode
-        pip install pytest # Ensure pytest is installed
+        # Install development dependencies for testing
+        pip install -r requirements-dev.txt
+        pip install -e .
 
     - name: Run tests with pytest
       run: |

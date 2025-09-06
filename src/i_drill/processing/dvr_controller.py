@@ -1,6 +1,6 @@
 import logging
-from processing.dvr_stats import run_statistical_checks
-from processing.dvr_reconciliation import reconcile_data
+from src.i_drill.processing.dvr_stats import run_statistical_checks
+from src.i_drill.processing.dvr_reconciliation import reconcile_data
 
 # --- Setup a proper logger ---
 # This sets up a professional logger that will write to a file

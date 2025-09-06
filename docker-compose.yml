@@ -1,0 +1,95 @@
+# docker-compose.yml
+
+version: "3.9"
+
+services:
+  # --- Main application service (FastAPI) ---
+  fastapi:
+    build: .
+    container_name: i-drill-fastapi
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mounting source code for live reload
+      - ./src:/app/src
+    env_file:
+      - .env
+    command: python -m uvicorn i_drill.backend.app:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      - kafka
+      - postgres
+      - influxdb
+
+  # --- Kafka services ---
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: i-drill-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: i-drill-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    depends_on:
+      - zookeeper
+
+  # --- Data producer and consumer services ---
+  producer:
+    build: .
+    container_name: i-drill-producer
+    # Running a script as a Python module
+    command: python -m i_drill.streaming.producer
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      - kafka
+
+  consumer:
+    build: .
+    container_name: i-drill-consumer
+    # Running a script as a Python module
+    command: python -m i_drill.streaming.consumer
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      - kafka
+
+  # --- Database services ---
+  postgres:
+    image: postgres:15-alpine
+    container_name: i-drill-postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    env_file:
+      - .env
+
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: i-drill-influxdb
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    env_file:
+      - .env
+
+# --- Defining Volumes to Store Data ---
+volumes:
+  postgres_data:
+  influxdb_data:
