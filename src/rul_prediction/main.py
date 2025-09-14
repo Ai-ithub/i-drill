@@ -206,6 +206,66 @@ def evaluate_model(model: torch.nn.Module, test_loader, config: Dict[str, Any]) 
     
     return evaluation_results
 
+def export_model(config: Dict[str, Any], model_path: str, onnx_path: str = None) -> str:
+    """
+    Export a trained model to ONNX format
+    
+    Args:
+        config: Configuration dictionary
+        model_path: Path to the trained PyTorch model
+        onnx_path: Path to save ONNX model (optional)
+        
+    Returns:
+        Path to the exported ONNX model
+    """
+    logger = logging.getLogger(__name__)
+    
+    # Load data to get input dimensions
+    data_loader = RULDataLoader(
+        data_path=config['data']['data_path'],
+        sequence_length=config['data']['sequence_length'],
+        test_size=config['data']['test_size'],
+        val_size=config['data']['val_size'],
+        scaler_type=config['data']['scaler_type']
+    )
+    
+    # Get feature dimension
+    input_dim = data_loader.get_feature_dim()
+    sequence_length = config['data']['sequence_length']
+    
+    # Create model
+    model = create_model(
+        model_type=config['model']['type'],
+        input_dim=input_dim,
+        **{k: v for k, v in config['model'].items() if k != 'type'}
+    )
+    
+    # Load model weights
+    checkpoint = torch.load(model_path, map_location='cpu')
+    if 'model_state_dict' in checkpoint:
+        model.load_state_dict(checkpoint['model_state_dict'])
+    else:
+        model.load_state_dict(checkpoint)
+    
+    logger.info(f"Loaded model from {model_path}")
+    
+    # Create trainer for export functionality
+    trainer = RULTrainer(model=model)
+    
+    # Define input shape (batch_size=1 for inference)
+    input_shape = (1, sequence_length, input_dim)
+    
+    # Export to ONNX
+    exported_path = trainer.export_to_onnx(
+        input_shape=input_shape,
+        onnx_path=onnx_path,
+        verify_export=True
+    )
+    
+    logger.info(f"Model successfully exported to ONNX: {exported_path}")
+    
+    return exported_path
+
 def main():
     """
     Main function
@@ -213,10 +273,12 @@ def main():
     parser = argparse.ArgumentParser(description='RUL Prediction with Deep Learning')
     parser.add_argument('--config', type=str, default='config.yaml',
                        help='Path to configuration file')
-    parser.add_argument('--mode', type=str, choices=['train', 'evaluate', 'both'],
-                       default='both', help='Mode: train, evaluate, or both')
+    parser.add_argument('--mode', type=str, choices=['train', 'evaluate', 'both', 'export'],
+                       default='both', help='Mode: train, evaluate, both, or export')
     parser.add_argument('--model-path', type=str, default=None,
-                       help='Path to pre-trained model (for evaluation mode)')
+                       help='Path to pre-trained model (for evaluation/export mode)')
+    parser.add_argument('--onnx-path', type=str, default=None,
+                       help='Path to save ONNX model (for export mode)')
     parser.add_argument('--create-config', action='store_true',
                        help='Create default configuration file and exit')
     parser.add_argument('--log-level', type=str, default='INFO',
@@ -291,6 +353,20 @@ def main():
             evaluation_results = evaluate_model(model, test_loader, config)
             
             logger.info("Evaluation completed successfully!")
+            
+        elif args.mode == 'export':
+            # Export mode - convert model to ONNX
+            if args.model_path is None:
+                raise ValueError("Model path must be specified for export mode")
+            
+            # Export model to ONNX
+            exported_path = export_model(
+                config=config,
+                model_path=args.model_path,
+                onnx_path=args.onnx_path
+            )
+            
+            logger.info(f"Model export completed successfully! ONNX model saved to: {exported_path}")
             
     except Exception as e:
         logger.error(f"Error during execution: {str(e)}")

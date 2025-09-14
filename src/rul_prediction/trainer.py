@@ -19,6 +19,16 @@ from pathlib import Path
 import time
 from tqdm import tqdm
 
+# ONNX export
+try:
+    import onnx
+    import onnxruntime as ort
+    ONNX_AVAILABLE = True
+except ImportError:
+    ONNX_AVAILABLE = False
+    onnx = None
+    ort = None
+
 # Optional tensorboard import
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -437,3 +447,98 @@ class RULTrainer:
         plt.show()
         
         self.logger.info(f"Training history plot saved to {self.save_dir / 'training_history.png'}")
+    
+    def export_to_onnx(self, input_shape: Tuple[int, int, int], 
+                       onnx_path: str = None, 
+                       verify_export: bool = True) -> str:
+        """
+        Export the trained model to ONNX format
+        
+        Args:
+            input_shape: Shape of input tensor (batch_size, sequence_length, input_dim)
+            onnx_path: Path to save ONNX model (if None, auto-generated)
+            verify_export: Whether to verify the exported model
+            
+        Returns:
+            Path to the exported ONNX model
+        """
+        if not ONNX_AVAILABLE:
+            raise ImportError("ONNX libraries not available. Install with: pip install onnx onnxruntime")
+            
+        # Set model to evaluation mode
+        self.model.eval()
+        
+        # Generate dummy input
+        dummy_input = torch.randn(input_shape).to(self.device)
+        
+        # Auto-generate ONNX path if not provided
+        if onnx_path is None:
+            model_name = self.model.__class__.__name__.lower()
+            onnx_path = str(self.save_dir / f"{model_name}_rul_model.onnx")
+        
+        self.logger.info(f"Exporting model to ONNX format: {onnx_path}")
+        
+        try:
+            # Export to ONNX
+            torch.onnx.export(
+                self.model,                     # Model to export
+                dummy_input,                    # Model input
+                onnx_path,                      # Output path
+                export_params=True,             # Store trained parameters
+                opset_version=11,               # ONNX version
+                do_constant_folding=True,       # Optimize constant folding
+                input_names=['sensor_data'],    # Input names
+                output_names=['rul_prediction'], # Output names
+                dynamic_axes={
+                    'sensor_data': {0: 'batch_size'},
+                    'rul_prediction': {0: 'batch_size'}
+                }
+            )
+            
+            self.logger.info(f"Model successfully exported to {onnx_path}")
+            
+            # Verify export if requested
+            if verify_export:
+                self._verify_onnx_export(onnx_path, dummy_input)
+                
+            return onnx_path
+            
+        except Exception as e:
+            self.logger.error(f"Failed to export model to ONNX: {str(e)}")
+            raise
+    
+    def _verify_onnx_export(self, onnx_path: str, dummy_input: torch.Tensor):
+        """
+        Verify that the exported ONNX model produces the same output as PyTorch model
+        
+        Args:
+            onnx_path: Path to the ONNX model
+            dummy_input: Input tensor for testing
+        """
+        try:
+            # Load ONNX model
+            onnx_model = onnx.load(onnx_path)
+            onnx.checker.check_model(onnx_model)
+            
+            # Create ONNX Runtime session
+            ort_session = ort.InferenceSession(onnx_path)
+            
+            # Get PyTorch model output
+            with torch.no_grad():
+                pytorch_output = self.model(dummy_input).cpu().numpy()
+            
+            # Get ONNX model output
+            onnx_input = {ort_session.get_inputs()[0].name: dummy_input.cpu().numpy()}
+            onnx_output = ort_session.run(None, onnx_input)[0]
+            
+            # Compare outputs
+            max_diff = np.max(np.abs(pytorch_output - onnx_output))
+            
+            if max_diff < 1e-5:
+                self.logger.info(f"ONNX export verification successful! Max difference: {max_diff:.2e}")
+            else:
+                self.logger.warning(f"ONNX export verification: Large difference detected: {max_diff:.2e}")
+                
+        except Exception as e:
+            self.logger.error(f"ONNX export verification failed: {str(e)}")
+            raise
