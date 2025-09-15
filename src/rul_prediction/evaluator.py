@@ -14,7 +14,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Union
 import logging
 from pathlib import Path
 from scipy import stats
@@ -533,3 +533,352 @@ class RULEvaluator:
         plt.savefig(self.save_dir / 'model_comparison.png', 
                    dpi=300, bbox_inches='tight')
         plt.show()
+
+
+class BaselineEvaluator:
+    """
+    Evaluator for baseline models (scikit-learn models)
+    """
+    
+    def __init__(self, model, save_dir: str = './evaluation_results'):
+        """
+        Initialize Baseline Evaluator
+        
+        Args:
+            model: Trained scikit-learn model
+            save_dir: Directory to save evaluation results
+        """
+        self.model = model
+        
+        # Results directory
+        self.save_dir = Path(save_dir)
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """
+        Make predictions using the baseline model
+        
+        Args:
+            X: Input features
+            
+        Returns:
+            Predictions array
+        """
+        return self.model.predict(X)
+    
+    def calculate_metrics(self, predictions: np.ndarray, 
+                         true_values: np.ndarray) -> Dict[str, float]:
+        """
+        Calculate evaluation metrics for baseline models
+        
+        Args:
+            predictions: Model predictions
+            true_values: Ground truth values
+            
+        Returns:
+            Dictionary of metrics
+        """
+        # Basic regression metrics
+        rmse = np.sqrt(mean_squared_error(true_values, predictions))
+        mae = mean_absolute_error(true_values, predictions)
+        r2 = r2_score(true_values, predictions)
+        
+        # MAPE (Mean Absolute Percentage Error)
+        mape = np.mean(np.abs((true_values - predictions) / true_values)) * 100
+        
+        # RUL Score (asymmetric scoring function)
+        rul_score = self._calculate_rul_score(predictions, true_values)
+        
+        # Accuracy within thresholds
+        accuracy_10 = np.mean(np.abs(predictions - true_values) <= 10) * 100
+        accuracy_20 = np.mean(np.abs(predictions - true_values) <= 20) * 100
+        accuracy_30 = np.mean(np.abs(predictions - true_values) <= 30) * 100
+        
+        return {
+            'rmse': rmse,
+            'mae': mae,
+            'mape': mape,
+            'r2_score': r2,
+            'rul_score': rul_score,
+            'accuracy_10': accuracy_10,
+            'accuracy_20': accuracy_20,
+            'accuracy_30': accuracy_30
+        }
+    
+    def _calculate_rul_score(self, predictions: np.ndarray, 
+                           true_values: np.ndarray) -> float:
+        """
+        Calculate RUL-specific scoring function
+        
+        Args:
+            predictions: Model predictions
+            true_values: Ground truth values
+            
+        Returns:
+            RUL score (lower is better)
+        """
+        errors = predictions - true_values
+        
+        # Asymmetric scoring: penalize late predictions more
+        score = 0
+        for error in errors:
+            if error < 0:  # Early prediction
+                score += np.exp(-error / 13) - 1
+            else:  # Late prediction
+                score += np.exp(error / 10) - 1
+                
+        return score / len(errors)
+    
+    def evaluate(self, X: np.ndarray, y: np.ndarray) -> Dict[str, any]:
+        """
+        Comprehensive evaluation of baseline model
+        
+        Args:
+            X: Input features
+            y: True values
+            
+        Returns:
+            Dictionary with evaluation results
+        """
+        # Make predictions
+        predictions = self.predict(X)
+        
+        # Calculate metrics
+        metrics = self.calculate_metrics(predictions, y)
+        
+        # Create visualizations
+        self._create_visualizations(predictions, y, metrics)
+        
+        results = {
+            'predictions': predictions,
+            'true_values': y,
+            'metrics': metrics
+        }
+        
+        # Save results
+        self._save_results(results)
+        
+        return results
+    
+    def _create_visualizations(self, predictions: np.ndarray, 
+                             true_values: np.ndarray, 
+                             metrics: Dict[str, float]):
+        """
+        Create evaluation visualizations for baseline models
+        
+        Args:
+            predictions: Model predictions
+            true_values: Ground truth values
+            metrics: Calculated metrics
+        """
+        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        
+        # Prediction vs True values scatter plot
+        axes[0, 0].scatter(true_values, predictions, alpha=0.6)
+        axes[0, 0].plot([true_values.min(), true_values.max()], 
+                       [true_values.min(), true_values.max()], 'r--', lw=2)
+        axes[0, 0].set_xlabel('True RUL')
+        axes[0, 0].set_ylabel('Predicted RUL')
+        axes[0, 0].set_title(f'Predictions vs True Values\nR² = {metrics["r2_score"]:.3f}')
+        axes[0, 0].grid(True, alpha=0.3)
+        
+        # Residuals plot
+        residuals = predictions - true_values
+        axes[0, 1].scatter(true_values, residuals, alpha=0.6)
+        axes[0, 1].axhline(y=0, color='r', linestyle='--')
+        axes[0, 1].set_xlabel('True RUL')
+        axes[0, 1].set_ylabel('Residuals')
+        axes[0, 1].set_title(f'Residuals Plot\nRMSE = {metrics["rmse"]:.3f}')
+        axes[0, 1].grid(True, alpha=0.3)
+        
+        # Error distribution
+        axes[1, 0].hist(residuals, bins=30, alpha=0.7, edgecolor='black')
+        axes[1, 0].axvline(x=0, color='r', linestyle='--')
+        axes[1, 0].set_xlabel('Prediction Error')
+        axes[1, 0].set_ylabel('Frequency')
+        axes[1, 0].set_title(f'Error Distribution\nMAE = {metrics["mae"]:.3f}')
+        axes[1, 0].grid(True, alpha=0.3)
+        
+        # Accuracy within thresholds
+        thresholds = [10, 20, 30]
+        accuracies = [metrics['accuracy_10'], metrics['accuracy_20'], metrics['accuracy_30']]
+        axes[1, 1].bar([f'±{t}' for t in thresholds], accuracies)
+        axes[1, 1].set_ylabel('Accuracy (%)')
+        axes[1, 1].set_title('Accuracy within Thresholds')
+        axes[1, 1].grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig(self.save_dir / 'baseline_evaluation.png', 
+                   dpi=300, bbox_inches='tight')
+        plt.show()
+    
+    def _save_results(self, results: Dict[str, any]):
+        """
+        Save evaluation results to files
+        
+        Args:
+            results: Evaluation results dictionary
+        """
+        # Save metrics
+        metrics_df = pd.DataFrame([results['metrics']])
+        metrics_df.to_csv(self.save_dir / 'baseline_metrics.csv', index=False)
+        
+        # Save predictions
+        predictions_df = pd.DataFrame({
+            'true_values': results['true_values'],
+            'predictions': results['predictions'],
+            'errors': results['predictions'] - results['true_values']
+        })
+        predictions_df.to_csv(self.save_dir / 'baseline_predictions.csv', index=False)
+
+
+def compare_all_models(deep_results: Dict[str, Dict], 
+                      baseline_results: Dict[str, Dict],
+                      save_dir: str = './evaluation_results') -> pd.DataFrame:
+    """
+    Compare deep learning models with baseline models
+    
+    Args:
+        deep_results: Results from deep learning models
+        baseline_results: Results from baseline models
+        save_dir: Directory to save comparison results
+        
+    Returns:
+        DataFrame with comparison results
+    """
+    comparison_data = []
+    
+    # Add deep learning model results
+    for model_name, results in deep_results.items():
+        metrics = results['metrics']
+        comparison_data.append({
+            'Model': model_name,
+            'Type': 'Deep Learning',
+            'RMSE': metrics['rmse'],
+            'MAE': metrics['mae'],
+            'MAPE': metrics['mape'],
+            'R²': metrics['r2_score'],
+            'RUL Score': metrics['rul_score'],
+            'Accuracy ±10': metrics['accuracy_10'],
+            'Accuracy ±20': metrics['accuracy_20'],
+            'Accuracy ±30': metrics['accuracy_30']
+        })
+    
+    # Add baseline model results
+    for model_name, results in baseline_results.items():
+        metrics = results['metrics']
+        comparison_data.append({
+            'Model': model_name,
+            'Type': 'Baseline',
+            'RMSE': metrics['rmse'],
+            'MAE': metrics['mae'],
+            'MAPE': metrics['mape'],
+            'R²': metrics['r2_score'],
+            'RUL Score': metrics['rul_score'],
+            'Accuracy ±10': metrics['accuracy_10'],
+            'Accuracy ±20': metrics['accuracy_20'],
+            'Accuracy ±30': metrics['accuracy_30']
+        })
+    
+    comparison_df = pd.DataFrame(comparison_data)
+    
+    # Save comparison results
+    save_path = Path(save_dir)
+    save_path.mkdir(parents=True, exist_ok=True)
+    comparison_df.to_csv(save_path / 'all_models_comparison.csv', index=False)
+    
+    # Create comprehensive comparison visualization
+    _plot_comprehensive_comparison(comparison_df, save_path)
+    
+    return comparison_df
+
+
+def _plot_comprehensive_comparison(comparison_df: pd.DataFrame, save_path: Path):
+    """
+    Create comprehensive model comparison plots
+    
+    Args:
+        comparison_df: DataFrame with model comparison data
+        save_path: Path to save plots
+    """
+    fig, axes = plt.subplots(2, 3, figsize=(20, 12))
+    
+    # Color mapping for model types
+    colors = {'Deep Learning': 'skyblue', 'Baseline': 'lightcoral'}
+    
+    # RMSE comparison
+    bars1 = axes[0, 0].bar(range(len(comparison_df)), comparison_df['RMSE'], 
+                          color=[colors[t] for t in comparison_df['Type']])
+    axes[0, 0].set_title('RMSE Comparison')
+    axes[0, 0].set_ylabel('RMSE')
+    axes[0, 0].set_xticks(range(len(comparison_df)))
+    axes[0, 0].set_xticklabels(comparison_df['Model'], rotation=45, ha='right')
+    
+    # MAE comparison
+    bars2 = axes[0, 1].bar(range(len(comparison_df)), comparison_df['MAE'],
+                          color=[colors[t] for t in comparison_df['Type']])
+    axes[0, 1].set_title('MAE Comparison')
+    axes[0, 1].set_ylabel('MAE')
+    axes[0, 1].set_xticks(range(len(comparison_df)))
+    axes[0, 1].set_xticklabels(comparison_df['Model'], rotation=45, ha='right')
+    
+    # R² comparison
+    bars3 = axes[0, 2].bar(range(len(comparison_df)), comparison_df['R²'],
+                          color=[colors[t] for t in comparison_df['Type']])
+    axes[0, 2].set_title('R² Score Comparison')
+    axes[0, 2].set_ylabel('R² Score')
+    axes[0, 2].set_xticks(range(len(comparison_df)))
+    axes[0, 2].set_xticklabels(comparison_df['Model'], rotation=45, ha='right')
+    
+    # RUL Score comparison
+    bars4 = axes[1, 0].bar(range(len(comparison_df)), comparison_df['RUL Score'],
+                          color=[colors[t] for t in comparison_df['Type']])
+    axes[1, 0].set_title('RUL Score Comparison (Lower is Better)')
+    axes[1, 0].set_ylabel('RUL Score')
+    axes[1, 0].set_xticks(range(len(comparison_df)))
+    axes[1, 0].set_xticklabels(comparison_df['Model'], rotation=45, ha='right')
+    
+    # Accuracy ±10 comparison
+    bars5 = axes[1, 1].bar(range(len(comparison_df)), comparison_df['Accuracy ±10'],
+                          color=[colors[t] for t in comparison_df['Type']])
+    axes[1, 1].set_title('Accuracy ±10 Comparison')
+    axes[1, 1].set_ylabel('Accuracy (%)')
+    axes[1, 1].set_xticks(range(len(comparison_df)))
+    axes[1, 1].set_xticklabels(comparison_df['Model'], rotation=45, ha='right')
+    
+    # Model type summary
+    type_summary = comparison_df.groupby('Type').agg({
+        'RMSE': 'mean',
+        'MAE': 'mean',
+        'R²': 'mean'
+    }).round(3)
+    
+    axes[1, 2].axis('off')
+    table_data = []
+    for model_type in type_summary.index:
+        table_data.append([
+            model_type,
+            f"{type_summary.loc[model_type, 'RMSE']:.3f}",
+            f"{type_summary.loc[model_type, 'MAE']:.3f}",
+            f"{type_summary.loc[model_type, 'R²']:.3f}"
+        ])
+    
+    table = axes[1, 2].table(cellText=table_data,
+                           colLabels=['Model Type', 'Avg RMSE', 'Avg MAE', 'Avg R²'],
+                           cellLoc='center',
+                           loc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1, 2)
+    axes[1, 2].set_title('Average Performance by Model Type')
+    
+    # Add legend
+    from matplotlib.patches import Patch
+    legend_elements = [Patch(facecolor=colors['Deep Learning'], label='Deep Learning'),
+                      Patch(facecolor=colors['Baseline'], label='Baseline')]
+    fig.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(0.98, 0.98))
+    
+    plt.tight_layout()
+    plt.savefig(save_path / 'comprehensive_model_comparison.png', 
+               dpi=300, bbox_inches='tight')
+    plt.show()

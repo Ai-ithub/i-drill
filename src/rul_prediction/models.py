@@ -12,6 +12,11 @@ import torch.nn.functional as F
 import math
 from typing import Optional, Tuple
 import logging
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.svm import SVR
+from sklearn.base import BaseEstimator, RegressorMixin
 
 class LSTMRULModel(nn.Module):
     """
@@ -322,17 +327,127 @@ class CNNLSTMRULModel(nn.Module):
         
         return output
 
-def create_model(model_type: str, input_dim: int, **kwargs) -> nn.Module:
+
+class BaselineRULModel(BaseEstimator, RegressorMixin):
+    """
+    Wrapper class for scikit-learn baseline models to work with sequence data
+    """
+    
+    def __init__(self, model_type: str = 'linear', **kwargs):
+        """
+        Initialize baseline model
+        
+        Args:
+            model_type: Type of baseline model ('linear', 'random_forest', 'svr')
+            **kwargs: Additional parameters for the underlying model
+        """
+        self.model_type = model_type.lower()
+        self.kwargs = kwargs
+        self.model = None
+        self.is_fitted = False
+        
+        # Create the underlying model
+        if self.model_type == 'linear':
+            self.model = LinearRegression(**kwargs)
+        elif self.model_type == 'random_forest':
+            # Default parameters for Random Forest
+            default_params = {'n_estimators': 100, 'random_state': 42, 'n_jobs': -1}
+            default_params.update(kwargs)
+            self.model = RandomForestRegressor(**default_params)
+        elif self.model_type == 'svr':
+            # Default parameters for SVR
+            default_params = {'kernel': 'rbf', 'C': 1.0, 'gamma': 'scale'}
+            default_params.update(kwargs)
+            self.model = SVR(**default_params)
+        else:
+            raise ValueError(f"Unknown baseline model type: {model_type}. "
+                           f"Supported types: 'linear', 'random_forest', 'svr'")
+    
+    def _flatten_sequences(self, X):
+        """
+        Flatten sequence data for traditional ML models
+        
+        Args:
+            X: Input sequences of shape (batch_size, seq_len, features)
+            
+        Returns:
+            Flattened features of shape (batch_size, seq_len * features)
+        """
+        if isinstance(X, torch.Tensor):
+            X = X.detach().cpu().numpy()
+        
+        if len(X.shape) == 3:
+            # Flatten sequence dimension
+            batch_size, seq_len, features = X.shape
+            return X.reshape(batch_size, seq_len * features)
+        elif len(X.shape) == 2:
+            # Already flattened
+            return X
+        else:
+            raise ValueError(f"Unexpected input shape: {X.shape}")
+    
+    def fit(self, X, y):
+        """
+        Fit the baseline model
+        
+        Args:
+            X: Input sequences
+            y: Target values
+        """
+        X_flat = self._flatten_sequences(X)
+        
+        if isinstance(y, torch.Tensor):
+            y = y.detach().cpu().numpy()
+        
+        self.model.fit(X_flat, y.ravel())
+        self.is_fitted = True
+        return self
+    
+    def predict(self, X):
+        """
+        Make predictions with the baseline model
+        
+        Args:
+            X: Input sequences
+            
+        Returns:
+            Predictions
+        """
+        if not self.is_fitted:
+            raise ValueError("Model must be fitted before making predictions")
+        
+        X_flat = self._flatten_sequences(X)
+        predictions = self.model.predict(X_flat)
+        
+        return predictions
+    
+    def score(self, X, y):
+        """
+        Return the coefficient of determination R^2 of the prediction
+        """
+        if not self.is_fitted:
+            raise ValueError("Model must be fitted before scoring")
+        
+        predictions = self.predict(X)
+        
+        if isinstance(y, torch.Tensor):
+            y = y.detach().cpu().numpy()
+        
+        from sklearn.metrics import r2_score
+        return r2_score(y.ravel(), predictions)
+
+
+def create_model(model_type: str, input_dim: int, **kwargs):
     """
     Factory function to create RUL prediction models
     
     Args:
-        model_type: Type of model ('lstm', 'transformer', 'cnn_lstm')
+        model_type: Type of model ('lstm', 'transformer', 'cnn_lstm', 'linear', 'random_forest', 'svr')
         input_dim: Number of input features
         **kwargs: Additional model parameters
         
     Returns:
-        Initialized model
+        Initialized model (PyTorch nn.Module or BaselineRULModel)
     """
     model_type = model_type.lower()
     
@@ -342,9 +457,11 @@ def create_model(model_type: str, input_dim: int, **kwargs) -> nn.Module:
         return TransformerRULModel(input_dim, **kwargs)
     elif model_type == 'cnn_lstm':
         return CNNLSTMRULModel(input_dim, **kwargs)
+    elif model_type in ['linear', 'random_forest', 'svr']:
+        return BaselineRULModel(model_type, **kwargs)
     else:
         raise ValueError(f"Unknown model type: {model_type}. "
-                        f"Supported types: 'lstm', 'transformer', 'cnn_lstm'")
+                        f"Supported types: 'lstm', 'transformer', 'cnn_lstm', 'linear', 'random_forest', 'svr'")
 
 if __name__ == "__main__":
     # Test models
