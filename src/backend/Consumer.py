@@ -61,8 +61,8 @@ def process_message(msg):
         print(f"⚠️ THRESHOLD ALERT for {rig_id}: {' | '.join(alerts)}")
 
     history_dict, numeric_cols = get_history_for_anomaly(50)
-    flagged_message = flag_anomaly(data, history_dict, numeric_cols)
-    insert_message(flagged_message)
+    data = flag_anomaly(data, history_dict, numeric_cols)
+    insert_message(data)
 
     return data
 
