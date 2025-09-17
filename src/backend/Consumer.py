@@ -1,4 +1,5 @@
 from confluent_kafka import Consumer, KafkaException
+from src.processing.dvr import insert_message, get_history_for_anomaly, flag_anomaly
 import json
 from datetime import datetime
 import pandas as pd
@@ -58,6 +59,10 @@ def process_message(msg):
 
     if alerts:
         print(f"⚠️ THRESHOLD ALERT for {rig_id}: {' | '.join(alerts)}")
+
+    history_dict, numeric_cols = get_history_for_anomaly(50)
+    flagged_message = flag_anomaly(data, history_dict, numeric_cols)
+    insert_message(flagged_message)
 
     return data
 
