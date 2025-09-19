@@ -1,394 +1,189 @@
 #!/usr/bin/env python3
-"""
-Main entry point for wellbore image generation system
-
-This script provides a command-line interface for training and inference
-of GAN models for wellbore image generation.
-
-Usage:
-    # Training
-    python main.py train --config config/training_config.yaml
-    
-    # Inference
-    python main.py generate --model checkpoints/best_model.pth --num_images 100
-    
-    # Evaluation
-    python main.py evaluate --model checkpoints/best_model.pth --data_dir data/test
-"""
+"""Main entry point for Wellbore Image Generation using StyleGAN2"""
 
 import argparse
-import sys
 import os
-from pathlib import Path
+import sys
 import logging
-import torch
-import warnings
+from pathlib import Path
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-# Import project modules
-from src.predictive_maintenance.config import TrainingConfig, InferenceConfig, ConfigManager
-from src.predictive_maintenance.train import GANTrainer
-from src.predictive_maintenance.inference import GANInference
-from src.predictive_maintenance.evaluation import ModelEvaluator
-from src.predictive_maintenance.utils.training_utils import setup_logging, set_seed
-from src.predictive_maintenance.utils.file_utils import ensure_dir
+from config import GANConfig
+from train import train_gan
+from inference import generate_images
+from evaluation import evaluate_model
+from utils import setup_logging, ensure_dir
 
-# Suppress warnings
-warnings.filterwarnings('ignore')
-
-def setup_argument_parser() -> argparse.ArgumentParser:
-    """Setup command line argument parser
-    
-    Returns:
-        Configured argument parser
-    """
+def parse_arguments():
+    """Parse command line arguments"""
     parser = argparse.ArgumentParser(
-        description='Wellbore Image Generation System',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Train a new model
-  python main.py train --config config/training_config.yaml
-  
-  # Resume training from checkpoint
-  python main.py train --config config/training_config.yaml --resume checkpoints/latest.pth
-  
-  # Generate images
-  python main.py generate --model checkpoints/best_model.pth --num_images 50 --output generated/
-  
-  # Evaluate model
-  python main.py evaluate --model checkpoints/best_model.pth --data_dir data/test --output evaluation/
-  
-  # Create default config
-  python main.py create-config --output config/default_config.yaml
-        """
+        description='Wellbore Image Generation using StyleGAN2',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     
-    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+    parser.add_argument(
+        '--mode', 
+        type=str, 
+        choices=['train', 'inference', 'evaluate'], 
+        required=True,
+        help='Operation mode: train, inference, or evaluate'
+    )
     
-    # Training command
-    train_parser = subparsers.add_parser('train', help='Train GAN model')
-    train_parser.add_argument('--config', '-c', type=str, required=True,
-                             help='Path to training configuration file')
-    train_parser.add_argument('--resume', '-r', type=str, default=None,
-                             help='Path to checkpoint to resume from')
-    train_parser.add_argument('--gpu', '-g', type=int, default=None,
-                             help='GPU device ID to use (default: auto-select)')
-    train_parser.add_argument('--seed', '-s', type=int, default=42,
-                             help='Random seed for reproducibility')
-    train_parser.add_argument('--debug', action='store_true',
-                             help='Enable debug mode')
+    parser.add_argument(
+        '--config', 
+        type=str, 
+        default='config/training_config_example.yaml',
+        help='Path to configuration file'
+    )
     
-    # Generation command
-    generate_parser = subparsers.add_parser('generate', help='Generate images')
-    generate_parser.add_argument('--model', '-m', type=str, required=True,
-                                help='Path to trained model checkpoint')
-    generate_parser.add_argument('--config', '-c', type=str, default=None,
-                                help='Path to inference configuration file')
-    generate_parser.add_argument('--num_images', '-n', type=int, default=10,
-                                help='Number of images to generate')
-    generate_parser.add_argument('--output', '-o', type=str, default='generated/',
-                                help='Output directory for generated images')
-    generate_parser.add_argument('--batch_size', '-b', type=int, default=8,
-                                help='Batch size for generation')
-    generate_parser.add_argument('--seed', '-s', type=int, default=None,
-                                help='Random seed for generation')
-    generate_parser.add_argument('--format', '-f', type=str, default='png',
-                                choices=['png', 'jpg', 'jpeg'],
-                                help='Output image format')
+    parser.add_argument(
+        '--output-dir', 
+        type=str, 
+        default='outputs',
+        help='Output directory for generated images or results'
+    )
     
-    # Evaluation command
-    eval_parser = subparsers.add_parser('evaluate', help='Evaluate model')
-    eval_parser.add_argument('--model', '-m', type=str, required=True,
-                            help='Path to trained model checkpoint')
-    eval_parser.add_argument('--data_dir', '-d', type=str, required=True,
-                            help='Path to real images directory for comparison')
-    eval_parser.add_argument('--config', '-c', type=str, default=None,
-                            help='Path to evaluation configuration file')
-    eval_parser.add_argument('--output', '-o', type=str, default='evaluation/',
-                            help='Output directory for evaluation results')
-    eval_parser.add_argument('--num_samples', '-n', type=int, default=1000,
-                            help='Number of samples to generate for evaluation')
-    eval_parser.add_argument('--batch_size', '-b', type=int, default=32,
-                            help='Batch size for evaluation')
+    parser.add_argument(
+        '--checkpoint', 
+        type=str, 
+        default=None,
+        help='Path to model checkpoint for inference or evaluation'
+    )
     
-    # Config creation command
-    config_parser = subparsers.add_parser('create-config', help='Create default configuration file')
-    config_parser.add_argument('--output', '-o', type=str, required=True,
-                              help='Output path for configuration file')
-    config_parser.add_argument('--type', '-t', type=str, default='training',
-                              choices=['training', 'inference'],
-                              help='Type of configuration to create')
+    parser.add_argument(
+        '--num-images', 
+        type=int, 
+        default=100,
+        help='Number of images to generate (inference mode)'
+    )
     
-    # Info command
-    info_parser = subparsers.add_parser('info', help='Show system information')
-    info_parser.add_argument('--model', '-m', type=str, default=None,
-                            help='Path to model checkpoint to analyze')
+    parser.add_argument(
+        '--batch-size', 
+        type=int, 
+        default=None,
+        help='Batch size (overrides config)'
+    )
     
-    return parser
+    parser.add_argument(
+        '--device', 
+        type=str, 
+        default='auto',
+        choices=['auto', 'cpu', 'cuda'],
+        help='Device to use for computation'
+    )
+    
+    parser.add_argument(
+        '--verbose', 
+        action='store_true',
+        help='Enable verbose logging'
+    )
+    
+    parser.add_argument(
+        '--seed', 
+        type=int, 
+        default=42,
+        help='Random seed for reproducibility'
+    )
+    
+    return parser.parse_args()
 
-def train_command(args):
-    """Execute training command
+def setup_device(device_arg):
+    """Setup computation device"""
+    import torch
     
-    Args:
-        args: Parsed command line arguments
-    """
-    print("🚀 Starting GAN training...")
-    
-    # Set random seed
-    set_seed(args.seed)
-    
-    # Load configuration
-    config_manager = ConfigManager()
-    config = config_manager.load_training_config(args.config)
-    
-    # Setup logging
-    log_level = 'DEBUG' if args.debug else config.logging.level
-    logger = setup_logging(config.logging.log_dir, log_level)
-    
-    # Override GPU setting if specified
-    if args.gpu is not None:
-        config.training.device_id = args.gpu
-    
-    # Create trainer
-    trainer = GANTrainer(config)
-    
-    # Resume from checkpoint if specified
-    start_epoch = 0
-    if args.resume:
-        if os.path.exists(args.resume):
-            start_epoch = trainer.load_checkpoint(args.resume)
-            logger.info(f"Resumed training from epoch {start_epoch}")
-        else:
-            logger.warning(f"Checkpoint not found: {args.resume}")
-    
-    try:
-        # Start training
-        trainer.train(start_epoch=start_epoch)
-        print("✅ Training completed successfully!")
-    except KeyboardInterrupt:
-        print("\n⏹️ Training interrupted by user")
-        trainer.save_checkpoint(trainer.current_epoch, is_best=False, 
-                              filename='interrupted_checkpoint.pth')
-        print("💾 Checkpoint saved as 'interrupted_checkpoint.pth'")
-    except Exception as e:
-        logger.error(f"Training failed: {e}")
-        print(f"❌ Training failed: {e}")
-        sys.exit(1)
-
-def generate_command(args):
-    """Execute generation command
-    
-    Args:
-        args: Parsed command line arguments
-    """
-    print(f"🎨 Generating {args.num_images} images...")
-    
-    # Load configuration
-    if args.config:
-        config_manager = ConfigManager()
-        config = config_manager.load_inference_config(args.config)
+    if device_arg == 'auto':
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
     else:
-        config = InferenceConfig()
+        device = device_arg
     
-    # Override settings from command line
-    config.generation.num_images = args.num_images
-    config.generation.batch_size = args.batch_size
-    config.generation.output_dir = args.output
-    config.generation.image_format = args.format
+    if device == 'cuda' and not torch.cuda.is_available():
+        logging.warning("CUDA requested but not available, falling back to CPU")
+        device = 'cpu'
     
-    if args.seed is not None:
-        config.generation.seed = args.seed
-        set_seed(args.seed)
-    
-    # Create inference engine
-    inference = GANInference(config)
-    
-    # Load model
-    if not inference.load_model(args.model):
-        print(f"❌ Failed to load model: {args.model}")
-        sys.exit(1)
-    
-    try:
-        # Generate images
-        output_paths = inference.generate_images()
-        print(f"✅ Generated {len(output_paths)} images successfully!")
-        print(f"📁 Images saved to: {args.output}")
-        
-        # Show some sample paths
-        if output_paths:
-            print("\n📸 Sample generated images:")
-            for i, path in enumerate(output_paths[:5]):
-                print(f"  {i+1}. {path}")
-            if len(output_paths) > 5:
-                print(f"  ... and {len(output_paths) - 5} more")
-                
-    except Exception as e:
-        print(f"❌ Generation failed: {e}")
-        sys.exit(1)
+    logging.info(f"Using device: {device}")
+    return device
 
-def evaluate_command(args):
-    """Execute evaluation command
+def setup_random_seed(seed):
+    """Setup random seed for reproducibility"""
+    import torch
+    import numpy as np
+    import random
     
-    Args:
-        args: Parsed command line arguments
-    """
-    print(f"📊 Evaluating model performance...")
-    
-    # Load configuration
-    if args.config:
-        config_manager = ConfigManager()
-        config = config_manager.load_inference_config(args.config)
-    else:
-        config = InferenceConfig()
-    
-    # Override settings
-    config.generation.num_images = args.num_samples
-    config.generation.batch_size = args.batch_size
-    config.generation.output_dir = os.path.join(args.output, 'generated')
-    
-    # Create evaluator
-    evaluator = ModelEvaluator(config)
-    
-    # Load model
-    if not evaluator.load_model(args.model):
-        print(f"❌ Failed to load model: {args.model}")
-        sys.exit(1)
-    
-    try:
-        # Run evaluation
-        results = evaluator.evaluate(args.data_dir, args.output)
-        
-        print("✅ Evaluation completed successfully!")
-        print(f"📁 Results saved to: {args.output}")
-        
-        # Display key metrics
-        print("\n📈 Key Metrics:")
-        if 'fid' in results:
-            print(f"  FID Score: {results['fid']:.4f}")
-        if 'is_mean' in results:
-            print(f"  Inception Score: {results['is_mean']:.4f} ± {results.get('is_std', 0):.4f}")
-        if 'ssim' in results:
-            print(f"  SSIM Score: {results['ssim']:.4f}")
-        if 'lpips' in results:
-            print(f"  LPIPS Score: {results['lpips']:.4f}")
-            
-    except Exception as e:
-        print(f"❌ Evaluation failed: {e}")
-        sys.exit(1)
-
-def create_config_command(args):
-    """Execute config creation command
-    
-    Args:
-        args: Parsed command line arguments
-    """
-    print(f"📝 Creating {args.type} configuration file...")
-    
-    try:
-        # Ensure output directory exists
-        output_path = Path(args.output)
-        ensure_dir(output_path.parent)
-        
-        # Create configuration
-        config_manager = ConfigManager()
-        
-        if args.type == 'training':
-            config = TrainingConfig()
-            config_manager.save_training_config(config, args.output)
-        else:
-            config = InferenceConfig()
-            config_manager.save_inference_config(config, args.output)
-        
-        print(f"✅ Configuration file created: {args.output}")
-        print("\n📋 You can now edit this file to customize your settings.")
-        
-    except Exception as e:
-        print(f"❌ Failed to create configuration: {e}")
-        sys.exit(1)
-
-def info_command(args):
-    """Execute info command
-    
-    Args:
-        args: Parsed command line arguments
-    """
-    print("ℹ️ System Information")
-    print("=" * 50)
-    
-    # Python and PyTorch info
-    print(f"Python Version: {sys.version.split()[0]}")
-    print(f"PyTorch Version: {torch.__version__}")
-    print(f"CUDA Available: {torch.cuda.is_available()}")
-    
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
     if torch.cuda.is_available():
-        print(f"CUDA Version: {torch.version.cuda}")
-        print(f"GPU Count: {torch.cuda.device_count()}")
-        for i in range(torch.cuda.device_count()):
-            print(f"  GPU {i}: {torch.cuda.get_device_name(i)}")
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
     
-    # Project info
-    print(f"\nProject Root: {project_root}")
-    
-    # Model info
-    if args.model and os.path.exists(args.model):
-        print(f"\n📦 Model Information")
-        print("-" * 30)
-        
-        try:
-            checkpoint = torch.load(args.model, map_location='cpu')
-            
-            if 'epoch' in checkpoint:
-                print(f"Epoch: {checkpoint['epoch']}")
-            if 'iteration' in checkpoint:
-                print(f"Iteration: {checkpoint['iteration']}")
-            if 'best_score' in checkpoint:
-                print(f"Best Score: {checkpoint['best_score']}")
-            if 'config' in checkpoint:
-                print(f"Model Config: Available")
-            
-            # Model size
-            file_size = os.path.getsize(args.model)
-            print(f"File Size: {file_size / (1024*1024):.2f} MB")
-            
-        except Exception as e:
-            print(f"❌ Failed to load model info: {e}")
+    logging.info(f"Random seed set to: {seed}")
 
 def main():
-    """Main entry point"""
-    parser = setup_argument_parser()
-    args = parser.parse_args()
+    """Main function"""
+    args = parse_arguments()
     
-    # Show help if no command specified
-    if not args.command:
-        parser.print_help()
-        return
+    # Setup logging
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    setup_logging(level=log_level)
     
-    # Execute command
+    logging.info("Starting Wellbore Image Generation System")
+    logging.info(f"Mode: {args.mode}")
+    logging.info(f"Config: {args.config}")
+    
+    # Setup device and random seed
+    device = setup_device(args.device)
+    setup_random_seed(args.seed)
+    
+    # Ensure output directory exists
+    ensure_dir(args.output_dir)
+    
     try:
-        if args.command == 'train':
-            train_command(args)
-        elif args.command == 'generate':
-            generate_command(args)
-        elif args.command == 'evaluate':
-            evaluate_command(args)
-        elif args.command == 'create-config':
-            create_config_command(args)
-        elif args.command == 'info':
-            info_command(args)
-        else:
-            print(f"❌ Unknown command: {args.command}")
-            parser.print_help()
-            sys.exit(1)
+        # Load configuration
+        if not os.path.exists(args.config):
+            raise FileNotFoundError(f"Configuration file not found: {args.config}")
+        
+        config = GANConfig.from_yaml(args.config)
+        
+        # Override config with command line arguments
+        config.DEVICE = device
+        if args.batch_size is not None:
+            config.BATCH_SIZE = args.batch_size
+        
+        # Execute based on mode
+        if args.mode == 'train':
+            logging.info("Starting training...")
+            train_gan(config, args.output_dir)
             
-    except KeyboardInterrupt:
-        print("\n⏹️ Operation interrupted by user")
-        sys.exit(0)
+        elif args.mode == 'inference':
+            logging.info("Starting inference...")
+            if args.checkpoint is None:
+                raise ValueError("Checkpoint path required for inference mode")
+            
+            generate_images(
+                config=config,
+                checkpoint_path=args.checkpoint,
+                output_dir=args.output_dir,
+                num_images=args.num_images
+            )
+            
+        elif args.mode == 'evaluate':
+            logging.info("Starting evaluation...")
+            if args.checkpoint is None:
+                raise ValueError("Checkpoint path required for evaluation mode")
+            
+            evaluate_model(
+                config=config,
+                checkpoint_path=args.checkpoint,
+                output_dir=args.output_dir
+            )
+        
+        logging.info(f"Operation completed successfully. Results saved to: {args.output_dir}")
+        
     except Exception as e:
-        print(f"❌ Unexpected error: {e}")
+        logging.error(f"Error during execution: {str(e)}")
         sys.exit(1)
 
 if __name__ == '__main__':

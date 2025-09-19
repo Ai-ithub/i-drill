@@ -1,0 +1,535 @@
+#!/usr/bin/env python3
+"""
+Main Script for RUL Prediction
+
+This script provides a complete pipeline for training and evaluating
+deep learning models for remaining useful life prediction.
+"""
+
+import argparse
+import logging
+import torch
+import numpy as np
+from pathlib import Path
+import yaml
+from typing import Dict, Any
+
+# Import RUL prediction modules
+from data_loader import RULDataLoader
+from models import create_model, BaselineRULModel
+from trainer import RULTrainer
+from evaluator import RULEvaluator, BaselineEvaluator, compare_all_models
+
+def setup_logging(log_level: str = 'INFO'):
+    """
+    Setup logging configuration
+    
+    Args:
+        log_level: Logging level
+    """
+    logging.basicConfig(
+        level=getattr(logging, log_level.upper()),
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler('rul_prediction.log'),
+            logging.StreamHandler()
+        ]
+    )
+
+def load_config(config_path: str) -> Dict[str, Any]:
+    """
+    Load configuration from YAML file
+    
+    Args:
+        config_path: Path to configuration file
+        
+    Returns:
+        Configuration dictionary
+    """
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        return config
+    except FileNotFoundError:
+        logging.warning(f"Config file {config_path} not found. Using default configuration.")
+        return get_default_config()
+
+def get_default_config() -> Dict[str, Any]:
+    """
+    Get default configuration
+    
+    Returns:
+        Default configuration dictionary
+    """
+    return {
+        'data': {
+            'data_path': './data/task31_processed',
+            'sequence_length': 50,
+            'test_size': 0.2,
+            'val_size': 0.1,
+            'scaler_type': 'standard'
+        },
+        'model': {
+            'type': 'lstm',  # 'lstm', 'transformer', 'cnn_lstm'
+            'hidden_dim': 128,
+            'num_layers': 2,
+            'dropout': 0.2,
+            'bidirectional': True
+        },
+        'training': {
+            'epochs': 100,
+            'learning_rate': 0.001,
+            'weight_decay': 1e-5,
+            'scheduler_type': 'cosine',
+            'patience': 10,
+            'batch_size': 32
+        },
+        'evaluation': {
+            'detailed_analysis': True,
+            'save_predictions': True
+        },
+        'paths': {
+            'checkpoints': './checkpoints',
+            'results': './results'
+        }
+    }
+
+def create_config_file(config_path: str):
+    """
+    Create a default configuration file
+    
+    Args:
+        config_path: Path where to save the config file
+    """
+    config = get_default_config()
+    
+    with open(config_path, 'w') as f:
+        yaml.dump(config, f, default_flow_style=False, indent=2)
+    
+    print(f"Default configuration saved to {config_path}")
+    print("Please modify the configuration as needed and run the script again.")
+
+def train_model(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Train RUL prediction model
+    
+    Args:
+        config: Configuration dictionary
+        
+    Returns:
+        Training results
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("Starting RUL model training...")
+    
+    # Initialize data loader
+    data_loader = RULDataLoader(
+        data_path=config['data']['data_path'],
+        sequence_length=config['data']['sequence_length'],
+        test_size=config['data']['test_size'],
+        val_size=config['data']['val_size'],
+        scaler_type=config['data']['scaler_type']
+    )
+    
+    # Prepare data
+    train_loader, val_loader, test_loader = data_loader.prepare_data()
+    input_dim = data_loader.get_feature_dim()
+    
+    logger.info(f"Data prepared - Input dimension: {input_dim}")
+    logger.info(f"Train samples: {len(train_loader.dataset)}")
+    logger.info(f"Validation samples: {len(val_loader.dataset)}")
+    logger.info(f"Test samples: {len(test_loader.dataset)}")
+    
+    # Create model
+    model = create_model(
+        model_type=config['model']['type'],
+        input_dim=input_dim,
+        **{k: v for k, v in config['model'].items() if k != 'type'}
+    )
+    
+    logger.info(f"Created {config['model']['type'].upper()} model")
+    logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+    
+    # Initialize trainer
+    trainer = RULTrainer(
+        model=model,
+        learning_rate=config['training']['learning_rate'],
+        weight_decay=config['training']['weight_decay'],
+        scheduler_type=config['training']['scheduler_type'],
+        patience=config['training']['patience'],
+        save_dir=config['paths']['checkpoints']
+    )
+    
+    # Train model
+    training_history = trainer.train(
+        train_loader=train_loader,
+        val_loader=val_loader,
+        epochs=config['training']['epochs'],
+        save_best=True,
+        plot_progress=True
+    )
+    
+    return {
+        'model': model,
+        'trainer': trainer,
+        'data_loader': data_loader,
+        'test_loader': test_loader,
+        'training_history': training_history
+    }
+
+def evaluate_model(model: torch.nn.Module, test_loader, config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Evaluate trained model
+    
+    Args:
+        model: Trained model
+        test_loader: Test data loader
+        config: Configuration dictionary
+        
+    Returns:
+        Evaluation results
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("Starting model evaluation...")
+    
+    # Initialize evaluator
+    evaluator = RULEvaluator(
+        model=model,
+        save_dir=config['paths']['results']
+    )
+    
+    # Evaluate model
+    evaluation_results = evaluator.evaluate(
+        test_loader=test_loader,
+        detailed_analysis=config['evaluation']['detailed_analysis']
+    )
+    
+    return exported_path
+
+
+def compare_models(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Compare deep learning models with baseline models
+    
+    Args:
+        config: Configuration dictionary
+        
+    Returns:
+        Comparison results
+    """
+    logger = logging.getLogger(__name__)
+    
+    # Load data
+    data_loader = RULDataLoader(
+        data_path=config['data']['data_path'],
+        sequence_length=config['data']['sequence_length'],
+        test_size=config['data']['test_size'],
+        val_size=config['data']['val_size'],
+        scaler_type=config['data']['scaler_type']
+    )
+    
+    train_loader, val_loader, test_loader = data_loader.prepare_data()
+    input_dim = data_loader.get_feature_dim()
+    
+    # Get test data for baseline models
+    X_test, y_test = [], []
+    for batch_x, batch_y in test_loader:
+        X_test.append(batch_x.numpy())
+        y_test.append(batch_y.numpy())
+    
+    X_test = np.concatenate(X_test, axis=0)
+    y_test = np.concatenate(y_test, axis=0)
+    
+    # Flatten sequences for baseline models
+    X_test_flat = X_test.reshape(X_test.shape[0], -1)
+    
+    # Train and evaluate baseline models
+    baseline_results = {}
+    baseline_models = ['linear', 'random_forest', 'svr']
+    
+    logger.info("Training and evaluating baseline models...")
+    
+    for model_type in baseline_models:
+        logger.info(f"Training {model_type} model...")
+        
+        # Create and train baseline model
+        baseline_model = BaselineRULModel(model_type=model_type)
+        
+        # Get training data for baseline
+        X_train, y_train = [], []
+        for batch_x, batch_y in train_loader:
+            X_train.append(batch_x.numpy())
+            y_train.append(batch_y.numpy())
+        
+        X_train = np.concatenate(X_train, axis=0)
+        y_train = np.concatenate(y_train, axis=0)
+        X_train_flat = X_train.reshape(X_train.shape[0], -1)
+        
+        # Train the model
+        baseline_model.fit(X_train_flat, y_train)
+        
+        # Evaluate the model
+        evaluator = BaselineEvaluator(
+            model=baseline_model,
+            save_dir=f"{config['paths']['results']}/baseline_{model_type}"
+        )
+        
+        results = evaluator.evaluate(X_test_flat, y_test)
+        baseline_results[f"{model_type.replace('_', ' ').title()}"] = results
+        
+        logger.info(f"{model_type} - RMSE: {results['metrics']['rmse']:.3f}, "
+                   f"MAE: {results['metrics']['mae']:.3f}, "
+                   f"R²: {results['metrics']['r2_score']:.3f}")
+    
+    # Load and evaluate deep learning models (if available)
+    deep_results = {}
+    
+    # Check for existing trained models
+    checkpoints_dir = Path(config['paths']['checkpoints'])
+    model_types = ['lstm', 'transformer', 'cnn_lstm']
+    
+    logger.info("Evaluating deep learning models...")
+    
+    for model_type in model_types:
+        model_path = checkpoints_dir / f"best_{model_type}_model.pth"
+        
+        if model_path.exists():
+            logger.info(f"Evaluating {model_type} model...")
+            
+            # Create model
+            model = create_model(
+                model_type=model_type,
+                input_dim=input_dim,
+                **{k: v for k, v in config['model'].items() if k != 'type'}
+            )
+            
+            # Load checkpoint
+            checkpoint = torch.load(model_path)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            
+            # Evaluate
+            evaluator = RULEvaluator(
+                model=model,
+                save_dir=f"{config['paths']['results']}/{model_type}"
+            )
+            
+            results = evaluator.evaluate(test_loader, detailed_analysis=False)
+            deep_results[f"{model_type.upper().replace('_', '-')}"] = results
+            
+            logger.info(f"{model_type} - RMSE: {results['metrics']['rmse']:.3f}, "
+                       f"MAE: {results['metrics']['mae']:.3f}, "
+                       f"R²: {results['metrics']['r2_score']:.3f}")
+        else:
+            logger.warning(f"No trained model found for {model_type} at {model_path}")
+    
+    # Compare all models
+    if deep_results or baseline_results:
+        logger.info("Creating comprehensive comparison...")
+        
+        comparison_df = compare_all_models(
+            deep_results=deep_results,
+            baseline_results=baseline_results,
+            save_dir=config['paths']['results']
+        )
+        
+        logger.info("\nModel Comparison Summary:")
+        logger.info(f"\n{comparison_df.to_string(index=False)}")
+        
+        # Find best models
+        best_rmse = comparison_df.loc[comparison_df['RMSE'].idxmin()]
+        best_r2 = comparison_df.loc[comparison_df['R²'].idxmax()]
+        
+        logger.info(f"\nBest RMSE: {best_rmse['Model']} ({best_rmse['Type']}) - {best_rmse['RMSE']:.3f}")
+        logger.info(f"Best R²: {best_r2['Model']} ({best_r2['Type']}) - {best_r2['R²']:.3f}")
+        
+        return {
+            'comparison_df': comparison_df,
+            'deep_results': deep_results,
+            'baseline_results': baseline_results,
+            'best_rmse_model': best_rmse.to_dict(),
+            'best_r2_model': best_r2.to_dict()
+        }
+    else:
+        logger.error("No models available for comparison!")
+        return {}
+
+
+def export_model(config: Dict[str, Any], model_path: str, onnx_path: str = None) -> str:
+    """
+    Export a trained model to ONNX format
+    
+    Args:
+        config: Configuration dictionary
+        model_path: Path to the trained PyTorch model
+        onnx_path: Path to save ONNX model (optional)
+        
+    Returns:
+        Path to the exported ONNX model
+    """
+    logger = logging.getLogger(__name__)
+    
+    # Load data to get input dimensions
+    data_loader = RULDataLoader(
+        data_path=config['data']['data_path'],
+        sequence_length=config['data']['sequence_length'],
+        test_size=config['data']['test_size'],
+        val_size=config['data']['val_size'],
+        scaler_type=config['data']['scaler_type']
+    )
+    
+    # Get feature dimension
+    input_dim = data_loader.get_feature_dim()
+    sequence_length = config['data']['sequence_length']
+    
+    # Create model
+    model = create_model(
+        model_type=config['model']['type'],
+        input_dim=input_dim,
+        **{k: v for k, v in config['model'].items() if k != 'type'}
+    )
+    
+    # Load model weights
+    checkpoint = torch.load(model_path, map_location='cpu')
+    if 'model_state_dict' in checkpoint:
+        model.load_state_dict(checkpoint['model_state_dict'])
+    else:
+        model.load_state_dict(checkpoint)
+    
+    logger.info(f"Loaded model from {model_path}")
+    
+    # Create trainer for export functionality
+    trainer = RULTrainer(model=model)
+    
+    # Define input shape (batch_size=1 for inference)
+    input_shape = (1, sequence_length, input_dim)
+    
+    # Export to ONNX
+    exported_path = trainer.export_to_onnx(
+        input_shape=input_shape,
+        onnx_path=onnx_path,
+        verify_export=True
+    )
+    
+    logger.info(f"Model successfully exported to ONNX: {exported_path}")
+    
+    return exported_path
+
+def main():
+    """
+    Main function
+    """
+    parser = argparse.ArgumentParser(description='RUL Prediction with Deep Learning')
+    parser.add_argument('--config', type=str, default='config.yaml',
+                       help='Path to configuration file')
+    parser.add_argument('--mode', type=str, choices=['train', 'evaluate', 'both', 'export', 'compare'],
+                       default='both', help='Mode: train, evaluate, both, export, or compare')
+    parser.add_argument('--model-path', type=str, default=None,
+                       help='Path to pre-trained model (for evaluation/export mode)')
+    parser.add_argument('--onnx-path', type=str, default=None,
+                       help='Path to save ONNX model (for export mode)')
+    parser.add_argument('--create-config', action='store_true',
+                       help='Create default configuration file and exit')
+    parser.add_argument('--log-level', type=str, default='INFO',
+                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+                       help='Logging level')
+    
+    args = parser.parse_args()
+    
+    # Setup logging
+    setup_logging(args.log_level)
+    logger = logging.getLogger(__name__)
+    
+    # Create config file if requested
+    if args.create_config:
+        create_config_file(args.config)
+        return
+    
+    # Load configuration
+    config = load_config(args.config)
+    
+    # Create directories
+    Path(config['paths']['checkpoints']).mkdir(parents=True, exist_ok=True)
+    Path(config['paths']['results']).mkdir(parents=True, exist_ok=True)
+    
+    logger.info(f"Starting RUL prediction pipeline in '{args.mode}' mode")
+    logger.info(f"Configuration: {args.config}")
+    
+    try:
+        if args.mode in ['train', 'both']:
+            # Training mode
+            training_results = train_model(config)
+            
+            if args.mode == 'both':
+                # Evaluate the trained model
+                evaluation_results = evaluate_model(
+                    model=training_results['model'],
+                    test_loader=training_results['test_loader'],
+                    config=config
+                )
+                
+                logger.info("Training and evaluation completed successfully!")
+                
+        elif args.mode == 'evaluate':
+            # Evaluation mode with pre-trained model
+            if args.model_path is None:
+                raise ValueError("Model path must be specified for evaluation mode")
+            
+            # Load data
+            data_loader = RULDataLoader(
+                data_path=config['data']['data_path'],
+                sequence_length=config['data']['sequence_length'],
+                test_size=config['data']['test_size'],
+                val_size=config['data']['val_size'],
+                scaler_type=config['data']['scaler_type']
+            )
+            
+            _, _, test_loader = data_loader.prepare_data()
+            input_dim = data_loader.get_feature_dim()
+            
+            # Load model
+            model = create_model(
+                model_type=config['model']['type'],
+                input_dim=input_dim,
+                **{k: v for k, v in config['model'].items() if k != 'type'}
+            )
+            
+            # Load checkpoint
+            checkpoint = torch.load(args.model_path)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            
+            # Evaluate
+            evaluation_results = evaluate_model(model, test_loader, config)
+            
+            logger.info("Evaluation completed successfully!")
+            
+        elif args.mode == 'export':
+            # Export mode - convert model to ONNX
+            if args.model_path is None:
+                raise ValueError("Model path must be specified for export mode")
+            
+            # Export model to ONNX
+            exported_path = export_model(
+                config=config,
+                model_path=args.model_path,
+                onnx_path=args.onnx_path
+            )
+            
+            logger.info(f"Model export completed successfully! ONNX model saved to: {exported_path}")
+            
+        elif args.mode == 'compare':
+            # Compare mode - compare deep learning models with baselines
+            comparison_results = compare_models(config)
+            
+            if comparison_results:
+                logger.info("Model comparison completed successfully!")
+            else:
+                logger.warning("No comparison results generated!")
+            
+    except Exception as e:
+        logger.error(f"Error during execution: {str(e)}")
+        raise
+    
+    logger.info("RUL prediction pipeline completed!")
+
+if __name__ == '__main__':
+    main()

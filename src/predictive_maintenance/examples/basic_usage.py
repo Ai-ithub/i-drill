@@ -1,269 +1,559 @@
 #!/usr/bin/env python3
-"""
-Basic Usage Examples for Wellbore Image Generation System
-
-This script demonstrates how to use the GAN system programmatically
-for training, inference, and evaluation.
-"""
+"""Basic usage examples for wellbore image generation with StyleGAN2"""
 
 import os
 import sys
-import torch
+import logging
+import argparse
 from pathlib import Path
+from typing import Dict, List, Optional
 
-# Add the parent directory to the path to import modules
+# Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from config.training_config import TrainingConfig
-from config.inference_config import InferenceConfig
-from train import GANTrainer
-from inference import GANInference
-from evaluation.metrics import EvaluationMetrics
-from utils.file_utils import ensure_dir_exists
-
+from config import GANConfig
+from gan import StyleGAN2Generator, StyleGAN2Discriminator
+from train import train_model
+from inference import ImageGenerator, generate_images
+from evaluation import ModelEvaluator, evaluate_model
+from data import WellboreImageDataset, create_dataloader
+from utils import setup_logging, get_device, ensure_dir
 
 def example_training():
-    """
-    Example: Training a GAN model from scratch
-    """
-    print("=== Training Example ===")
+    """Example: Train a StyleGAN2 model from scratch"""
+    print("\n" + "="*50)
+    print("EXAMPLE 1: Training StyleGAN2 Model")
+    print("="*50)
     
-    # Load training configuration
-    config_path = "config/training_config_example.yaml"
-    config = TrainingConfig.from_yaml(config_path)
+    # Create configuration
+    config = GANConfig(
+        # Data settings
+        data_path="data/wellbore_images",
+        image_size=256,
+        batch_size=16,
+        
+        # Model settings
+        latent_dim=512,
+        num_mapping_layers=8,
+        
+        # Training settings
+        num_epochs=100,
+        learning_rate=0.002,
+        beta1=0.0,
+        beta2=0.99,
+        
+        # Output settings
+        output_dir="outputs/training",
+        checkpoint_dir="checkpoints",
+        sample_dir="samples",
+        
+        # Logging
+        log_interval=100,
+        save_interval=1000,
+        sample_interval=500
+    )
     
-    # Modify config for quick demo (optional)
-    config.training.epochs = 10  # Reduce for demo
-    config.training.batch_size = 4  # Reduce for demo
-    config.data.train_dir = "data/train"  # Update paths as needed
-    config.data.val_dir = "data/val"
+    print(f"Configuration created:")
+    print(f"  Data path: {config.data_path}")
+    print(f"  Image size: {config.image_size}")
+    print(f"  Batch size: {config.batch_size}")
+    print(f"  Latent dimension: {config.latent_dim}")
+    print(f"  Number of epochs: {config.num_epochs}")
     
-    # Create trainer
-    trainer = GANTrainer(config)
+    # Check if data exists
+    if not os.path.exists(config.data_path):
+        print(f"\nWarning: Data path '{config.data_path}' does not exist.")
+        print("Please prepare your dataset first using data_preparation.py")
+        print("Example: python data_preparation.py --action sample --output-dir data/wellbore_images")
+        return
     
     # Start training
-    print(f"Starting training for {config.training.epochs} epochs...")
-    trainer.train()
+    print(f"\nStarting training...")
+    print(f"Output directory: {config.output_dir}")
     
-    print("Training completed!")
-    print(f"Best model saved at: {trainer.best_model_path}")
-
-
-def example_inference():
-    """
-    Example: Generating images using a trained model
-    """
-    print("\n=== Inference Example ===")
-    
-    # Load inference configuration
-    config_path = "config/inference_config_example.yaml"
-    config = InferenceConfig.from_yaml(config_path)
-    
-    # Update model path (use your trained model)
-    config.model.model_path = "checkpoints/best_model.pth"
-    config.generation.num_images = 10  # Generate 10 images
-    config.generation.output_dir = "examples/generated"
-    
-    # Ensure output directory exists
-    ensure_dir_exists(config.generation.output_dir)
-    
-    # Create inference engine
-    inference = GANInference(config)
-    
-    # Load the trained model
-    print(f"Loading model from: {config.model.model_path}")
-    inference.load_model(config.model.model_path)
-    
-    # Generate images
-    print(f"Generating {config.generation.num_images} images...")
-    generated_images = inference.generate_batch(
-        num_images=config.generation.num_images,
-        batch_size=config.generation.batch_size
-    )
-    
-    # Save images
-    for i, image in enumerate(generated_images):
-        output_path = os.path.join(
-            config.generation.output_dir,
-            f"generated_{i:04d}.{config.generation.image_format}"
-        )
-        inference.save_image(image, output_path)
-    
-    print(f"Images saved to: {config.generation.output_dir}")
-
-
-def example_evaluation():
-    """
-    Example: Evaluating generated images
-    """
-    print("\n=== Evaluation Example ===")
-    
-    # Paths
-    real_images_dir = "data/test"  # Directory with real images
-    generated_images_dir = "examples/generated"  # Directory with generated images
-    
-    # Check if directories exist
-    if not os.path.exists(real_images_dir):
-        print(f"Real images directory not found: {real_images_dir}")
-        return
-    
-    if not os.path.exists(generated_images_dir):
-        print(f"Generated images directory not found: {generated_images_dir}")
-        return
-    
-    # Create evaluation metrics calculator
-    evaluator = EvaluationMetrics(
-        device="cuda" if torch.cuda.is_available() else "cpu"
-    )
-    
-    # Calculate metrics
-    print("Calculating evaluation metrics...")
-    metrics = evaluator.calculate_all_metrics(
-        real_images_dir=real_images_dir,
-        generated_images_dir=generated_images_dir,
-        num_samples=100  # Use subset for demo
-    )
-    
-    # Print results
-    print("\nEvaluation Results:")
-    print(f"FID Score: {metrics['fid']:.4f}")
-    print(f"Inception Score: {metrics['inception_score']:.4f} ± {metrics['inception_score_std']:.4f}")
-    print(f"LPIPS: {metrics['lpips']:.4f}")
-    print(f"SSIM: {metrics['ssim']:.4f}")
-    print(f"PSNR: {metrics['psnr']:.4f}")
-    print(f"Diversity Score: {metrics['diversity']:.4f}")
-    print(f"Mode Collapse Score: {metrics['mode_collapse']:.4f}")
-    
-    # Save metrics
-    metrics_path = "examples/evaluation_results.json"
-    evaluator.save_metrics(metrics, metrics_path)
-    print(f"\nMetrics saved to: {metrics_path}")
-
-
-def example_custom_generation():
-    """
-    Example: Custom image generation with specific parameters
-    """
-    print("\n=== Custom Generation Example ===")
-    
-    # Load configuration
-    config = InferenceConfig.from_yaml("config/inference_config_example.yaml")
-    config.model.model_path = "checkpoints/best_model.pth"
-    
-    # Create inference engine
-    inference = GANInference(config)
-    inference.load_model(config.model.model_path)
-    
-    # Generate with specific seed for reproducibility
-    print("Generating images with specific seeds...")
-    seeds = [42, 123, 456, 789, 999]
-    
-    for i, seed in enumerate(seeds):
-        # Set seed
-        torch.manual_seed(seed)
-        
-        # Generate single image
-        image = inference.generate_single()
-        
-        # Save with seed in filename
-        output_path = f"examples/generated/seed_{seed:04d}.png"
-        inference.save_image(image, output_path)
-        
-        print(f"Generated image with seed {seed}: {output_path}")
-
-
-def example_style_mixing():
-    """
-    Example: Style mixing between two latent codes
-    """
-    print("\n=== Style Mixing Example ===")
-    
-    # Load configuration
-    config = InferenceConfig.from_yaml("config/inference_config_example.yaml")
-    config.model.model_path = "checkpoints/best_model.pth"
-    
-    # Create inference engine
-    inference = GANInference(config)
-    inference.load_model(config.model.model_path)
-    
-    # Generate two base latent codes
-    latent_dim = config.model.generator.latent_dim
-    device = config.model.device
-    
-    latent1 = torch.randn(1, latent_dim, device=device)
-    latent2 = torch.randn(1, latent_dim, device=device)
-    
-    # Create interpolation between latents
-    num_steps = 5
-    alphas = torch.linspace(0, 1, num_steps)
-    
-    print(f"Creating {num_steps} interpolated images...")
-    
-    for i, alpha in enumerate(alphas):
-        # Interpolate latent codes
-        mixed_latent = (1 - alpha) * latent1 + alpha * latent2
-        
-        # Generate image
-        with torch.no_grad():
-            image = inference.generator(mixed_latent)
-        
-        # Convert to PIL and save
-        pil_image = inference.tensor_to_pil(image[0])
-        output_path = f"examples/generated/interpolation_{i:02d}_alpha_{alpha:.2f}.png"
-        pil_image.save(output_path)
-        
-        print(f"Saved interpolation step {i}: {output_path}")
-
-
-def main():
-    """
-    Main function to run all examples
-    """
-    print("Wellbore Image Generation - Usage Examples")
-    print("==========================================\n")
-    
-    # Create necessary directories
-    os.makedirs("examples/generated", exist_ok=True)
-    os.makedirs("data/train", exist_ok=True)
-    os.makedirs("data/val", exist_ok=True)
-    os.makedirs("data/test", exist_ok=True)
-    
-    # Check if CUDA is available
-    if torch.cuda.is_available():
-        print(f"CUDA is available. Using GPU: {torch.cuda.get_device_name()}")
-    else:
-        print("CUDA not available. Using CPU.")
-    
-    print("\nNote: Make sure you have:")
-    print("1. Prepared your dataset in data/train, data/val, data/test")
-    print("2. Trained a model or have a pretrained model checkpoint")
-    print("3. Updated the configuration files with correct paths\n")
-    
-    # Run examples (comment out as needed)
     try:
-        # Training example (requires dataset)
-        # example_training()
-        
-        # Inference example (requires trained model)
-        # example_inference()
-        
-        # Evaluation example (requires real and generated images)
-        # example_evaluation()
-        
-        # Custom generation examples (requires trained model)
-        # example_custom_generation()
-        # example_style_mixing()
-        
-        print("\nExamples completed successfully!")
-        print("Uncomment the example functions you want to run.")
+        # Train the model
+        train_model(config)
+        print("\nTraining completed successfully!")
         
     except Exception as e:
-        print(f"\nError running examples: {e}")
-        print("Make sure you have:")
-        print("- Proper dataset structure")
-        print("- Trained model checkpoint")
-        print("- Correct configuration files")
+        print(f"\nTraining failed: {str(e)}")
+        print("Please check your data and configuration.")
 
+def example_inference():
+    """Example: Generate images using a trained model"""
+    print("\n" + "="*50)
+    print("EXAMPLE 2: Image Generation")
+    print("="*50)
+    
+    # Configuration for inference
+    model_path = "checkpoints/stylegan2_generator_latest.pth"
+    output_dir = "outputs/generated_images"
+    num_images = 16
+    
+    print(f"Model path: {model_path}")
+    print(f"Output directory: {output_dir}")
+    print(f"Number of images: {num_images}")
+    
+    # Check if model exists
+    if not os.path.exists(model_path):
+        print(f"\nWarning: Model file '{model_path}' does not exist.")
+        print("Please train a model first using example_training() or:")
+        print("python main.py --mode train --config configs/default.yaml")
+        return
+    
+    try:
+        # Create configuration (minimal for inference)
+        config = GANConfig(
+            latent_dim=512,
+            image_size=256,
+            num_mapping_layers=8
+        )
+        
+        # Generate images
+        print("\nGenerating images...")
+        
+        generate_images(
+            config=config,
+            model_path=model_path,
+            output_dir=output_dir,
+            num_images=num_images
+        )
+        
+        print(f"\nImages generated successfully!")
+        print(f"Check the output directory: {output_dir}")
+        
+    except Exception as e:
+        print(f"\nImage generation failed: {str(e)}")
 
-if __name__ == "__main__":
+def example_custom_generation():
+    """Example: Custom image generation with specific latent codes"""
+    print("\n" + "="*50)
+    print("EXAMPLE 3: Custom Image Generation")
+    print("="*50)
+    
+    model_path = "checkpoints/stylegan2_generator_latest.pth"
+    output_dir = "outputs/custom_generation"
+    
+    if not os.path.exists(model_path):
+        print(f"Model file '{model_path}' does not exist. Please train a model first.")
+        return
+    
+    try:
+        import torch
+        import numpy as np
+        
+        # Create configuration
+        config = GANConfig(
+            latent_dim=512,
+            image_size=256,
+            num_mapping_layers=8
+        )
+        
+        # Initialize generator
+        print("Loading generator...")
+        generator = ImageGenerator(config, model_path)
+        
+        ensure_dir(output_dir)
+        
+        # Example 1: Generate from random latent codes
+        print("\n1. Generating from random latent codes...")
+        random_images = generator.generate_random(num_images=4)
+        generator.save_images(random_images, output_dir, prefix="random")
+        
+        # Example 2: Generate from specific latent codes
+        print("2. Generating from specific latent codes...")
+        
+        # Create specific latent codes
+        device = get_device()
+        latent_codes = []
+        
+        # Smooth latent code (low values)
+        smooth_latent = torch.randn(1, config.latent_dim, device=device) * 0.5
+        latent_codes.append(smooth_latent)
+        
+        # Sharp latent code (high values)
+        sharp_latent = torch.randn(1, config.latent_dim, device=device) * 2.0
+        latent_codes.append(sharp_latent)
+        
+        # Mixed latent code
+        mixed_latent = torch.cat([
+            torch.randn(1, config.latent_dim // 2, device=device) * 0.5,
+            torch.randn(1, config.latent_dim // 2, device=device) * 1.5
+        ], dim=1)
+        latent_codes.append(mixed_latent)
+        
+        specific_images = generator.generate_from_latents(latent_codes)
+        generator.save_images(specific_images, output_dir, prefix="specific")
+        
+        # Example 3: Style mixing
+        print("3. Generating with style mixing...")
+        
+        # Generate two base latent codes
+        latent1 = torch.randn(1, config.latent_dim, device=device)
+        latent2 = torch.randn(1, config.latent_dim, device=device)
+        
+        # Create style mixing at different layers
+        mixed_images = generator.generate_style_mixing(
+            latent1, latent2, 
+            mixing_layers=[4, 8, 12]  # Mix at these layers
+        )
+        generator.save_images(mixed_images, output_dir, prefix="style_mixed")
+        
+        # Example 4: Interpolation
+        print("4. Generating interpolation sequence...")
+        
+        interpolated_images = generator.generate_interpolation(
+            latent1, latent2, steps=8
+        )
+        generator.save_images(interpolated_images, output_dir, prefix="interpolation")
+        
+        # Create interpolation video
+        generator.create_interpolation_video(
+            latent1, latent2,
+            output_path=os.path.join(output_dir, "interpolation.mp4"),
+            steps=30, fps=10
+        )
+        
+        print(f"\nCustom generation completed!")
+        print(f"Check the output directory: {output_dir}")
+        
+    except Exception as e:
+        print(f"\nCustom generation failed: {str(e)}")
+
+def example_evaluation():
+    """Example: Evaluate model quality"""
+    print("\n" + "="*50)
+    print("EXAMPLE 4: Model Evaluation")
+    print("="*50)
+    
+    model_path = "checkpoints/stylegan2_generator_latest.pth"
+    real_data_path = "data/wellbore_images"
+    output_dir = "outputs/evaluation"
+    
+    print(f"Model path: {model_path}")
+    print(f"Real data path: {real_data_path}")
+    print(f"Output directory: {output_dir}")
+    
+    if not os.path.exists(model_path):
+        print(f"Model file '{model_path}' does not exist. Please train a model first.")
+        return
+    
+    if not os.path.exists(real_data_path):
+        print(f"Real data path '{real_data_path}' does not exist.")
+        return
+    
+    try:
+        # Create configuration
+        config = GANConfig(
+            latent_dim=512,
+            image_size=256,
+            num_mapping_layers=8,
+            batch_size=16
+        )
+        
+        print("\nStarting evaluation...")
+        
+        # Evaluate model
+        results = evaluate_model(
+            config=config,
+            model_path=model_path,
+            real_data_path=real_data_path,
+            output_dir=output_dir,
+            num_samples=1000  # Number of samples for evaluation
+        )
+        
+        print("\nEvaluation Results:")
+        print(f"FID Score: {results['fid']:.4f}")
+        print(f"IS Score: {results['is_mean']:.4f} ± {results['is_std']:.4f}")
+        print(f"LPIPS Score: {results['lpips']:.4f}")
+        
+        # Interpretation
+        print("\nInterpretation:")
+        if results['fid'] < 50:
+            print("✓ FID: Excellent quality (< 50)")
+        elif results['fid'] < 100:
+            print("○ FID: Good quality (50-100)")
+        else:
+            print("✗ FID: Needs improvement (> 100)")
+        
+        if results['is_mean'] > 3:
+            print("✓ IS: Good diversity and quality (> 3)")
+        else:
+            print("○ IS: Moderate quality/diversity (< 3)")
+        
+        if results['lpips'] > 0.3:
+            print("✓ LPIPS: Good perceptual diversity (> 0.3)")
+        else:
+            print("○ LPIPS: Low perceptual diversity (< 0.3)")
+        
+        print(f"\nDetailed results saved to: {output_dir}")
+        
+    except Exception as e:
+        print(f"\nEvaluation failed: {str(e)}")
+
+def example_data_analysis():
+    """Example: Analyze dataset"""
+    print("\n" + "="*50)
+    print("EXAMPLE 5: Dataset Analysis")
+    print("="*50)
+    
+    data_path = "data/wellbore_images"
+    
+    print(f"Data path: {data_path}")
+    
+    if not os.path.exists(data_path):
+        print(f"Data path '{data_path}' does not exist.")
+        print("Creating sample dataset for demonstration...")
+        
+        # Create sample dataset
+        from examples.data_preparation import create_sample_dataset
+        create_sample_dataset(data_path, num_samples=100, image_size=256)
+    
+    try:
+        from data import DatasetAnalyzer
+        
+        # Create dataset
+        dataset = WellboreImageDataset(
+            data_path=data_path,
+            image_size=256,
+            augment=False
+        )
+        
+        print(f"\nDataset created with {len(dataset)} images")
+        
+        # Analyze dataset
+        print("\nAnalyzing dataset...")
+        analyzer = DatasetAnalyzer(dataset)
+        stats = analyzer.analyze()
+        
+        # Print analysis
+        analyzer.print_analysis()
+        
+        # Create dataloader for batch analysis
+        dataloader = create_dataloader(
+            dataset=dataset,
+            batch_size=16,
+            shuffle=False,
+            num_workers=2
+        )
+        
+        print(f"\nDataloader created:")
+        print(f"  Batch size: {dataloader.batch_size}")
+        print(f"  Number of batches: {len(dataloader)}")
+        print(f"  Total samples: {len(dataloader.dataset)}")
+        
+        # Sample a batch
+        sample_batch = next(iter(dataloader))
+        print(f"\nSample batch shape: {sample_batch.shape}")
+        print(f"Sample batch range: [{sample_batch.min():.3f}, {sample_batch.max():.3f}]")
+        
+    except Exception as e:
+        print(f"\nDataset analysis failed: {str(e)}")
+
+def example_complete_pipeline():
+    """Example: Complete pipeline from data preparation to evaluation"""
+    print("\n" + "="*60)
+    print("EXAMPLE 6: Complete Pipeline")
+    print("="*60)
+    
+    # Pipeline configuration
+    base_dir = "pipeline_demo"
+    data_dir = os.path.join(base_dir, "data")
+    output_dir = os.path.join(base_dir, "outputs")
+    checkpoint_dir = os.path.join(base_dir, "checkpoints")
+    
+    print(f"Pipeline base directory: {base_dir}")
+    
+    try:
+        # Step 1: Create sample data
+        print("\n1. Creating sample dataset...")
+        from examples.data_preparation import create_sample_dataset
+        
+        create_sample_dataset(
+            output_dir=data_dir,
+            num_samples=200,  # Small dataset for demo
+            image_size=128    # Smaller size for faster training
+        )
+        print(f"   Sample dataset created: {data_dir}")
+        
+        # Step 2: Analyze data
+        print("\n2. Analyzing dataset...")
+        dataset = WellboreImageDataset(
+            data_path=data_dir,
+            image_size=128,
+            augment=False
+        )
+        
+        from data import DatasetAnalyzer
+        analyzer = DatasetAnalyzer(dataset)
+        stats = analyzer.analyze()
+        print(f"   Dataset contains {stats['num_images']} images")
+        print(f"   Mean pixel value: {stats['mean_pixel_value']:.3f}")
+        
+        # Step 3: Quick training (few epochs for demo)
+        print("\n3. Training model (demo - few epochs)...")
+        config = GANConfig(
+            # Data settings
+            data_path=data_dir,
+            image_size=128,
+            batch_size=8,  # Small batch for demo
+            
+            # Model settings
+            latent_dim=256,  # Smaller latent dim
+            num_mapping_layers=4,  # Fewer layers
+            
+            # Training settings
+            num_epochs=5,  # Very few epochs for demo
+            learning_rate=0.002,
+            
+            # Output settings
+            output_dir=output_dir,
+            checkpoint_dir=checkpoint_dir,
+            
+            # Logging
+            log_interval=10,
+            save_interval=50,
+            sample_interval=25
+        )
+        
+        # Quick training
+        train_model(config)
+        print("   Training completed")
+        
+        # Step 4: Generate images
+        print("\n4. Generating images...")
+        model_path = os.path.join(checkpoint_dir, "stylegan2_generator_latest.pth")
+        gen_output_dir = os.path.join(output_dir, "generated")
+        
+        generate_images(
+            config=config,
+            model_path=model_path,
+            output_dir=gen_output_dir,
+            num_images=16
+        )
+        print(f"   Images generated: {gen_output_dir}")
+        
+        # Step 5: Quick evaluation
+        print("\n5. Evaluating model...")
+        eval_output_dir = os.path.join(output_dir, "evaluation")
+        
+        results = evaluate_model(
+            config=config,
+            model_path=model_path,
+            real_data_path=data_dir,
+            output_dir=eval_output_dir,
+            num_samples=100  # Small number for demo
+        )
+        
+        print(f"   FID Score: {results['fid']:.4f}")
+        print(f"   IS Score: {results['is_mean']:.4f}")
+        
+        print("\n" + "="*60)
+        print("PIPELINE COMPLETED SUCCESSFULLY!")
+        print("="*60)
+        print(f"All outputs saved to: {base_dir}")
+        print(f"  - Data: {data_dir}")
+        print(f"  - Model: {checkpoint_dir}")
+        print(f"  - Generated images: {gen_output_dir}")
+        print(f"  - Evaluation: {eval_output_dir}")
+        
+    except Exception as e:
+        print(f"\nPipeline failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+def print_usage_guide():
+    """Print usage guide"""
+    print("\n" + "="*60)
+    print("WELLBORE IMAGE GENERATION - USAGE GUIDE")
+    print("="*60)
+    
+    print("\nThis script demonstrates various usage patterns for the")
+    print("wellbore image generation system using StyleGAN2.")
+    
+    print("\nAvailable Examples:")
+    print("  1. Training - Train a StyleGAN2 model from scratch")
+    print("  2. Inference - Generate images using trained model")
+    print("  3. Custom Generation - Advanced generation techniques")
+    print("  4. Evaluation - Evaluate model quality with metrics")
+    print("  5. Data Analysis - Analyze your dataset")
+    print("  6. Complete Pipeline - End-to-end demonstration")
+    
+    print("\nQuick Start:")
+    print("  1. Prepare your data:")
+    print("     python data_preparation.py --action sample --output-dir data/wellbore_images")
+    print("  ")
+    print("  2. Train a model:")
+    print("     python basic_usage.py --example training")
+    print("  ")
+    print("  3. Generate images:")
+    print("     python basic_usage.py --example inference")
+    print("  ")
+    print("  4. Run complete pipeline:")
+    print("     python basic_usage.py --example pipeline")
+    
+    print("\nFor more advanced usage, see the individual example functions.")
+    print("\nRequirements:")
+    print("  - PyTorch with CUDA support (recommended)")
+    print("  - PIL, numpy, matplotlib")
+    print("  - torchvision, scipy")
+    print("  - Optional: opencv-python for video generation")
+
+def main():
+    """Main function"""
+    parser = argparse.ArgumentParser(
+        description='Basic usage examples for wellbore image generation',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    
+    parser.add_argument(
+        '--example',
+        type=str,
+        choices=['training', 'inference', 'custom', 'evaluation', 'analysis', 'pipeline', 'all'],
+        default='all',
+        help='Which example to run'
+    )
+    
+    parser.add_argument(
+        '--verbose',
+        action='store_true',
+        help='Enable verbose logging'
+    )
+    
+    args = parser.parse_args()
+    
+    # Setup logging
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    setup_logging(level=log_level)
+    
+    # Print usage guide
+    print_usage_guide()
+    
+    # Run examples
+    if args.example == 'training' or args.example == 'all':
+        example_training()
+    
+    if args.example == 'inference' or args.example == 'all':
+        example_inference()
+    
+    if args.example == 'custom' or args.example == 'all':
+        example_custom_generation()
+    
+    if args.example == 'evaluation' or args.example == 'all':
+        example_evaluation()
+    
+    if args.example == 'analysis' or args.example == 'all':
+        example_data_analysis()
+    
+    if args.example == 'pipeline':
+        example_complete_pipeline()
+    
+    print("\n" + "="*60)
+    print("EXAMPLES COMPLETED")
+    print("="*60)
+    print("\nFor more information, check the documentation and source code.")
+    print("Happy generating! 🎨")
+
+if __name__ == '__main__':
     main()

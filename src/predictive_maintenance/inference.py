@@ -1,145 +1,101 @@
 #!/usr/bin/env python3
-"""Inference module for generating wellbore images using trained StyleGAN2 model"""
+"""Inference script for generating wellbore images using trained StyleGAN2"""
 
 import os
-import sys
-import argparse
-import json
-from pathlib import Path
-from typing import List, Optional, Union, Tuple
+import time
 import logging
+from pathlib import Path
+from typing import Optional, List, Tuple
 
 import torch
-import torch.nn.functional as F
+import torch.nn as nn
 import numpy as np
+from torchvision.utils import save_image, make_grid
 from PIL import Image
-import matplotlib.pyplot as plt
-from tqdm import tqdm
 
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.append(str(project_root))
+from config import GANConfig
+from gan.generator import StyleGAN2Generator
+from utils import load_checkpoint, ensure_dir, format_time
 
-from src.predictive_maintenance.config import (
-    LATENT_DIM, IMAGE_SIZE, IMAGE_CHANNELS, DEVICE,
-    GENERATOR_CONFIG, FAILURE_TYPES
-)
-from src.predictive_maintenance.gan.generator import StyleGAN2Generator
-from src.predictive_maintenance.data.preprocessing import WellboreImagePreprocessor
-from src.predictive_maintenance.utils import (
-    load_checkpoint, save_image_grid, ensure_dir
-)
-
-class WellboreImageGenerator:
-    """High-level interface for generating wellbore images"""
+class ImageGenerator:
+    """Wrapper class for image generation using trained StyleGAN2"""
     
-    def __init__(self, 
-                 checkpoint_path: str,
-                 device: str = 'cuda' if torch.cuda.is_available() else 'cpu',
-                 config: Optional[dict] = None):
-        """
-        Args:
-            checkpoint_path: Path to trained model checkpoint
-            device: Device to run inference on
-            config: Optional configuration dictionary
-        """
-        self.device = torch.device(device)
-        self.checkpoint_path = checkpoint_path
-        self.config = config or {}
+    def __init__(self, config: GANConfig, checkpoint_path: str):
+        self.config = config
+        self.device = config.DEVICE
         
-        # Setup logging
-        logging.basicConfig(level=logging.INFO)
-        self.logger = logging.getLogger(__name__)
+        # Load generator
+        self.generator = self._load_generator(checkpoint_path)
+        self.generator.eval()
         
-        # Initialize generator
-        self.generator = None
-        self.preprocessor = None
-        
-        # Load model
-        self.load_model()
-        
-        # Initialize preprocessor for post-processing
-        self.preprocessor = WellboreImagePreprocessor(
-            target_size=IMAGE_SIZE,
-            normalize=True
-        )
+        logging.info(f"Generator loaded from: {checkpoint_path}")
+        logging.info(f"Using device: {self.device}")
     
-    def load_model(self):
-        """Load trained generator model from checkpoint"""
-        self.logger.info(f"Loading model from {self.checkpoint_path}")
-        
+    def _load_generator(self, checkpoint_path: str) -> nn.Module:
+        """Load generator from checkpoint"""
         # Create generator
-        self.generator = StyleGAN2Generator(
-            latent_dim=LATENT_DIM,
-            image_size=IMAGE_SIZE,
-            image_channels=IMAGE_CHANNELS,
-            **GENERATOR_CONFIG
-        ).to(self.device)
+        generator = StyleGAN2Generator(
+            latent_dim=self.config.LATENT_DIM,
+            image_size=self.config.IMAGE_SIZE,
+            num_channels=self.config.NUM_CHANNELS,
+            num_layers=self.config.NUM_LAYERS,
+            feature_maps=self.config.FEATURE_MAPS
+        )
         
         # Load checkpoint
-        if os.path.exists(self.checkpoint_path):
-            checkpoint = load_checkpoint(self.checkpoint_path)
-            
-            # Load generator state
-            if 'generator_state_dict' in checkpoint:
-                self.generator.load_state_dict(checkpoint['generator_state_dict'])
-            elif 'model_state_dict' in checkpoint:
-                self.generator.load_state_dict(checkpoint['model_state_dict'])
-            else:
-                raise ValueError("No generator state found in checkpoint")
-            
-            self.logger.info("Model loaded successfully")
-        else:
-            raise FileNotFoundError(f"Checkpoint not found: {self.checkpoint_path}")
+        checkpoint = load_checkpoint(checkpoint_path)
+        generator.load_state_dict(checkpoint['generator'])
+        generator = generator.to(self.device)
         
-        # Set to evaluation mode
-        self.generator.eval()
+        return generator
     
-    def generate_random_latent(self, batch_size: int = 1, seed: Optional[int] = None) -> torch.Tensor:
-        """Generate random latent vectors"""
-        if seed is not None:
-            torch.manual_seed(seed)
-            np.random.seed(seed)
+    def generate_random_images(self, num_images: int, batch_size: int = 16) -> List[torch.Tensor]:
+        """Generate random images"""
+        logging.info(f"Generating {num_images} random images...")
         
-        latent = torch.randn(batch_size, LATENT_DIM, device=self.device)
-        return latent
-    
-    def generate_images(self, 
-                       latent_vectors: Optional[torch.Tensor] = None,
-                       num_images: int = 1,
-                       seed: Optional[int] = None,
-                       truncation_psi: float = 1.0) -> torch.Tensor:
-        """Generate wellbore images
+        generated_images = []
+        num_batches = (num_images + batch_size - 1) // batch_size
         
-        Args:
-            latent_vectors: Optional pre-defined latent vectors
-            num_images: Number of images to generate (if latent_vectors not provided)
-            seed: Random seed for reproducibility
-            truncation_psi: Truncation parameter for style mixing (0-1)
-        
-        Returns:
-            Generated images as tensor
-        """
         with torch.no_grad():
-            if latent_vectors is None:
-                latent_vectors = self.generate_random_latent(num_images, seed)
-            
-            # Apply truncation if specified
-            if truncation_psi < 1.0:
-                # Calculate mean latent vector (would need to be pre-computed)
-                # For now, just scale the latent vectors
-                latent_vectors = latent_vectors * truncation_psi
-            
-            # Generate images
-            generated_images = self.generator(latent_vectors)
-            
-            return generated_images
+            for i in range(num_batches):
+                current_batch_size = min(batch_size, num_images - i * batch_size)
+                
+                # Generate random latent vectors
+                latent_vectors = torch.randn(
+                    current_batch_size, 
+                    self.config.LATENT_DIM, 
+                    device=self.device
+                )
+                
+                # Generate images
+                fake_images = self.generator(latent_vectors)
+                
+                # Denormalize from [-1, 1] to [0, 1]
+                fake_images = (fake_images + 1) / 2
+                fake_images = torch.clamp(fake_images, 0, 1)
+                
+                generated_images.append(fake_images.cpu())
+                
+                if (i + 1) % 10 == 0:
+                    logging.info(f"Generated batch {i + 1}/{num_batches}")
+        
+        return generated_images
     
-    def generate_interpolation(self, 
-                             latent1: torch.Tensor,
-                             latent2: torch.Tensor,
-                             num_steps: int = 10) -> torch.Tensor:
-        """Generate interpolation between two latent vectors"""
+    def generate_from_latent(self, latent_vectors: torch.Tensor) -> torch.Tensor:
+        """Generate images from specific latent vectors"""
+        with torch.no_grad():
+            latent_vectors = latent_vectors.to(self.device)
+            fake_images = self.generator(latent_vectors)
+            
+            # Denormalize from [-1, 1] to [0, 1]
+            fake_images = (fake_images + 1) / 2
+            fake_images = torch.clamp(fake_images, 0, 1)
+            
+            return fake_images.cpu()
+    
+    def interpolate_latent(self, latent1: torch.Tensor, latent2: torch.Tensor, 
+                          num_steps: int = 10) -> List[torch.Tensor]:
+        """Interpolate between two latent vectors"""
         interpolated_images = []
         
         with torch.no_grad():
@@ -147,311 +103,200 @@ class WellboreImageGenerator:
                 alpha = i / (num_steps - 1)
                 interpolated_latent = (1 - alpha) * latent1 + alpha * latent2
                 
-                generated_image = self.generator(interpolated_latent)
-                interpolated_images.append(generated_image)
+                fake_image = self.generator(interpolated_latent.to(self.device))
+                fake_image = (fake_image + 1) / 2
+                fake_image = torch.clamp(fake_image, 0, 1)
+                
+                interpolated_images.append(fake_image.cpu())
         
-        return torch.cat(interpolated_images, dim=0)
+        return interpolated_images
     
-    def generate_style_mixing(self, 
-                            num_images: int = 4,
-                            num_styles: int = 2) -> torch.Tensor:
+    def generate_style_mixing(self, num_images: int = 16) -> torch.Tensor:
         """Generate images with style mixing"""
-        # Generate base latent vectors
-        base_latents = self.generate_random_latent(num_images)
-        style_latents = self.generate_random_latent(num_styles)
-        
-        mixed_images = []
-        
         with torch.no_grad():
-            for base_latent in base_latents:
-                for style_latent in style_latents:
-                    # Simple style mixing: use different latents for different layers
-                    # This is a simplified version - full StyleGAN2 has more complex mixing
-                    mixed_latent = torch.stack([base_latent, style_latent]).mean(dim=0, keepdim=True)
-                    
-                    generated_image = self.generator(mixed_latent)
-                    mixed_images.append(generated_image)
-        
-        return torch.cat(mixed_images, dim=0)
-    
-    def generate_failure_type_samples(self, 
-                                    failure_type: str,
-                                    num_samples: int = 10,
-                                    seed: Optional[int] = None) -> torch.Tensor:
-        """Generate samples for specific failure type
-        
-        Note: This is a placeholder implementation. In practice, you would need
-        conditional generation or fine-tuned models for specific failure types.
-        """
-        if failure_type not in FAILURE_TYPES:
-            raise ValueError(f"Unknown failure type: {failure_type}. Available: {FAILURE_TYPES}")
-        
-        self.logger.info(f"Generating {num_samples} samples for failure type: {failure_type}")
-        
-        # For now, generate random samples
-        # In practice, you might use conditional latent vectors or class-specific models
-        generated_images = self.generate_images(num_images=num_samples, seed=seed)
-        
-        return generated_images
-    
-    def postprocess_images(self, images: torch.Tensor) -> List[np.ndarray]:
-        """Convert generated tensors to displayable numpy arrays"""
-        processed_images = []
-        
-        for image in images:
-            # Use preprocessor's postprocess method
-            processed_image = self.preprocessor.postprocess(image)
-            processed_images.append(processed_image)
-        
-        return processed_images
-    
-    def save_images(self, 
-                   images: torch.Tensor,
-                   output_dir: str,
-                   prefix: str = 'generated',
-                   format: str = 'png') -> List[str]:
-        """Save generated images to files"""
-        ensure_dir(output_dir)
-        
-        processed_images = self.postprocess_images(images)
-        saved_paths = []
-        
-        for i, image in enumerate(processed_images):
-            filename = f"{prefix}_{i:04d}.{format}"
-            filepath = os.path.join(output_dir, filename)
+            # Generate two sets of latent vectors
+            latent1 = torch.randn(num_images, self.config.LATENT_DIM, device=self.device)
+            latent2 = torch.randn(num_images, self.config.LATENT_DIM, device=self.device)
             
-            # Convert to PIL Image and save
-            if len(image.shape) == 3:
-                pil_image = Image.fromarray(image)
-            else:
-                pil_image = Image.fromarray(image, mode='L')
+            # Mix styles at different layers
+            mixed_images = self.generator.style_mixing(latent1, latent2)
             
-            pil_image.save(filepath)
-            saved_paths.append(filepath)
-        
-        self.logger.info(f"Saved {len(saved_paths)} images to {output_dir}")
-        return saved_paths
-    
-    def create_image_grid(self, 
-                         images: torch.Tensor,
-                         output_path: str,
-                         nrow: int = 8,
-                         title: Optional[str] = None) -> str:
-        """Create and save an image grid"""
-        save_image_grid(images, output_path, nrow=nrow)
-        
-        if title:
-            # Add title to the saved image
-            img = Image.open(output_path)
-            fig, ax = plt.subplots(figsize=(12, 12))
-            ax.imshow(img)
-            ax.set_title(title, fontsize=16)
-            ax.axis('off')
+            # Denormalize
+            mixed_images = (mixed_images + 1) / 2
+            mixed_images = torch.clamp(mixed_images, 0, 1)
             
-            # Save with title
-            title_path = output_path.replace('.png', '_titled.png')
-            plt.savefig(title_path, bbox_inches='tight', dpi=150)
-            plt.close()
-            
-            return title_path
-        
-        return output_path
+            return mixed_images.cpu()
 
-class WellboreInferencePipeline:
-    """Complete inference pipeline for wellbore image generation"""
+def save_images_individually(images: List[torch.Tensor], output_dir: str, 
+                           prefix: str = 'generated') -> List[str]:
+    """Save images individually"""
+    ensure_dir(output_dir)
+    saved_paths = []
     
-    def __init__(self, checkpoint_path: str, output_dir: str, config: Optional[dict] = None):
-        self.checkpoint_path = checkpoint_path
-        self.output_dir = output_dir
-        self.config = config or {}
-        
-        # Create output directory
-        ensure_dir(output_dir)
-        
-        # Initialize generator
-        self.generator = WellboreImageGenerator(checkpoint_path, config=config)
-        
-        # Setup logging
-        logging.basicConfig(level=logging.INFO)
-        self.logger = logging.getLogger(__name__)
+    image_idx = 0
+    for batch in images:
+        for i in range(batch.size(0)):
+            image_path = os.path.join(output_dir, f'{prefix}_{image_idx:06d}.png')
+            save_image(batch[i], image_path)
+            saved_paths.append(image_path)
+            image_idx += 1
     
-    def generate_sample_gallery(self, num_samples: int = 64, grid_size: int = 8):
-        """Generate a gallery of sample images"""
-        self.logger.info(f"Generating sample gallery with {num_samples} images")
-        
-        # Generate images
-        images = self.generator.generate_images(num_images=num_samples)
-        
-        # Create grid
-        grid_path = os.path.join(self.output_dir, 'sample_gallery.png')
-        self.generator.create_image_grid(
-            images, grid_path, nrow=grid_size, 
-            title=f'Generated Wellbore Images ({num_samples} samples)'
-        )
-        
-        # Save individual images
-        individual_dir = os.path.join(self.output_dir, 'individual_samples')
-        self.generator.save_images(images, individual_dir, prefix='sample')
-        
-        return grid_path
-    
-    def generate_interpolation_video(self, num_frames: int = 50, num_interpolations: int = 5):
-        """Generate interpolation sequences"""
-        self.logger.info(f"Generating {num_interpolations} interpolation sequences")
-        
-        interpolation_dir = os.path.join(self.output_dir, 'interpolations')
-        ensure_dir(interpolation_dir)
-        
-        for i in range(num_interpolations):
-            # Generate two random latent vectors
-            latent1 = self.generator.generate_random_latent(1)
-            latent2 = self.generator.generate_random_latent(1)
-            
-            # Generate interpolation
-            interpolated_images = self.generator.generate_interpolation(
-                latent1, latent2, num_frames
-            )
-            
-            # Save as grid
-            grid_path = os.path.join(interpolation_dir, f'interpolation_{i:02d}.png')
-            self.generator.create_image_grid(
-                interpolated_images, grid_path, nrow=num_frames//2,
-                title=f'Latent Interpolation {i+1}'
-            )
-    
-    def generate_failure_type_samples(self, samples_per_type: int = 20):
-        """Generate samples for each failure type"""
-        self.logger.info("Generating samples for each failure type")
-        
-        failure_dir = os.path.join(self.output_dir, 'failure_types')
-        ensure_dir(failure_dir)
-        
-        for failure_type in FAILURE_TYPES:
-            self.logger.info(f"Generating samples for {failure_type}")
-            
-            # Generate samples
-            images = self.generator.generate_failure_type_samples(
-                failure_type, samples_per_type
-            )
-            
-            # Create type-specific directory
-            type_dir = os.path.join(failure_dir, failure_type)
-            ensure_dir(type_dir)
-            
-            # Save grid
-            grid_path = os.path.join(type_dir, f'{failure_type}_grid.png')
-            self.generator.create_image_grid(
-                images, grid_path, nrow=5,
-                title=f'{failure_type.replace("_", " ").title()} Samples'
-            )
-            
-            # Save individual images
-            self.generator.save_images(images, type_dir, prefix=failure_type)
-    
-    def generate_style_mixing_examples(self, num_examples: int = 16):
-        """Generate style mixing examples"""
-        self.logger.info("Generating style mixing examples")
-        
-        # Generate style mixed images
-        mixed_images = self.generator.generate_style_mixing(num_examples//4, 4)
-        
-        # Save grid
-        grid_path = os.path.join(self.output_dir, 'style_mixing.png')
-        self.generator.create_image_grid(
-            mixed_images, grid_path, nrow=4,
-            title='Style Mixing Examples'
-        )
-        
-        return grid_path
-    
-    def run_complete_inference(self):
-        """Run complete inference pipeline"""
-        self.logger.info("Running complete inference pipeline")
-        
-        # Generate sample gallery
-        self.generate_sample_gallery()
-        
-        # Generate interpolations
-        self.generate_interpolation_video()
-        
-        # Generate failure type samples
-        self.generate_failure_type_samples()
-        
-        # Generate style mixing examples
-        self.generate_style_mixing_examples()
-        
-        self.logger.info(f"Inference complete. Results saved to {self.output_dir}")
+    return saved_paths
 
-def parse_arguments():
-    """Parse command line arguments"""
-    parser = argparse.ArgumentParser(description='Generate wellbore images using trained StyleGAN2')
+def save_image_grid(images: List[torch.Tensor], output_path: str, 
+                   nrow: int = 8) -> None:
+    """Save images as a grid"""
+    # Concatenate all batches
+    all_images = torch.cat(images, dim=0)
     
-    parser.add_argument('--checkpoint', type=str, required=True,
-                       help='Path to trained model checkpoint')
-    parser.add_argument('--output_dir', type=str, required=True,
-                       help='Directory to save generated images')
-    parser.add_argument('--num_samples', type=int, default=64,
-                       help='Number of samples to generate')
-    parser.add_argument('--grid_size', type=int, default=8,
-                       help='Grid size for image layout')
-    parser.add_argument('--seed', type=int, help='Random seed for reproducibility')
-    parser.add_argument('--device', type=str, default=DEVICE,
-                       help='Device to use (cuda/cpu)')
-    parser.add_argument('--failure_type', type=str, choices=FAILURE_TYPES,
-                       help='Generate samples for specific failure type')
-    parser.add_argument('--interpolation', action='store_true',
-                       help='Generate interpolation sequences')
-    parser.add_argument('--style_mixing', action='store_true',
-                       help='Generate style mixing examples')
-    parser.add_argument('--complete', action='store_true',
-                       help='Run complete inference pipeline')
+    # Create grid
+    grid = make_grid(all_images, nrow=nrow, normalize=True, padding=2)
     
-    return parser.parse_args()
+    # Save grid
+    save_image(grid, output_path)
 
-def main():
-    """Main inference function"""
-    args = parse_arguments()
-    
-    # Set random seed if provided
-    if args.seed is not None:
-        torch.manual_seed(args.seed)
-        np.random.seed(args.seed)
-    
-    # Create inference pipeline
-    pipeline = WellboreInferencePipeline(
-        checkpoint_path=args.checkpoint,
-        output_dir=args.output_dir,
-        config={'device': args.device}
-    )
-    
+def create_interpolation_video(generator: ImageGenerator, output_path: str,
+                             num_frames: int = 100, fps: int = 30) -> None:
+    """Create interpolation video between random latent vectors"""
     try:
-        if args.complete:
-            # Run complete pipeline
-            pipeline.run_complete_inference()
-        
-        elif args.failure_type:
-            # Generate samples for specific failure type
-            pipeline.generator.generate_failure_type_samples(
-                args.failure_type, args.num_samples
-            )
-        
-        elif args.interpolation:
-            # Generate interpolation sequences
-            pipeline.generate_interpolation_video()
-        
-        elif args.style_mixing:
-            # Generate style mixing examples
-            pipeline.generate_style_mixing_examples()
-        
-        else:
-            # Generate sample gallery
-            pipeline.generate_sample_gallery(args.num_samples, args.grid_size)
-        
-        print(f"Generation complete! Results saved to {args.output_dir}")
+        import cv2
+    except ImportError:
+        logging.warning("OpenCV not available, skipping video generation")
+        return
     
-    except Exception as e:
-        print(f"Generation failed: {e}")
-        raise
+    logging.info(f"Creating interpolation video with {num_frames} frames...")
+    
+    # Generate random start and end points
+    latent1 = torch.randn(1, generator.config.LATENT_DIM)
+    latent2 = torch.randn(1, generator.config.LATENT_DIM)
+    
+    # Generate interpolated images
+    interpolated_images = generator.interpolate_latent(latent1, latent2, num_frames)
+    
+    # Setup video writer
+    height, width = generator.config.IMAGE_SIZE, generator.config.IMAGE_SIZE
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video_writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    
+    # Write frames
+    for image_tensor in interpolated_images:
+        # Convert tensor to numpy array
+        image_np = image_tensor.squeeze().permute(1, 2, 0).numpy()
+        image_np = (image_np * 255).astype(np.uint8)
+        
+        # Convert RGB to BGR for OpenCV
+        if image_np.shape[2] == 3:
+            image_np = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
+        
+        video_writer.write(image_np)
+    
+    video_writer.release()
+    logging.info(f"Video saved: {output_path}")
+
+def generate_images(config: GANConfig, checkpoint_path: str, output_dir: str,
+                   num_images: int = 100, batch_size: int = 16,
+                   save_individual: bool = True, save_grid: bool = True,
+                   create_video: bool = False) -> None:
+    """Main image generation function"""
+    logging.info("Starting image generation...")
+    start_time = time.time()
+    
+    # Create output directories
+    individual_dir = os.path.join(output_dir, 'individual')
+    grid_dir = os.path.join(output_dir, 'grids')
+    video_dir = os.path.join(output_dir, 'videos')
+    
+    if save_individual:
+        ensure_dir(individual_dir)
+    if save_grid:
+        ensure_dir(grid_dir)
+    if create_video:
+        ensure_dir(video_dir)
+    
+    # Initialize generator
+    generator = ImageGenerator(config, checkpoint_path)
+    
+    # Generate random images
+    generated_images = generator.generate_random_images(num_images, batch_size)
+    
+    # Save individual images
+    if save_individual:
+        logging.info("Saving individual images...")
+        saved_paths = save_images_individually(generated_images, individual_dir)
+        logging.info(f"Saved {len(saved_paths)} individual images to: {individual_dir}")
+    
+    # Save image grid
+    if save_grid:
+        logging.info("Creating image grid...")
+        grid_path = os.path.join(grid_dir, f'generated_grid_{num_images}.png')
+        save_image_grid(generated_images, grid_path)
+        logging.info(f"Image grid saved: {grid_path}")
+    
+    # Generate style mixing examples
+    logging.info("Generating style mixing examples...")
+    mixed_images = generator.generate_style_mixing(16)
+    mixed_grid_path = os.path.join(grid_dir, 'style_mixing_examples.png')
+    grid = make_grid(mixed_images, nrow=4, normalize=True, padding=2)
+    save_image(grid, mixed_grid_path)
+    logging.info(f"Style mixing examples saved: {mixed_grid_path}")
+    
+    # Create interpolation video
+    if create_video:
+        logging.info("Creating interpolation video...")
+        video_path = os.path.join(video_dir, 'latent_interpolation.mp4')
+        create_interpolation_video(generator, video_path)
+    
+    total_time = time.time() - start_time
+    logging.info(f"Image generation completed in {format_time(total_time)}")
+    logging.info(f"Results saved to: {output_dir}")
+
+def generate_specific_samples(config: GANConfig, checkpoint_path: str, 
+                            output_dir: str, seed: int = 42) -> None:
+    """Generate specific samples with fixed seed for reproducibility"""
+    logging.info(f"Generating reproducible samples with seed: {seed}")
+    
+    # Set random seed
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    
+    # Initialize generator
+    generator = ImageGenerator(config, checkpoint_path)
+    
+    # Generate fixed samples
+    num_samples = 64
+    latent_vectors = torch.randn(num_samples, config.LATENT_DIM)
+    generated_images = generator.generate_from_latent(latent_vectors)
+    
+    # Save as grid
+    grid_path = os.path.join(output_dir, f'fixed_samples_seed_{seed}.png')
+    grid = make_grid(generated_images, nrow=8, normalize=True, padding=2)
+    save_image(grid, grid_path)
+    
+    logging.info(f"Fixed samples saved: {grid_path}")
 
 if __name__ == '__main__':
-    main()
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Generate images using trained StyleGAN2')
+    parser.add_argument('--config', type=str, required=True, help='Path to config file')
+    parser.add_argument('--checkpoint', type=str, required=True, help='Path to model checkpoint')
+    parser.add_argument('--output-dir', type=str, default='generated_images', help='Output directory')
+    parser.add_argument('--num-images', type=int, default=100, help='Number of images to generate')
+    parser.add_argument('--batch-size', type=int, default=16, help='Batch size for generation')
+    parser.add_argument('--seed', type=int, default=42, help='Random seed')
+    parser.add_argument('--create-video', action='store_true', help='Create interpolation video')
+    
+    args = parser.parse_args()
+    
+    # Load config
+    config = GANConfig.from_yaml(args.config)
+    
+    # Generate images
+    generate_images(
+        config=config,
+        checkpoint_path=args.checkpoint,
+        output_dir=args.output_dir,
+        num_images=args.num_images,
+        batch_size=args.batch_size,
+        create_video=args.create_video
+    )

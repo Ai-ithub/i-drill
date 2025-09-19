@@ -1,382 +1,436 @@
 #!/usr/bin/env python3
-"""
-Data Preparation Examples for Wellbore Image Generation System
-
-This script demonstrates how to prepare and preprocess wellbore images
-for training the GAN model.
-"""
+"""Data preparation script for wellbore image generation"""
 
 import os
 import sys
-import shutil
+import logging
+import argparse
 from pathlib import Path
-from PIL import Image
-import numpy as np
-from typing import List, Tuple
+from typing import Dict, List, Any
 
-# Add the parent directory to the path to import modules
+# Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from data.preprocessing import ImagePreprocessor
-from utils.file_utils import ensure_dir_exists, get_files_by_extension
-from utils.image_utils import load_image, save_image, resize_image, normalize_image
+from data import (
+    WellboreImageDataset, ImagePreprocessor, DatasetAnalyzer,
+    split_dataset, validate_dataset
+)
+from utils import setup_logging, ensure_dir
 
+def prepare_raw_data(input_dir: str, output_dir: str, image_size: int = 256) -> Dict[str, Any]:
+    """Prepare raw wellbore images for training"""
+    logging.info(f"Preparing raw data from {input_dir} to {output_dir}")
+    
+    # Validate input directory
+    validation_result = validate_dataset(input_dir)
+    if not validation_result['valid']:
+        raise ValueError(f"Invalid dataset: {validation_result['error']}")
+    
+    logging.info(f"Dataset validation passed: {validation_result['total_images']} images found")
+    
+    # Initialize preprocessor
+    preprocessor = ImagePreprocessor(target_size=image_size)
+    
+    # Preprocess images
+    result = preprocessor.batch_preprocess(input_dir, output_dir)
+    
+    logging.info(f"Preprocessing completed: {result}")
+    
+    return result
 
-def organize_dataset(source_dir: str, output_dir: str, train_ratio: float = 0.8, val_ratio: float = 0.1):
-    """
-    Organize images into train/val/test splits
+def analyze_dataset(data_path: str) -> Dict[str, Any]:
+    """Analyze dataset and print statistics"""
+    logging.info(f"Analyzing dataset: {data_path}")
     
-    Args:
-        source_dir: Directory containing all images
-        output_dir: Output directory for organized dataset
-        train_ratio: Ratio of images for training
-        val_ratio: Ratio of images for validation
-    """
-    print(f"Organizing dataset from {source_dir} to {output_dir}")
-    
-    # Create output directories
-    train_dir = os.path.join(output_dir, "train")
-    val_dir = os.path.join(output_dir, "val")
-    test_dir = os.path.join(output_dir, "test")
-    
-    for dir_path in [train_dir, val_dir, test_dir]:
-        ensure_dir_exists(dir_path)
-    
-    # Get all image files
-    image_extensions = ["jpg", "jpeg", "png", "bmp", "tiff"]
-    all_images = []
-    
-    for ext in image_extensions:
-        all_images.extend(get_files_by_extension(source_dir, ext))
-    
-    print(f"Found {len(all_images)} images")
-    
-    # Shuffle images for random split
-    np.random.shuffle(all_images)
-    
-    # Calculate split indices
-    total_images = len(all_images)
-    train_end = int(total_images * train_ratio)
-    val_end = train_end + int(total_images * val_ratio)
-    
-    # Split images
-    train_images = all_images[:train_end]
-    val_images = all_images[train_end:val_end]
-    test_images = all_images[val_end:]
-    
-    # Copy images to respective directories
-    def copy_images(image_list: List[str], target_dir: str, split_name: str):
-        print(f"Copying {len(image_list)} images to {split_name} set...")
-        for i, img_path in enumerate(image_list):
-            filename = os.path.basename(img_path)
-            target_path = os.path.join(target_dir, filename)
-            shutil.copy2(img_path, target_path)
-            
-            if (i + 1) % 100 == 0:
-                print(f"  Copied {i + 1}/{len(image_list)} images")
-    
-    copy_images(train_images, train_dir, "train")
-    copy_images(val_images, val_dir, "validation")
-    copy_images(test_images, test_dir, "test")
-    
-    print(f"\nDataset organization completed:")
-    print(f"  Training: {len(train_images)} images")
-    print(f"  Validation: {len(val_images)} images")
-    print(f"  Test: {len(test_images)} images")
-
-
-def preprocess_images(input_dir: str, output_dir: str, target_size: Tuple[int, int] = (256, 256)):
-    """
-    Preprocess images (resize, normalize, etc.)
-    
-    Args:
-        input_dir: Directory containing input images
-        output_dir: Directory for preprocessed images
-        target_size: Target image size (width, height)
-    """
-    print(f"Preprocessing images from {input_dir} to {output_dir}")
-    print(f"Target size: {target_size}")
-    
-    ensure_dir_exists(output_dir)
-    
-    # Get all image files
-    image_extensions = ["jpg", "jpeg", "png", "bmp", "tiff"]
-    all_images = []
-    
-    for ext in image_extensions:
-        all_images.extend(get_files_by_extension(input_dir, ext))
-    
-    print(f"Found {len(all_images)} images to preprocess")
-    
-    # Create preprocessor
-    preprocessor = ImagePreprocessor(
-        target_size=target_size,
-        normalize=True,
-        augment=False  # No augmentation for preprocessing
+    # Create dataset
+    dataset = WellboreImageDataset(
+        data_path=data_path,
+        image_size=256,
+        augment=False  # No augmentation for analysis
     )
     
-    processed_count = 0
-    skipped_count = 0
+    # Analyze dataset
+    analyzer = DatasetAnalyzer(dataset)
+    stats = analyzer.analyze()
     
-    for i, img_path in enumerate(all_images):
-        try:
-            # Load image
-            image = load_image(img_path)
-            
-            # Check if image is valid
-            if image is None:
-                print(f"  Skipping invalid image: {img_path}")
-                skipped_count += 1
-                continue
-            
-            # Check minimum size
-            if min(image.size) < 64:
-                print(f"  Skipping too small image: {img_path} (size: {image.size})")
-                skipped_count += 1
-                continue
-            
-            # Preprocess image
-            processed_image = preprocessor.preprocess_single(image)
-            
-            # Convert back to PIL for saving
-            if isinstance(processed_image, np.ndarray):
-                # Convert from numpy array to PIL Image
-                if processed_image.dtype != np.uint8:
-                    processed_image = (processed_image * 255).astype(np.uint8)
-                
-                if len(processed_image.shape) == 3:
-                    processed_image = Image.fromarray(processed_image)
-                else:
-                    processed_image = Image.fromarray(processed_image, mode='L')
-            
-            # Save processed image
-            filename = os.path.basename(img_path)
-            name, ext = os.path.splitext(filename)
-            output_path = os.path.join(output_dir, f"{name}.png")  # Save as PNG
-            
-            processed_image.save(output_path, "PNG")
-            processed_count += 1
-            
-            if (i + 1) % 100 == 0:
-                print(f"  Processed {i + 1}/{len(all_images)} images")
-        
-        except Exception as e:
-            print(f"  Error processing {img_path}: {e}")
-            skipped_count += 1
+    # Print analysis
+    analyzer.print_analysis()
     
-    print(f"\nPreprocessing completed:")
-    print(f"  Processed: {processed_count} images")
-    print(f"  Skipped: {skipped_count} images")
+    return stats
 
+def create_train_val_test_splits(data_path: str, output_dir: str,
+                                train_ratio: float = 0.8,
+                                val_ratio: float = 0.1,
+                                test_ratio: float = 0.1) -> Dict[str, List[str]]:
+    """Create train/validation/test splits"""
+    logging.info(f"Creating dataset splits: train={train_ratio}, val={val_ratio}, test={test_ratio}")
+    
+    # Validate ratios
+    if abs(train_ratio + val_ratio + test_ratio - 1.0) > 1e-6:
+        raise ValueError("Ratios must sum to 1.0")
+    
+    # Create splits
+    splits = split_dataset(
+        data_path=data_path,
+        train_ratio=train_ratio,
+        val_ratio=val_ratio,
+        test_ratio=test_ratio,
+        output_dir=output_dir
+    )
+    
+    # Create symbolic links or copy files to split directories
+    create_split_directories(data_path, output_dir, splits)
+    
+    return splits
 
-def analyze_dataset(data_dir: str):
-    """
-    Analyze dataset statistics
+def create_split_directories(data_path: str, output_dir: str, 
+                           splits: Dict[str, List[str]]) -> None:
+    """Create directory structure for splits"""
+    logging.info("Creating split directories...")
     
-    Args:
-        data_dir: Directory containing images
-    """
-    print(f"Analyzing dataset: {data_dir}")
+    data_path = Path(data_path)
+    output_path = Path(output_dir)
     
-    # Get all image files
-    image_extensions = ["jpg", "jpeg", "png", "bmp", "tiff"]
-    all_images = []
-    
-    for ext in image_extensions:
-        all_images.extend(get_files_by_extension(data_dir, ext))
-    
-    if not all_images:
-        print("No images found!")
-        return
-    
-    print(f"Found {len(all_images)} images")
-    
-    # Analyze image properties
-    sizes = []
-    aspects = []
-    formats = []
-    
-    for img_path in all_images[:1000]:  # Sample first 1000 images
-        try:
-            with Image.open(img_path) as img:
-                width, height = img.size
-                sizes.append((width, height))
-                aspects.append(width / height)
-                formats.append(img.format)
-        except Exception as e:
-            print(f"Error analyzing {img_path}: {e}")
-    
-    # Calculate statistics
-    widths = [s[0] for s in sizes]
-    heights = [s[1] for s in sizes]
-    
-    print(f"\nDataset Statistics (based on {len(sizes)} samples):")
-    print(f"  Image count: {len(all_images)}")
-    print(f"  Width - Min: {min(widths)}, Max: {max(widths)}, Mean: {np.mean(widths):.1f}")
-    print(f"  Height - Min: {min(heights)}, Max: {max(heights)}, Mean: {np.mean(heights):.1f}")
-    print(f"  Aspect ratio - Min: {min(aspects):.2f}, Max: {max(aspects):.2f}, Mean: {np.mean(aspects):.2f}")
-    
-    # Format distribution
-    format_counts = {}
-    for fmt in formats:
-        format_counts[fmt] = format_counts.get(fmt, 0) + 1
-    
-    print(f"  Formats: {format_counts}")
-    
-    # Size distribution
-    size_ranges = {
-        "< 128": 0,
-        "128-256": 0,
-        "256-512": 0,
-        "512-1024": 0,
-        "> 1024": 0
-    }
-    
-    for w, h in sizes:
-        min_dim = min(w, h)
-        if min_dim < 128:
-            size_ranges["< 128"] += 1
-        elif min_dim < 256:
-            size_ranges["128-256"] += 1
-        elif min_dim < 512:
-            size_ranges["256-512"] += 1
-        elif min_dim < 1024:
-            size_ranges["512-1024"] += 1
-        else:
-            size_ranges["> 1024"] += 1
-    
-    print(f"  Size distribution (by minimum dimension): {size_ranges}")
-
-
-def clean_dataset(data_dir: str, min_size: int = 64, max_size: int = 2048):
-    """
-    Clean dataset by removing invalid or problematic images
-    
-    Args:
-        data_dir: Directory containing images
-        min_size: Minimum image dimension
-        max_size: Maximum image dimension
-    """
-    print(f"Cleaning dataset: {data_dir}")
-    print(f"Size constraints: {min_size} <= min_dimension <= {max_size}")
-    
-    # Get all image files
-    image_extensions = ["jpg", "jpeg", "png", "bmp", "tiff"]
-    all_images = []
-    
-    for ext in image_extensions:
-        all_images.extend(get_files_by_extension(data_dir, ext))
-    
-    print(f"Found {len(all_images)} images")
-    
-    removed_count = 0
-    reasons = {
-        "corrupted": 0,
-        "too_small": 0,
-        "too_large": 0,
-        "wrong_format": 0
-    }
-    
-    for img_path in all_images:
-        should_remove = False
-        reason = None
+    for split_name, file_list in splits.items():
+        split_dir = output_path / split_name
+        ensure_dir(str(split_dir))
         
-        try:
-            with Image.open(img_path) as img:
-                width, height = img.size
-                min_dim = min(width, height)
-                max_dim = max(width, height)
-                
-                # Check size constraints
-                if min_dim < min_size:
-                    should_remove = True
-                    reason = "too_small"
-                elif max_dim > max_size:
-                    should_remove = True
-                    reason = "too_large"
-                
-                # Check if image can be loaded properly
-                img.verify()
+        logging.info(f"Creating {split_name} directory with {len(file_list)} images")
         
-        except Exception as e:
-            should_remove = True
-            reason = "corrupted"
-            print(f"  Corrupted image: {img_path} - {e}")
-        
-        if should_remove:
+        # Copy or create symbolic links
+        for i, file_path in enumerate(file_list):
+            src_path = Path(file_path)
+            dst_path = split_dir / f"{i:06d}_{src_path.name}"
+            
             try:
-                os.remove(img_path)
-                removed_count += 1
-                reasons[reason] += 1
-                
-                if removed_count % 100 == 0:
-                    print(f"  Removed {removed_count} images so far...")
-            
+                # Try to create symbolic link first (faster)
+                if os.name != 'nt':  # Unix-like systems
+                    dst_path.symlink_to(src_path.absolute())
+                else:  # Windows - copy file
+                    import shutil
+                    shutil.copy2(src_path, dst_path)
             except Exception as e:
-                print(f"  Error removing {img_path}: {e}")
-    
-    print(f"\nCleaning completed:")
-    print(f"  Removed: {removed_count} images")
-    print(f"  Remaining: {len(all_images) - removed_count} images")
-    print(f"  Removal reasons: {reasons}")
+                logging.warning(f"Could not link/copy {src_path}: {e}")
+        
+        logging.info(f"Created {split_name} directory: {split_dir}")
 
+def clean_dataset(data_path: str, output_dir: str, 
+                 min_size: int = 64, max_size: int = 4096) -> Dict[str, Any]:
+    """Clean dataset by removing corrupted or invalid images"""
+    logging.info(f"Cleaning dataset: {data_path}")
+    
+    data_path = Path(data_path)
+    output_path = Path(output_dir)
+    ensure_dir(str(output_path))
+    
+    # Find all images
+    image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
+    image_files = []
+    
+    for ext in image_extensions:
+        image_files.extend(data_path.rglob(f'*{ext}'))
+        image_files.extend(data_path.rglob(f'*{ext.upper()}'))
+    
+    logging.info(f"Found {len(image_files)} images to check")
+    
+    # Check each image
+    valid_images = []
+    corrupted_images = []
+    invalid_size_images = []
+    
+    for image_file in image_files:
+        try:
+            from PIL import Image
+            
+            with Image.open(image_file) as img:
+                # Check if image can be loaded
+                img.verify()
+                
+                # Reopen for size check (verify() closes the image)
+                with Image.open(image_file) as img:
+                    width, height = img.size
+                    
+                    # Check size constraints
+                    if (min_size <= width <= max_size and 
+                        min_size <= height <= max_size):
+                        valid_images.append(image_file)
+                    else:
+                        invalid_size_images.append(image_file)
+                        
+        except Exception as e:
+            logging.warning(f"Corrupted image {image_file}: {e}")
+            corrupted_images.append(image_file)
+    
+    # Copy valid images to output directory
+    logging.info(f"Copying {len(valid_images)} valid images...")
+    
+    for i, image_file in enumerate(valid_images):
+        relative_path = image_file.relative_to(data_path)
+        output_file = output_path / relative_path
+        
+        # Create parent directories
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Copy file
+        import shutil
+        shutil.copy2(image_file, output_file)
+        
+        if (i + 1) % 1000 == 0:
+            logging.info(f"Copied {i + 1}/{len(valid_images)} images")
+    
+    # Save cleaning report
+    report = {
+        'total_images': len(image_files),
+        'valid_images': len(valid_images),
+        'corrupted_images': len(corrupted_images),
+        'invalid_size_images': len(invalid_size_images)
+    }
+    
+    report_file = output_path / 'cleaning_report.txt'
+    with open(report_file, 'w') as f:
+        f.write("Dataset Cleaning Report\n")
+        f.write("=" * 30 + "\n\n")
+        
+        for key, value in report.items():
+            f.write(f"{key}: {value}\n")
+        
+        f.write("\nCorrupted Images:\n")
+        for img in corrupted_images:
+            f.write(f"  {img}\n")
+        
+        f.write("\nInvalid Size Images:\n")
+        for img in invalid_size_images:
+            f.write(f"  {img}\n")
+    
+    logging.info(f"Cleaning completed. Report saved: {report_file}")
+    
+    return report
+
+def create_sample_dataset(output_dir: str, num_samples: int = 1000,
+                         image_size: int = 256) -> None:
+    """Create a sample synthetic dataset for testing"""
+    logging.info(f"Creating sample dataset with {num_samples} images")
+    
+    import numpy as np
+    from PIL import Image, ImageDraw
+    import random
+    
+    output_path = Path(output_dir)
+    ensure_dir(str(output_path))
+    
+    # Create sample images with different patterns
+    patterns = ['circles', 'lines', 'noise', 'gradients']
+    
+    for i in range(num_samples):
+        # Choose random pattern
+        pattern = random.choice(patterns)
+        
+        # Create image
+        img = Image.new('RGB', (image_size, image_size), 'white')
+        draw = ImageDraw.Draw(img)
+        
+        if pattern == 'circles':
+            # Draw random circles
+            for _ in range(random.randint(5, 15)):
+                x = random.randint(0, image_size)
+                y = random.randint(0, image_size)
+                r = random.randint(10, 50)
+                color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+                draw.ellipse([x-r, y-r, x+r, y+r], fill=color)
+        
+        elif pattern == 'lines':
+            # Draw random lines
+            for _ in range(random.randint(10, 30)):
+                x1, y1 = random.randint(0, image_size), random.randint(0, image_size)
+                x2, y2 = random.randint(0, image_size), random.randint(0, image_size)
+                color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+                width = random.randint(1, 5)
+                draw.line([x1, y1, x2, y2], fill=color, width=width)
+        
+        elif pattern == 'noise':
+            # Create noise pattern
+            pixels = np.random.randint(0, 256, (image_size, image_size, 3), dtype=np.uint8)
+            img = Image.fromarray(pixels)
+        
+        elif pattern == 'gradients':
+            # Create gradient pattern
+            pixels = np.zeros((image_size, image_size, 3), dtype=np.uint8)
+            for x in range(image_size):
+                for y in range(image_size):
+                    pixels[y, x] = [
+                        int(255 * x / image_size),
+                        int(255 * y / image_size),
+                        int(255 * (x + y) / (2 * image_size))
+                    ]
+            img = Image.fromarray(pixels)
+        
+        # Save image
+        img_path = output_path / f'sample_{i:06d}_{pattern}.png'
+        img.save(img_path)
+        
+        if (i + 1) % 100 == 0:
+            logging.info(f"Created {i + 1}/{num_samples} sample images")
+    
+    logging.info(f"Sample dataset created: {output_path}")
 
 def main():
-    """
-    Main function to run data preparation examples
-    """
-    print("Wellbore Image Generation - Data Preparation")
-    print("============================================\n")
+    """Main function"""
+    parser = argparse.ArgumentParser(
+        description='Data preparation for wellbore image generation',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
     
-    # Example paths (update these according to your setup)
-    raw_data_dir = "raw_data"  # Directory with all your raw images
-    organized_data_dir = "data"  # Output directory for organized dataset
-    preprocessed_data_dir = "data_preprocessed"  # Output for preprocessed images
+    parser.add_argument(
+        '--action',
+        type=str,
+        choices=['preprocess', 'analyze', 'split', 'clean', 'sample'],
+        required=True,
+        help='Action to perform'
+    )
     
-    print("Available operations:")
-    print("1. Organize dataset into train/val/test splits")
-    print("2. Preprocess images (resize, normalize)")
-    print("3. Analyze dataset statistics")
-    print("4. Clean dataset (remove invalid images)")
-    print("\nUpdate the paths in this script and uncomment the operations you need.\n")
+    parser.add_argument(
+        '--input-dir',
+        type=str,
+        help='Input directory containing raw images'
+    )
     
-    # Example usage (uncomment as needed):
+    parser.add_argument(
+        '--output-dir',
+        type=str,
+        required=True,
+        help='Output directory for processed data'
+    )
     
-    # 1. Organize raw images into train/val/test splits
-    # if os.path.exists(raw_data_dir):
-    #     organize_dataset(raw_data_dir, organized_data_dir)
-    # else:
-    #     print(f"Raw data directory not found: {raw_data_dir}")
+    parser.add_argument(
+        '--image-size',
+        type=int,
+        default=256,
+        help='Target image size (square)'
+    )
     
-    # 2. Analyze dataset
-    # for split in ["train", "val", "test"]:
-    #     split_dir = os.path.join(organized_data_dir, split)
-    #     if os.path.exists(split_dir):
-    #         print(f"\n--- Analyzing {split} set ---")
-    #         analyze_dataset(split_dir)
+    parser.add_argument(
+        '--train-ratio',
+        type=float,
+        default=0.8,
+        help='Training set ratio for splitting'
+    )
     
-    # 3. Clean dataset
-    # for split in ["train", "val", "test"]:
-    #     split_dir = os.path.join(organized_data_dir, split)
-    #     if os.path.exists(split_dir):
-    #         print(f"\n--- Cleaning {split} set ---")
-    #         clean_dataset(split_dir)
+    parser.add_argument(
+        '--val-ratio',
+        type=float,
+        default=0.1,
+        help='Validation set ratio for splitting'
+    )
     
-    # 4. Preprocess images
-    # for split in ["train", "val", "test"]:
-    #     input_dir = os.path.join(organized_data_dir, split)
-    #     output_dir = os.path.join(preprocessed_data_dir, split)
-    #     
-    #     if os.path.exists(input_dir):
-    #         print(f"\n--- Preprocessing {split} set ---")
-    #         preprocess_images(input_dir, output_dir, target_size=(256, 256))
+    parser.add_argument(
+        '--test-ratio',
+        type=float,
+        default=0.1,
+        help='Test set ratio for splitting'
+    )
     
-    print("Data preparation script ready!")
-    print("\nTo use this script:")
-    print("1. Update the directory paths above")
-    print("2. Uncomment the operations you want to perform")
-    print("3. Run the script")
+    parser.add_argument(
+        '--num-samples',
+        type=int,
+        default=1000,
+        help='Number of sample images to create'
+    )
+    
+    parser.add_argument(
+        '--min-size',
+        type=int,
+        default=64,
+        help='Minimum image size for cleaning'
+    )
+    
+    parser.add_argument(
+        '--max-size',
+        type=int,
+        default=4096,
+        help='Maximum image size for cleaning'
+    )
+    
+    parser.add_argument(
+        '--verbose',
+        action='store_true',
+        help='Enable verbose logging'
+    )
+    
+    args = parser.parse_args()
+    
+    # Setup logging
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    setup_logging(level=log_level)
+    
+    logging.info(f"Starting data preparation: {args.action}")
+    
+    try:
+        if args.action == 'preprocess':
+            if not args.input_dir:
+                raise ValueError("Input directory required for preprocessing")
+            
+            result = prepare_raw_data(
+                input_dir=args.input_dir,
+                output_dir=args.output_dir,
+                image_size=args.image_size
+            )
+            
+            print(f"\nPreprocessing Results:")
+            print(f"Total images: {result['total']}")
+            print(f"Processed: {result['processed']}")
+            print(f"Failed: {result['failed']}")
+        
+        elif args.action == 'analyze':
+            if not args.input_dir:
+                raise ValueError("Input directory required for analysis")
+            
+            stats = analyze_dataset(args.input_dir)
+        
+        elif args.action == 'split':
+            if not args.input_dir:
+                raise ValueError("Input directory required for splitting")
+            
+            splits = create_train_val_test_splits(
+                data_path=args.input_dir,
+                output_dir=args.output_dir,
+                train_ratio=args.train_ratio,
+                val_ratio=args.val_ratio,
+                test_ratio=args.test_ratio
+            )
+            
+            print(f"\nDataset Splits:")
+            for split_name, file_list in splits.items():
+                print(f"{split_name}: {len(file_list)} images")
+        
+        elif args.action == 'clean':
+            if not args.input_dir:
+                raise ValueError("Input directory required for cleaning")
+            
+            report = clean_dataset(
+                data_path=args.input_dir,
+                output_dir=args.output_dir,
+                min_size=args.min_size,
+                max_size=args.max_size
+            )
+            
+            print(f"\nCleaning Results:")
+            for key, value in report.items():
+                print(f"{key}: {value}")
+        
+        elif args.action == 'sample':
+            create_sample_dataset(
+                output_dir=args.output_dir,
+                num_samples=args.num_samples,
+                image_size=args.image_size
+            )
+            
+            print(f"\nSample dataset created with {args.num_samples} images")
+        
+        logging.info(f"Data preparation completed successfully")
+        
+    except Exception as e:
+        logging.error(f"Error during data preparation: {str(e)}")
+        sys.exit(1)
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
