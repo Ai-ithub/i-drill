@@ -1,377 +1,281 @@
 #!/usr/bin/env python3
-"""Utility functions for StyleGAN2 wellbore image generation"""
+"""Training script for StyleGAN2 wellbore image generation"""
 
 import os
 import time
 import logging
-import random
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Optional
 
 import torch
-import numpy as np
-from PIL import Image
-import matplotlib.pyplot as plt
+import torch.nn as nn
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+from torchvision.utils import save_image, make_grid
 
-def setup_logging(level: int = logging.INFO, log_file: Optional[str] = None) -> None:
-    """Setup logging configuration"""
-    # Create formatter
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+from config import GANConfig
+from gan.generator import StyleGAN2Generator
+from gan.discriminator import StyleGAN2Discriminator
+from gan.trainer import StyleGAN2Trainer
+from data import WellboreImageDataset
+from utils import (
+    save_checkpoint, load_checkpoint, ensure_dir,
+    AverageMeter, ProgressMeter, format_time
+)
+
+def create_data_loader(config: GANConfig) -> DataLoader:
+    """Create data loader for training"""
+    logging.info(f"Loading dataset from: {config.DATA_PATH}")
+    
+    dataset = WellboreImageDataset(
+        data_path=config.DATA_PATH,
+        image_size=config.IMAGE_SIZE,
+        augment=config.USE_AUGMENTATION
     )
     
-    # Setup console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(level)
-    console_handler.setFormatter(formatter)
+    logging.info(f"Dataset size: {len(dataset)} images")
     
-    # Setup root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(level)
-    root_logger.handlers.clear()
-    root_logger.addHandler(console_handler)
+    dataloader = DataLoader(
+        dataset,
+        batch_size=config.BATCH_SIZE,
+        shuffle=True,
+        num_workers=config.NUM_WORKERS,
+        pin_memory=True,
+        drop_last=True
+    )
     
-    # Setup file handler if specified
-    if log_file:
-        ensure_dir(os.path.dirname(log_file))
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setLevel(level)
-        file_handler.setFormatter(formatter)
-        root_logger.addHandler(file_handler)
+    return dataloader
 
-def ensure_dir(directory: str) -> None:
-    """Ensure directory exists, create if not"""
-    Path(directory).mkdir(parents=True, exist_ok=True)
+def create_models(config: GANConfig) -> tuple:
+    """Create generator and discriminator models"""
+    logging.info("Creating StyleGAN2 models...")
+    
+    # Create generator
+    generator = StyleGAN2Generator(
+        latent_dim=config.LATENT_DIM,
+        image_size=config.IMAGE_SIZE,
+        num_channels=config.NUM_CHANNELS,
+        num_layers=config.NUM_LAYERS,
+        feature_maps=config.FEATURE_MAPS
+    )
+    
+    # Create discriminator
+    discriminator = StyleGAN2Discriminator(
+        image_size=config.IMAGE_SIZE,
+        num_channels=config.NUM_CHANNELS,
+        num_layers=config.NUM_LAYERS,
+        feature_maps=config.FEATURE_MAPS
+    )
+    
+    # Move to device
+    generator = generator.to(config.DEVICE)
+    discriminator = discriminator.to(config.DEVICE)
+    
+    # Log model parameters
+    gen_params = sum(p.numel() for p in generator.parameters())
+    disc_params = sum(p.numel() for p in discriminator.parameters())
+    
+    logging.info(f"Generator parameters: {gen_params:,}")
+    logging.info(f"Discriminator parameters: {disc_params:,}")
+    logging.info(f"Total parameters: {gen_params + disc_params:,}")
+    
+    return generator, discriminator
 
-def set_random_seed(seed: int) -> None:
-    """Set random seed for reproducibility"""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
+def setup_training(config: GANConfig, generator: nn.Module, discriminator: nn.Module) -> StyleGAN2Trainer:
+    """Setup trainer with optimizers and schedulers"""
+    logging.info("Setting up training components...")
+    
+    trainer = StyleGAN2Trainer(
+        generator=generator,
+        discriminator=discriminator,
+        config=config
+    )
+    
+    return trainer
 
-def get_device(device_name: str = 'auto') -> torch.device:
-    """Get appropriate device for computation"""
-    if device_name == 'auto':
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    else:
-        device = torch.device(device_name)
+def save_sample_images(generator: nn.Module, config: GANConfig, epoch: int, output_dir: str):
+    """Generate and save sample images"""
+    generator.eval()
     
-    if device.type == 'cuda' and not torch.cuda.is_available():
-        logging.warning("CUDA requested but not available, falling back to CPU")
-        device = torch.device('cpu')
+    with torch.no_grad():
+        # Generate fixed noise for consistent samples
+        fixed_noise = torch.randn(16, config.LATENT_DIM, device=config.DEVICE)
+        fake_images = generator(fixed_noise)
+        
+        # Denormalize images (from [-1, 1] to [0, 1])
+        fake_images = (fake_images + 1) / 2
+        
+        # Create grid and save
+        grid = make_grid(fake_images, nrow=4, normalize=True)
+        save_path = os.path.join(output_dir, 'samples', f'epoch_{epoch:04d}.png')
+        save_image(grid, save_path)
     
-    return device
+    generator.train()
 
-def save_checkpoint(state: Dict[str, Any], filepath: str) -> None:
-    """Save model checkpoint"""
-    ensure_dir(os.path.dirname(filepath))
-    torch.save(state, filepath)
-    logging.info(f"Checkpoint saved: {filepath}")
-
-def load_checkpoint(filepath: str) -> Dict[str, Any]:
-    """Load model checkpoint"""
-    if not os.path.exists(filepath):
-        raise FileNotFoundError(f"Checkpoint not found: {filepath}")
+def train_epoch(trainer: StyleGAN2Trainer, dataloader: DataLoader, epoch: int, 
+                config: GANConfig, writer: SummaryWriter) -> dict:
+    """Train for one epoch"""
+    batch_time = AverageMeter('Time', ':6.3f')
+    data_time = AverageMeter('Data', ':6.3f')
+    g_losses = AverageMeter('G_Loss', ':.4f')
+    d_losses = AverageMeter('D_Loss', ':.4f')
     
-    checkpoint = torch.load(filepath, map_location='cpu')
-    logging.info(f"Checkpoint loaded: {filepath}")
-    return checkpoint
-
-def count_parameters(model: torch.nn.Module) -> int:
-    """Count total number of parameters in a model"""
-    return sum(p.numel() for p in model.parameters())
-
-def count_trainable_parameters(model: torch.nn.Module) -> int:
-    """Count number of trainable parameters in a model"""
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-def format_time(seconds: float) -> str:
-    """Format time in seconds to human readable format"""
-    if seconds < 60:
-        return f"{seconds:.1f}s"
-    elif seconds < 3600:
-        minutes = seconds / 60
-        return f"{minutes:.1f}m"
-    else:
-        hours = seconds / 3600
-        return f"{hours:.1f}h"
-
-def format_number(num: int) -> str:
-    """Format large numbers with appropriate suffixes"""
-    if num < 1000:
-        return str(num)
-    elif num < 1000000:
-        return f"{num/1000:.1f}K"
-    elif num < 1000000000:
-        return f"{num/1000000:.1f}M"
-    else:
-        return f"{num/1000000000:.1f}B"
-
-class AverageMeter:
-    """Computes and stores the average and current value"""
+    progress = ProgressMeter(
+        len(dataloader),
+        [batch_time, data_time, g_losses, d_losses],
+        prefix=f"Epoch: [{epoch}]"
+    )
     
-    def __init__(self, name: str, fmt: str = ':f'):
-        self.name = name
-        self.fmt = fmt
-        self.reset()
+    trainer.generator.train()
+    trainer.discriminator.train()
     
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
+    end = time.time()
     
-    def update(self, val: float, n: int = 1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
+    for i, real_images in enumerate(dataloader):
+        # Measure data loading time
+        data_time.update(time.time() - end)
+        
+        # Move to device
+        real_images = real_images.to(config.DEVICE)
+        
+        # Train discriminator
+        d_loss = trainer.train_discriminator(real_images)
+        
+        # Train generator (every G_STEPS iterations)
+        g_loss = 0.0
+        if i % config.G_STEPS == 0:
+            g_loss = trainer.train_generator(real_images.size(0))
+        
+        # Update meters
+        g_losses.update(g_loss, real_images.size(0))
+        d_losses.update(d_loss, real_images.size(0))
+        
+        # Measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
+        
+        # Log to tensorboard
+        global_step = epoch * len(dataloader) + i
+        writer.add_scalar('Loss/Generator', g_loss, global_step)
+        writer.add_scalar('Loss/Discriminator', d_loss, global_step)
+        
+        # Print progress
+        if i % config.PRINT_FREQ == 0:
+            progress.display(i)
     
-    def __str__(self):
-        fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
-        return fmtstr.format(**self.__dict__)
-
-class ProgressMeter:
-    """Display progress during training"""
-    
-    def __init__(self, num_batches: int, meters: List[AverageMeter], prefix: str = ""):
-        self.batch_fmtstr = self._get_batch_fmtstr(num_batches)
-        self.meters = meters
-        self.prefix = prefix
-    
-    def display(self, batch: int):
-        entries = [self.prefix + self.batch_fmtstr.format(batch)]
-        entries += [str(meter) for meter in self.meters]
-        logging.info('\t'.join(entries))
-    
-    def _get_batch_fmtstr(self, num_batches: int):
-        num_digits = len(str(num_batches // 1))
-        fmt = '{:' + str(num_digits) + 'd}'
-        return '[' + fmt + '/' + fmt.format(num_batches) + ']'
-
-class Timer:
-    """Simple timer context manager"""
-    
-    def __init__(self, name: str = "Timer"):
-        self.name = name
-        self.start_time = None
-        self.end_time = None
-    
-    def __enter__(self):
-        self.start_time = time.time()
-        return self
-    
-    def __exit__(self, *args):
-        self.end_time = time.time()
-        elapsed = self.end_time - self.start_time
-        logging.info(f"{self.name}: {format_time(elapsed)}")
-    
-    @property
-    def elapsed(self) -> float:
-        if self.start_time is None:
-            return 0.0
-        end_time = self.end_time if self.end_time else time.time()
-        return end_time - self.start_time
-
-def tensor_to_pil(tensor: torch.Tensor) -> Image.Image:
-    """Convert tensor to PIL Image"""
-    # Ensure tensor is on CPU and detached
-    tensor = tensor.detach().cpu()
-    
-    # Handle batch dimension
-    if tensor.dim() == 4:
-        tensor = tensor.squeeze(0)
-    
-    # Convert from [-1, 1] to [0, 1] if needed
-    if tensor.min() < 0:
-        tensor = (tensor + 1) / 2
-    
-    # Clamp values
-    tensor = torch.clamp(tensor, 0, 1)
-    
-    # Convert to numpy
-    if tensor.shape[0] == 1:  # Grayscale
-        array = tensor.squeeze(0).numpy()
-        array = (array * 255).astype(np.uint8)
-        return Image.fromarray(array, mode='L')
-    else:  # RGB
-        array = tensor.permute(1, 2, 0).numpy()
-        array = (array * 255).astype(np.uint8)
-        return Image.fromarray(array, mode='RGB')
-
-def pil_to_tensor(image: Image.Image, normalize: bool = True) -> torch.Tensor:
-    """Convert PIL Image to tensor"""
-    # Convert to RGB if needed
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    
-    # Convert to numpy array
-    array = np.array(image).astype(np.float32) / 255.0
-    
-    # Convert to tensor
-    tensor = torch.from_numpy(array).permute(2, 0, 1)
-    
-    # Normalize to [-1, 1] if requested
-    if normalize:
-        tensor = tensor * 2 - 1
-    
-    return tensor
-
-def create_image_grid(images: List[torch.Tensor], nrow: int = 8, 
-                     padding: int = 2, normalize: bool = True) -> torch.Tensor:
-    """Create image grid from list of tensors"""
-    from torchvision.utils import make_grid
-    
-    # Stack images
-    if isinstance(images, list):
-        images = torch.stack(images)
-    
-    # Create grid
-    grid = make_grid(images, nrow=nrow, padding=padding, normalize=normalize)
-    
-    return grid
-
-def save_image_comparison(real_images: torch.Tensor, fake_images: torch.Tensor,
-                         filepath: str, nrow: int = 8) -> None:
-    """Save comparison between real and fake images"""
-    from torchvision.utils import save_image, make_grid
-    
-    # Ensure same number of images
-    min_size = min(real_images.size(0), fake_images.size(0))
-    real_images = real_images[:min_size]
-    fake_images = fake_images[:min_size]
-    
-    # Create grids
-    real_grid = make_grid(real_images, nrow=nrow, normalize=True, padding=2)
-    fake_grid = make_grid(fake_images, nrow=nrow, normalize=True, padding=2)
-    
-    # Combine grids vertically
-    combined = torch.cat([real_grid, fake_grid], dim=1)
-    
-    # Save
-    save_image(combined, filepath)
-
-def plot_training_curves(losses: Dict[str, List[float]], save_path: str) -> None:
-    """Plot training loss curves"""
-    plt.figure(figsize=(12, 4))
-    
-    for i, (name, values) in enumerate(losses.items()):
-        plt.subplot(1, len(losses), i + 1)
-        plt.plot(values)
-        plt.title(f'{name} Loss')
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.grid(True)
-    
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.close()
-
-def calculate_gradient_penalty(discriminator: torch.nn.Module, real_images: torch.Tensor,
-                             fake_images: torch.Tensor, device: torch.device) -> torch.Tensor:
-    """Calculate gradient penalty for WGAN-GP"""
-    batch_size = real_images.size(0)
-    
-    # Random weight term for interpolation
-    alpha = torch.rand(batch_size, 1, 1, 1, device=device)
-    
-    # Get random interpolation between real and fake images
-    interpolated = alpha * real_images + (1 - alpha) * fake_images
-    interpolated.requires_grad_(True)
-    
-    # Calculate discriminator output for interpolated images
-    d_interpolated = discriminator(interpolated)
-    
-    # Calculate gradients
-    gradients = torch.autograd.grad(
-        outputs=d_interpolated,
-        inputs=interpolated,
-        grad_outputs=torch.ones_like(d_interpolated),
-        create_graph=True,
-        retain_graph=True,
-        only_inputs=True
-    )[0]
-    
-    # Calculate gradient penalty
-    gradients = gradients.view(batch_size, -1)
-    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
-    
-    return gradient_penalty
-
-def get_memory_usage() -> Dict[str, float]:
-    """Get current memory usage"""
-    import psutil
-    
-    # System memory
-    memory = psutil.virtual_memory()
-    
-    result = {
-        'system_total_gb': memory.total / (1024**3),
-        'system_used_gb': memory.used / (1024**3),
-        'system_available_gb': memory.available / (1024**3),
-        'system_percent': memory.percent
+    return {
+        'g_loss': g_losses.avg,
+        'd_loss': d_losses.avg,
+        'batch_time': batch_time.avg
     }
-    
-    # GPU memory if available
-    if torch.cuda.is_available():
-        gpu_memory = torch.cuda.get_memory_stats()
-        result.update({
-            'gpu_allocated_gb': torch.cuda.memory_allocated() / (1024**3),
-            'gpu_reserved_gb': torch.cuda.memory_reserved() / (1024**3),
-            'gpu_max_allocated_gb': torch.cuda.max_memory_allocated() / (1024**3)
-        })
-    
-    return result
 
-def log_memory_usage(prefix: str = "") -> None:
-    """Log current memory usage"""
-    memory_info = get_memory_usage()
+def train_gan(config: GANConfig, output_dir: str):
+    """Main training function"""
+    logging.info("Starting StyleGAN2 training...")
     
-    log_msg = f"{prefix}Memory Usage - "
-    log_msg += f"System: {memory_info['system_used_gb']:.1f}GB/{memory_info['system_total_gb']:.1f}GB ({memory_info['system_percent']:.1f}%)"
+    # Create output directories
+    checkpoint_dir = os.path.join(output_dir, 'checkpoints')
+    sample_dir = os.path.join(output_dir, 'samples')
+    log_dir = os.path.join(output_dir, 'logs')
     
-    if 'gpu_allocated_gb' in memory_info:
-        log_msg += f", GPU: {memory_info['gpu_allocated_gb']:.1f}GB allocated, {memory_info['gpu_reserved_gb']:.1f}GB reserved"
+    ensure_dir(checkpoint_dir)
+    ensure_dir(sample_dir)
+    ensure_dir(log_dir)
     
-    logging.info(log_msg)
+    # Setup tensorboard
+    writer = SummaryWriter(log_dir)
+    
+    # Create data loader
+    dataloader = create_data_loader(config)
+    
+    # Create models
+    generator, discriminator = create_models(config)
+    
+    # Setup training
+    trainer = setup_training(config, generator, discriminator)
+    
+    # Load checkpoint if resuming
+    start_epoch = 0
+    if config.RESUME_CHECKPOINT:
+        if os.path.exists(config.RESUME_CHECKPOINT):
+            logging.info(f"Resuming from checkpoint: {config.RESUME_CHECKPOINT}")
+            checkpoint = load_checkpoint(config.RESUME_CHECKPOINT)
+            generator.load_state_dict(checkpoint['generator'])
+            discriminator.load_state_dict(checkpoint['discriminator'])
+            trainer.g_optimizer.load_state_dict(checkpoint['g_optimizer'])
+            trainer.d_optimizer.load_state_dict(checkpoint['d_optimizer'])
+            start_epoch = checkpoint['epoch'] + 1
+            logging.info(f"Resumed from epoch {start_epoch}")
+        else:
+            logging.warning(f"Checkpoint not found: {config.RESUME_CHECKPOINT}")
+    
+    # Training loop
+    logging.info(f"Training for {config.NUM_EPOCHS} epochs...")
+    start_time = time.time()
+    
+    for epoch in range(start_epoch, config.NUM_EPOCHS):
+        epoch_start = time.time()
+        
+        # Train for one epoch
+        metrics = train_epoch(trainer, dataloader, epoch, config, writer)
+        
+        # Update learning rate
+        trainer.update_learning_rate()
+        
+        # Log epoch metrics
+        epoch_time = time.time() - epoch_start
+        logging.info(
+            f"Epoch [{epoch}/{config.NUM_EPOCHS}] "
+            f"G_Loss: {metrics['g_loss']:.4f} "
+            f"D_Loss: {metrics['d_loss']:.4f} "
+            f"Time: {format_time(epoch_time)}"
+        )
+        
+        # Save sample images
+        if epoch % config.SAMPLE_FREQ == 0:
+            save_sample_images(generator, config, epoch, output_dir)
+        
+        # Save checkpoint
+        if epoch % config.CHECKPOINT_FREQ == 0:
+            checkpoint_path = os.path.join(checkpoint_dir, f'checkpoint_epoch_{epoch:04d}.pth')
+            save_checkpoint({
+                'epoch': epoch,
+                'generator': generator.state_dict(),
+                'discriminator': discriminator.state_dict(),
+                'g_optimizer': trainer.g_optimizer.state_dict(),
+                'd_optimizer': trainer.d_optimizer.state_dict(),
+                'config': config.__dict__
+            }, checkpoint_path)
+            logging.info(f"Checkpoint saved: {checkpoint_path}")
+    
+    # Save final model
+    final_checkpoint = os.path.join(checkpoint_dir, 'final_model.pth')
+    save_checkpoint({
+        'epoch': config.NUM_EPOCHS - 1,
+        'generator': generator.state_dict(),
+        'discriminator': discriminator.state_dict(),
+        'g_optimizer': trainer.g_optimizer.state_dict(),
+        'd_optimizer': trainer.d_optimizer.state_dict(),
+        'config': config.__dict__
+    }, final_checkpoint)
+    
+    total_time = time.time() - start_time
+    logging.info(f"Training completed in {format_time(total_time)}")
+    logging.info(f"Final model saved: {final_checkpoint}")
+    
+    writer.close()
 
-def cleanup_memory() -> None:
-    """Clean up memory"""
-    import gc
+if __name__ == '__main__':
+    import argparse
     
-    # Python garbage collection
-    gc.collect()
+    parser = argparse.ArgumentParser(description='Train StyleGAN2 for wellbore images')
+    parser.add_argument('--config', type=str, required=True, help='Path to config file')
+    parser.add_argument('--output-dir', type=str, default='outputs', help='Output directory')
     
-    # CUDA memory cleanup
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
-
-def validate_config(config) -> None:
-    """Validate configuration parameters"""
-    required_attrs = [
-        'IMAGE_SIZE', 'BATCH_SIZE', 'LATENT_DIM', 'NUM_CHANNELS',
-        'LEARNING_RATE_G', 'LEARNING_RATE_D', 'NUM_EPOCHS'
-    ]
+    args = parser.parse_args()
     
-    for attr in required_attrs:
-        if not hasattr(config, attr):
-            raise ValueError(f"Missing required configuration: {attr}")
+    # Load config
+    config = GANConfig.from_yaml(args.config)
     
-    # Validate image size is power of 2
-    if config.IMAGE_SIZE & (config.IMAGE_SIZE - 1) != 0:
-        raise ValueError(f"Image size must be power of 2, got {config.IMAGE_SIZE}")
-    
-    # Validate positive values
-    positive_attrs = ['IMAGE_SIZE', 'BATCH_SIZE', 'LATENT_DIM', 'NUM_CHANNELS', 'NUM_EPOCHS']
-    for attr in positive_attrs:
-        if getattr(config, attr) <= 0:
-            raise ValueError(f"{attr} must be positive, got {getattr(config, attr)}")
-    
-    logging.info("Configuration validation passed")
+    # Start training
+    train_gan(config, args.output_dir)

@@ -1,281 +1,432 @@
-#!/usr/bin/env python3
-"""Training script for StyleGAN2 wellbore image generation"""
-
-import os
-import time
-import logging
-from pathlib import Path
-from typing import Optional
+"""StyleGAN2 Training Pipeline for Wellbore Image Generation"""
 
 import torch
 import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from torchvision.utils import save_image, make_grid
+import os
+import time
+from typing import Dict, List, Tuple, Optional
+from tqdm import tqdm
+import numpy as np
 
-from config import GANConfig
-from gan.generator import StyleGAN2Generator
-from gan.discriminator import StyleGAN2Discriminator
-from gan.trainer import StyleGAN2Trainer
-from data import WellboreImageDataset
-from utils import (
-    save_checkpoint, load_checkpoint, ensure_dir,
-    AverageMeter, ProgressMeter, format_time
+from .generator import StyleGAN2Generator
+from .discriminator import StyleGAN2Discriminator
+from ..utils import (
+    weights_init, save_image_grid, create_noise, gradient_penalty,
+    plot_training_curves, ensure_dir, save_checkpoint, load_checkpoint
 )
+from ..config import GANConfig
 
-def create_data_loader(config: GANConfig) -> DataLoader:
-    """Create data loader for training"""
-    logging.info(f"Loading dataset from: {config.DATA_PATH}")
+class GANLoss:
+    """Loss functions for StyleGAN2 training"""
     
-    dataset = WellboreImageDataset(
-        data_path=config.DATA_PATH,
-        image_size=config.IMAGE_SIZE,
-        augment=config.USE_AUGMENTATION
-    )
+    @staticmethod
+    def adversarial_loss_g(fake_scores: torch.Tensor) -> torch.Tensor:
+        """Generator adversarial loss (non-saturating)"""
+        return F.softplus(-fake_scores).mean()
     
-    logging.info(f"Dataset size: {len(dataset)} images")
+    @staticmethod
+    def adversarial_loss_d(real_scores: torch.Tensor, fake_scores: torch.Tensor) -> torch.Tensor:
+        """Discriminator adversarial loss"""
+        real_loss = F.softplus(-real_scores).mean()
+        fake_loss = F.softplus(fake_scores).mean()
+        return real_loss + fake_loss
     
-    dataloader = DataLoader(
-        dataset,
-        batch_size=config.BATCH_SIZE,
-        shuffle=True,
-        num_workers=config.NUM_WORKERS,
-        pin_memory=True,
-        drop_last=True
-    )
+    @staticmethod
+    def r1_regularization(discriminator: nn.Module, real_images: torch.Tensor) -> torch.Tensor:
+        """R1 gradient penalty for discriminator"""
+        real_images.requires_grad_(True)
+        real_scores = discriminator(real_images)
+        
+        gradients = torch.autograd.grad(
+            outputs=real_scores.sum(),
+            inputs=real_images,
+            create_graph=True,
+            retain_graph=True
+        )[0]
+        
+        gradient_penalty = (gradients.norm(2, dim=[1, 2, 3]) ** 2).mean()
+        return gradient_penalty
     
-    return dataloader
+    @staticmethod
+    def path_length_regularization(generator: nn.Module, latent_codes: torch.Tensor,
+                                 noise_inputs: List[torch.Tensor]) -> torch.Tensor:
+        """Path length regularization for generator"""
+        # Generate images
+        fake_images = generator(latent_codes, noise_inputs=noise_inputs)
+        
+        # Create noise for path length calculation
+        noise = torch.randn_like(fake_images) / np.sqrt(np.prod(fake_images.shape[2:]))
+        
+        # Calculate gradients
+        gradients = torch.autograd.grad(
+            outputs=(fake_images * noise).sum(),
+            inputs=latent_codes,
+            create_graph=True,
+            retain_graph=True
+        )[0]
+        
+        path_lengths = gradients.norm(2, dim=1)
+        path_penalty = (path_lengths ** 2).mean()
+        
+        return path_penalty
 
-def create_models(config: GANConfig) -> tuple:
-    """Create generator and discriminator models"""
-    logging.info("Creating StyleGAN2 models...")
+class ExponentialMovingAverage:
+    """Exponential moving average for generator weights"""
     
-    # Create generator
-    generator = StyleGAN2Generator(
-        latent_dim=config.LATENT_DIM,
-        image_size=config.IMAGE_SIZE,
-        num_channels=config.NUM_CHANNELS,
-        num_layers=config.NUM_LAYERS,
-        feature_maps=config.FEATURE_MAPS
-    )
+    def __init__(self, model: nn.Module, decay: float = 0.999):
+        self.decay = decay
+        self.shadow = {}
+        self.backup = {}
+        
+        # Initialize shadow weights
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                self.shadow[name] = param.data.clone()
     
-    # Create discriminator
-    discriminator = StyleGAN2Discriminator(
-        image_size=config.IMAGE_SIZE,
-        num_channels=config.NUM_CHANNELS,
-        num_layers=config.NUM_LAYERS,
-        feature_maps=config.FEATURE_MAPS
-    )
+    def update(self, model: nn.Module):
+        """Update shadow weights"""
+        for name, param in model.named_parameters():
+            if param.requires_grad and name in self.shadow:
+                self.shadow[name] = self.decay * self.shadow[name] + (1 - self.decay) * param.data
     
-    # Move to device
-    generator = generator.to(config.DEVICE)
-    discriminator = discriminator.to(config.DEVICE)
+    def apply_shadow(self, model: nn.Module):
+        """Apply shadow weights to model"""
+        for name, param in model.named_parameters():
+            if param.requires_grad and name in self.shadow:
+                self.backup[name] = param.data.clone()
+                param.data = self.shadow[name]
     
-    # Log model parameters
-    gen_params = sum(p.numel() for p in generator.parameters())
-    disc_params = sum(p.numel() for p in discriminator.parameters())
-    
-    logging.info(f"Generator parameters: {gen_params:,}")
-    logging.info(f"Discriminator parameters: {disc_params:,}")
-    logging.info(f"Total parameters: {gen_params + disc_params:,}")
-    
-    return generator, discriminator
+    def restore(self, model: nn.Module):
+        """Restore original weights"""
+        for name, param in model.named_parameters():
+            if param.requires_grad and name in self.backup:
+                param.data = self.backup[name]
+        self.backup = {}
 
-def setup_training(config: GANConfig, generator: nn.Module, discriminator: nn.Module) -> StyleGAN2Trainer:
-    """Setup trainer with optimizers and schedulers"""
-    logging.info("Setting up training components...")
+class GANTrainer:
+    """StyleGAN2 Training Pipeline"""
     
-    trainer = StyleGAN2Trainer(
-        generator=generator,
-        discriminator=discriminator,
-        config=config
-    )
-    
-    return trainer
-
-def save_sample_images(generator: nn.Module, config: GANConfig, epoch: int, output_dir: str):
-    """Generate and save sample images"""
-    generator.eval()
-    
-    with torch.no_grad():
-        # Generate fixed noise for consistent samples
-        fixed_noise = torch.randn(16, config.LATENT_DIM, device=config.DEVICE)
-        fake_images = generator(fixed_noise)
+    def __init__(self, config: GANConfig, dataloader: DataLoader, 
+                 checkpoint_dir: str = "checkpoints", results_dir: str = "results"):
+        self.config = config
+        self.dataloader = dataloader
+        self.checkpoint_dir = checkpoint_dir
+        self.results_dir = results_dir
+        self.device = config.DEVICE
         
-        # Denormalize images (from [-1, 1] to [0, 1])
-        fake_images = (fake_images + 1) / 2
+        # Create directories
+        ensure_dir(checkpoint_dir)
+        ensure_dir(results_dir)
         
-        # Create grid and save
-        grid = make_grid(fake_images, nrow=4, normalize=True)
-        save_path = os.path.join(output_dir, 'samples', f'epoch_{epoch:04d}.png')
-        save_image(grid, save_path)
-    
-    generator.train()
-
-def train_epoch(trainer: StyleGAN2Trainer, dataloader: DataLoader, epoch: int, 
-                config: GANConfig, writer: SummaryWriter) -> dict:
-    """Train for one epoch"""
-    batch_time = AverageMeter('Time', ':6.3f')
-    data_time = AverageMeter('Data', ':6.3f')
-    g_losses = AverageMeter('G_Loss', ':.4f')
-    d_losses = AverageMeter('D_Loss', ':.4f')
-    
-    progress = ProgressMeter(
-        len(dataloader),
-        [batch_time, data_time, g_losses, d_losses],
-        prefix=f"Epoch: [{epoch}]"
-    )
-    
-    trainer.generator.train()
-    trainer.discriminator.train()
-    
-    end = time.time()
-    
-    for i, real_images in enumerate(dataloader):
-        # Measure data loading time
-        data_time.update(time.time() - end)
+        # Initialize models
+        self.generator = StyleGAN2Generator(
+            latent_dim=config.LATENT_DIM,
+            style_dim=config.LATENT_DIM,
+            num_mapping_layers=config.G_MAPPING_LAYERS,
+            num_synthesis_layers=config.G_SYNTHESIS_LAYERS,
+            output_channels=config.IMAGE_CHANNELS,
+            output_size=config.IMAGE_SIZE
+        ).to(self.device)
         
-        # Move to device
-        real_images = real_images.to(config.DEVICE)
+        self.discriminator = StyleGAN2Discriminator(
+            input_channels=config.IMAGE_CHANNELS,
+            input_size=config.IMAGE_SIZE,
+            num_layers=config.D_LAYERS
+        ).to(self.device)
         
-        # Train discriminator
-        d_loss = trainer.train_discriminator(real_images)
+        # Initialize weights
+        self.generator.apply(weights_init)
+        self.discriminator.apply(weights_init)
         
-        # Train generator (every G_STEPS iterations)
-        g_loss = 0.0
-        if i % config.G_STEPS == 0:
-            g_loss = trainer.train_generator(real_images.size(0))
-        
-        # Update meters
-        g_losses.update(g_loss, real_images.size(0))
-        d_losses.update(d_loss, real_images.size(0))
-        
-        # Measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
-        
-        # Log to tensorboard
-        global_step = epoch * len(dataloader) + i
-        writer.add_scalar('Loss/Generator', g_loss, global_step)
-        writer.add_scalar('Loss/Discriminator', d_loss, global_step)
-        
-        # Print progress
-        if i % config.PRINT_FREQ == 0:
-            progress.display(i)
-    
-    return {
-        'g_loss': g_losses.avg,
-        'd_loss': d_losses.avg,
-        'batch_time': batch_time.avg
-    }
-
-def train_gan(config: GANConfig, output_dir: str):
-    """Main training function"""
-    logging.info("Starting StyleGAN2 training...")
-    
-    # Create output directories
-    checkpoint_dir = os.path.join(output_dir, 'checkpoints')
-    sample_dir = os.path.join(output_dir, 'samples')
-    log_dir = os.path.join(output_dir, 'logs')
-    
-    ensure_dir(checkpoint_dir)
-    ensure_dir(sample_dir)
-    ensure_dir(log_dir)
-    
-    # Setup tensorboard
-    writer = SummaryWriter(log_dir)
-    
-    # Create data loader
-    dataloader = create_data_loader(config)
-    
-    # Create models
-    generator, discriminator = create_models(config)
-    
-    # Setup training
-    trainer = setup_training(config, generator, discriminator)
-    
-    # Load checkpoint if resuming
-    start_epoch = 0
-    if config.RESUME_CHECKPOINT:
-        if os.path.exists(config.RESUME_CHECKPOINT):
-            logging.info(f"Resuming from checkpoint: {config.RESUME_CHECKPOINT}")
-            checkpoint = load_checkpoint(config.RESUME_CHECKPOINT)
-            generator.load_state_dict(checkpoint['generator'])
-            discriminator.load_state_dict(checkpoint['discriminator'])
-            trainer.g_optimizer.load_state_dict(checkpoint['g_optimizer'])
-            trainer.d_optimizer.load_state_dict(checkpoint['d_optimizer'])
-            start_epoch = checkpoint['epoch'] + 1
-            logging.info(f"Resumed from epoch {start_epoch}")
-        else:
-            logging.warning(f"Checkpoint not found: {config.RESUME_CHECKPOINT}")
-    
-    # Training loop
-    logging.info(f"Training for {config.NUM_EPOCHS} epochs...")
-    start_time = time.time()
-    
-    for epoch in range(start_epoch, config.NUM_EPOCHS):
-        epoch_start = time.time()
-        
-        # Train for one epoch
-        metrics = train_epoch(trainer, dataloader, epoch, config, writer)
-        
-        # Update learning rate
-        trainer.update_learning_rate()
-        
-        # Log epoch metrics
-        epoch_time = time.time() - epoch_start
-        logging.info(
-            f"Epoch [{epoch}/{config.NUM_EPOCHS}] "
-            f"G_Loss: {metrics['g_loss']:.4f} "
-            f"D_Loss: {metrics['d_loss']:.4f} "
-            f"Time: {format_time(epoch_time)}"
+        # Initialize optimizers
+        self.optimizer_g = optim.Adam(
+            self.generator.parameters(),
+            lr=config.LEARNING_RATE_G,
+            betas=(config.BETA1, config.BETA2)
         )
         
-        # Save sample images
-        if epoch % config.SAMPLE_FREQ == 0:
-            save_sample_images(generator, config, epoch, output_dir)
+        self.optimizer_d = optim.Adam(
+            self.discriminator.parameters(),
+            lr=config.LEARNING_RATE_D,
+            betas=(config.BETA1, config.BETA2)
+        )
         
-        # Save checkpoint
-        if epoch % config.CHECKPOINT_FREQ == 0:
-            checkpoint_path = os.path.join(checkpoint_dir, f'checkpoint_epoch_{epoch:04d}.pth')
-            save_checkpoint({
-                'epoch': epoch,
-                'generator': generator.state_dict(),
-                'discriminator': discriminator.state_dict(),
-                'g_optimizer': trainer.g_optimizer.state_dict(),
-                'd_optimizer': trainer.d_optimizer.state_dict(),
-                'config': config.__dict__
-            }, checkpoint_path)
-            logging.info(f"Checkpoint saved: {checkpoint_path}")
+        # Exponential moving average for generator
+        self.ema = ExponentialMovingAverage(self.generator)
+        
+        # Loss function
+        self.loss_fn = GANLoss()
+        
+        # Tensorboard writer
+        self.writer = SummaryWriter(os.path.join(results_dir, "logs"))
+        
+        # Training state
+        self.current_epoch = 0
+        self.global_step = 0
+        self.g_losses = []
+        self.d_losses = []
+        
+        # Fixed noise for consistent sampling
+        self.fixed_noise = create_noise(16, config.LATENT_DIM, self.device)
     
-    # Save final model
-    final_checkpoint = os.path.join(checkpoint_dir, 'final_model.pth')
-    save_checkpoint({
-        'epoch': config.NUM_EPOCHS - 1,
-        'generator': generator.state_dict(),
-        'discriminator': discriminator.state_dict(),
-        'g_optimizer': trainer.g_optimizer.state_dict(),
-        'd_optimizer': trainer.d_optimizer.state_dict(),
-        'config': config.__dict__
-    }, final_checkpoint)
+    def train_discriminator(self, real_images: torch.Tensor) -> Dict[str, float]:
+        """Train discriminator for one step"""
+        self.optimizer_d.zero_grad()
+        
+        batch_size = real_images.size(0)
+        
+        # Generate fake images
+        noise = create_noise(batch_size, self.config.LATENT_DIM, self.device)
+        noise_inputs = self.generator.generate_noise(batch_size, self.device)
+        
+        with torch.no_grad():
+            fake_images = self.generator(noise, noise_inputs=noise_inputs)
+        
+        # Discriminator scores
+        real_scores = self.discriminator(real_images)
+        fake_scores = self.discriminator(fake_images)
+        
+        # Adversarial loss
+        d_loss = self.loss_fn.adversarial_loss_d(real_scores, fake_scores)
+        
+        # R1 regularization (applied every 16 steps)
+        r1_loss = 0
+        if self.global_step % 16 == 0:
+            r1_loss = self.loss_fn.r1_regularization(self.discriminator, real_images)
+            r1_loss = r1_loss * self.config.R1_REGULARIZATION_WEIGHT
+            d_loss = d_loss + r1_loss
+        
+        # Backward pass
+        d_loss.backward()
+        self.optimizer_d.step()
+        
+        return {
+            "d_loss": d_loss.item(),
+            "d_real_score": real_scores.mean().item(),
+            "d_fake_score": fake_scores.mean().item(),
+            "r1_loss": r1_loss.item() if isinstance(r1_loss, torch.Tensor) else r1_loss
+        }
     
-    total_time = time.time() - start_time
-    logging.info(f"Training completed in {format_time(total_time)}")
-    logging.info(f"Final model saved: {final_checkpoint}")
+    def train_generator(self, batch_size: int) -> Dict[str, float]:
+        """Train generator for one step"""
+        self.optimizer_g.zero_grad()
+        
+        # Generate fake images
+        noise = create_noise(batch_size, self.config.LATENT_DIM, self.device)
+        noise_inputs = self.generator.generate_noise(batch_size, self.device)
+        fake_images = self.generator(noise, noise_inputs=noise_inputs)
+        
+        # Discriminator scores
+        fake_scores = self.discriminator(fake_images)
+        
+        # Adversarial loss
+        g_loss = self.loss_fn.adversarial_loss_g(fake_scores)
+        
+        # Path length regularization (applied every 4 steps)
+        pl_loss = 0
+        if self.global_step % 4 == 0:
+            pl_loss = self.loss_fn.path_length_regularization(
+                self.generator, noise, noise_inputs
+            )
+            pl_loss = pl_loss * self.config.PATH_LENGTH_REGULARIZATION_WEIGHT
+            g_loss = g_loss + pl_loss
+        
+        # Backward pass
+        g_loss.backward()
+        self.optimizer_g.step()
+        
+        # Update EMA
+        self.ema.update(self.generator)
+        
+        return {
+            "g_loss": g_loss.item(),
+            "g_fake_score": fake_scores.mean().item(),
+            "pl_loss": pl_loss.item() if isinstance(pl_loss, torch.Tensor) else pl_loss
+        }
     
-    writer.close()
-
-if __name__ == '__main__':
-    import argparse
+    def generate_samples(self, num_samples: int = 16, use_ema: bool = True) -> torch.Tensor:
+        """Generate sample images"""
+        self.generator.eval()
+        
+        if use_ema:
+            self.ema.apply_shadow(self.generator)
+        
+        with torch.no_grad():
+            noise = create_noise(num_samples, self.config.LATENT_DIM, self.device)
+            noise_inputs = self.generator.generate_noise(num_samples, self.device)
+            samples = self.generator(noise, noise_inputs=noise_inputs)
+        
+        if use_ema:
+            self.ema.restore(self.generator)
+        
+        self.generator.train()
+        return samples
     
-    parser = argparse.ArgumentParser(description='Train StyleGAN2 for wellbore images')
-    parser.add_argument('--config', type=str, required=True, help='Path to config file')
-    parser.add_argument('--output-dir', type=str, default='outputs', help='Output directory')
+    def save_samples(self, epoch: int, step: int):
+        """Save generated samples"""
+        samples = self.generate_samples()
+        
+        # Denormalize images (from [-1, 1] to [0, 1])
+        samples = (samples + 1) / 2
+        
+        # Save image grid
+        save_path = os.path.join(self.results_dir, f"samples_epoch_{epoch}_step_{step}.png")
+        save_image_grid(samples, save_path, nrow=4)
     
-    args = parser.parse_args()
+    def log_metrics(self, epoch: int, step: int, d_metrics: Dict[str, float], 
+                   g_metrics: Dict[str, float]):
+        """Log training metrics"""
+        # Tensorboard logging
+        for key, value in d_metrics.items():
+            self.writer.add_scalar(f"Discriminator/{key}", value, step)
+        
+        for key, value in g_metrics.items():
+            self.writer.add_scalar(f"Generator/{key}", value, step)
+        
+        # Console logging
+        if step % self.config.LOG_INTERVAL == 0:
+            print(f"Epoch [{epoch}/{self.config.EPOCHS}] Step [{step}] "
+                  f"D_Loss: {d_metrics['d_loss']:.4f} G_Loss: {g_metrics['g_loss']:.4f}")
     
-    # Load config
-    config = GANConfig.from_yaml(args.config)
+    def save_checkpoint(self, epoch: int, step: int):
+        """Save training checkpoint"""
+        checkpoint = {
+            'epoch': epoch,
+            'step': step,
+            'generator_state_dict': self.generator.state_dict(),
+            'discriminator_state_dict': self.discriminator.state_dict(),
+            'optimizer_g_state_dict': self.optimizer_g.state_dict(),
+            'optimizer_d_state_dict': self.optimizer_d.state_dict(),
+            'ema_shadow': self.ema.shadow,
+            'g_losses': self.g_losses,
+            'd_losses': self.d_losses,
+            'config': self.config
+        }
+        
+        checkpoint_path = os.path.join(self.checkpoint_dir, f"checkpoint_epoch_{epoch}.pt")
+        torch.save(checkpoint, checkpoint_path)
+        
+        # Save latest checkpoint
+        latest_path = os.path.join(self.checkpoint_dir, "latest.pt")
+        torch.save(checkpoint, latest_path)
     
-    # Start training
-    train_gan(config, args.output_dir)
+    def load_checkpoint(self, checkpoint_path: str):
+        """Load training checkpoint"""
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        
+        self.generator.load_state_dict(checkpoint['generator_state_dict'])
+        self.discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
+        self.optimizer_g.load_state_dict(checkpoint['optimizer_g_state_dict'])
+        self.optimizer_d.load_state_dict(checkpoint['optimizer_d_state_dict'])
+        
+        self.ema.shadow = checkpoint['ema_shadow']
+        self.current_epoch = checkpoint['epoch']
+        self.global_step = checkpoint['step']
+        self.g_losses = checkpoint['g_losses']
+        self.d_losses = checkpoint['d_losses']
+        
+        print(f"Loaded checkpoint from epoch {self.current_epoch}")
+    
+    def train(self, resume_from_checkpoint: Optional[str] = None):
+        """Main training loop"""
+        if resume_from_checkpoint:
+            self.load_checkpoint(resume_from_checkpoint)
+        
+        print(f"Starting training on {self.device}")
+        print(f"Generator parameters: {sum(p.numel() for p in self.generator.parameters()):,}")
+        print(f"Discriminator parameters: {sum(p.numel() for p in self.discriminator.parameters()):,}")
+        
+        start_epoch = self.current_epoch
+        
+        for epoch in range(start_epoch, self.config.EPOCHS):
+            self.current_epoch = epoch
+            epoch_start_time = time.time()
+            
+            # Training loop
+            pbar = tqdm(self.dataloader, desc=f"Epoch {epoch+1}/{self.config.EPOCHS}")
+            
+            for batch_idx, (real_images, _) in enumerate(pbar):
+                real_images = real_images.to(self.device)
+                batch_size = real_images.size(0)
+                
+                # Train discriminator
+                d_metrics = self.train_discriminator(real_images)
+                
+                # Train generator
+                g_metrics = self.train_generator(batch_size)
+                
+                # Update losses
+                self.d_losses.append(d_metrics['d_loss'])
+                self.g_losses.append(g_metrics['g_loss'])
+                
+                # Log metrics
+                self.log_metrics(epoch, self.global_step, d_metrics, g_metrics)
+                
+                # Update progress bar
+                pbar.set_postfix({
+                    'D_Loss': f"{d_metrics['d_loss']:.4f}",
+                    'G_Loss': f"{g_metrics['g_loss']:.4f}"
+                })
+                
+                # Save samples
+                if self.global_step % self.config.SAMPLE_INTERVAL == 0:
+                    self.save_samples(epoch, self.global_step)
+                
+                # Save checkpoint
+                if self.global_step % self.config.SAVE_INTERVAL == 0:
+                    self.save_checkpoint(epoch, self.global_step)
+                
+                self.global_step += 1
+            
+            # End of epoch
+            epoch_time = time.time() - epoch_start_time
+            print(f"Epoch {epoch+1} completed in {epoch_time:.2f}s")
+            
+            # Save checkpoint at end of epoch
+            self.save_checkpoint(epoch, self.global_step)
+            
+            # Plot training curves
+            if (epoch + 1) % 10 == 0:
+                plot_path = os.path.join(self.results_dir, f"training_curves_epoch_{epoch+1}.png")
+                plot_training_curves(self.g_losses, self.d_losses, plot_path)
+        
+        print("Training completed!")
+        self.writer.close()
+    
+    def evaluate(self, num_samples: int = 1000) -> Dict[str, float]:
+        """Evaluate the trained model"""
+        self.generator.eval()
+        
+        # Apply EMA weights
+        self.ema.apply_shadow(self.generator)
+        
+        # Generate samples for evaluation
+        all_samples = []
+        batch_size = 32
+        
+        with torch.no_grad():
+            for i in range(0, num_samples, batch_size):
+                current_batch_size = min(batch_size, num_samples - i)
+                noise = create_noise(current_batch_size, self.config.LATENT_DIM, self.device)
+                noise_inputs = self.generator.generate_noise(current_batch_size, self.device)
+                samples = self.generator(noise, noise_inputs=noise_inputs)
+                all_samples.append(samples.cpu())
+        
+        all_samples = torch.cat(all_samples, dim=0)
+        
+        # Restore original weights
+        self.ema.restore(self.generator)
+        self.generator.train()
+        
+        # Calculate evaluation metrics (placeholder)
+        metrics = {
+            "num_samples": len(all_samples),
+            "sample_mean": all_samples.mean().item(),
+            "sample_std": all_samples.std().item()
+        }
+        
+        return metrics
