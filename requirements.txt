@@ -1,3 +1,40 @@
+# --- Core ML/DL Frameworks ---
+torch>=1.12.0
+torchvision>=0.13.0
+numpy~=2.3.2
+
+# --- Image Processing ---
+Pillow>=8.3.0
+opencv-python>=4.5.0
+scikit-image>=0.18.0
+
+# --- Data Visualization ---
+matplotlib>=3.5.0
+seaborn>=0.11.0
+
+# --- Configuration and Utilities ---
+PyYAML>=5.4.0
+tqdm>=4.62.0
+
+# --- Logging and Monitoring ---
+tensorboard>=2.8.0
+
+# --- Evaluation Metrics ---
+lpips>=0.1.4
+scipy>=1.7.0
+
+# --- Data Handling ---
+pandas~=2.3.1
+h5py>=3.6.0
+
+# --- System Utilities ---
+psutil>=5.8.0
+
+# --- Optional: For advanced features ---
+# wandb>=0.12.0  # For experiment tracking
+# albumentations>=1.0.0  # For advanced augmentations
+# timm>=0.4.0  # For pretrained models
+
 # --- Core Framework ---
 fastapi~=0.116.1
 starlette~=0.47.2
@@ -27,8 +64,6 @@ greenlet~=3.2.4
 influxdb-client~=1.49.0
 
 # --- Data Science / ML ---
-numpy~=2.3.2
-pandas~=2.3.1
 scikit-learn~=1.3.0
 
 # --- Utils ---
