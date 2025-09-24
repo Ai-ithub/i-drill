@@ -1,17 +1,18 @@
 version: "3.9"
+
 services:
   fastapi:
     build: .
     container_name: i-drill-fastapi
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend/app:/app/backend/app  # Adjusted volume mount
+    working_dir: /src/backend
+    # Assuming ./src/backend/app.py defines: app = FastAPI()
+    command: uvicorn app:app --host 0.0.0.0 --port 8000
     environment:
-      - PYTHONPATH=/app
-      # ... (keep your existing environment variables)
-
-  # ... (keep your postgres and influxdb services unchanged)
+      - PYTHONPATH=/src/backend
+    volumes:
+      - ./src:/src
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
@@ -25,45 +26,57 @@ services:
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     container_name: i-drill-kafka
+    depends_on:
+      - zookeeper
     ports:
       - "9092:9092"
+      - "29092:29092"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9092
+
+      # Two listeners: one for containers (kafka:9092), one for host tools (localhost:29092)
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"  # Important for development
-    depends_on:
-      - zookeeper
+
+      # Single-broker dev sanity
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
 
   producer:
     build: .
     container_name: i-drill-producer
-    working_dir: /app/backend/app/kafka
+    working_dir: /src/backend
     command: python producer.py
     environment:
-      - PYTHONPATH=/app
+      - PYTHONPATH=/src/backend
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     volumes:
-      - ./backend/app/kafka:/app/backend/app/kafka  # Only mount Kafka directory
+      - ./src:/src
     depends_on:
       - kafka
       - zookeeper
+    restart: on-failure
 
   consumer:
     build: .
     container_name: i-drill-consumer
-    working_dir: /app/backend/app/kafka
+    working_dir: /src/backend
     command: python consumer.py
     environment:
-      - PYTHONPATH=/app
+      - PYTHONPATH=/src/backend
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     volumes:
-      - ./backend/app/kafka:/app/backend/app/kafka  # Only mount Kafka directory
+      - ./src:/src
     depends_on:
       - kafka
       - zookeeper
+    restart: on-failure
 
 volumes:
   postgres_data:
