@@ -88,13 +88,19 @@ def pca_outlier(current_values, history, threshold=3.0):
         from sklearn.decomposition import PCA
     except ImportError:
         return False
+
     history_arr = np.array(history)
     if history_arr.shape[0] < 2 or history_arr.shape[1] < 2:
         return False
+
     pca = PCA(n_components=min(2, history_arr.shape[1]))
     pcs = pca.fit_transform(history_arr)
+
     mean = pcs.mean(axis=0)
     std = pcs.std(axis=0)
+
+    std[std == 0] = 1e-9
+
     current_pc = pca.transform([current_values])[0]
     z = np.sqrt(np.sum(((current_pc - mean) / std) ** 2))
     return z > threshold
