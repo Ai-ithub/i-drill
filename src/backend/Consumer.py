@@ -7,18 +7,9 @@ from collections import defaultdict
 import time
 
 # Kafka configuration
-KAFKA_BROKER = 'localhost:9092'  # Change to your Kafka broker address
+KAFKA_BROKER = 'localhost:9092'
 TOPIC_NAME = 'oil_rig_sensor_data'
 CONSUMER_GROUP = 'oil_rig_analytics'
-
-# Alert thresholds
-ALERT_THRESHOLDS = {
-    'vibration_level': 1.5,
-    'bit_temperature': 110,
-    'motor_temperature': 90,
-    'mud_pressure': 3500
-}
-
 
 def create_consumer():
     """Create and return a Confluent Kafka consumer with JSON deserializer"""
@@ -49,16 +40,6 @@ def process_message(msg):
     # Maintenance flag alerts
     if data['maintenance_flag'] == 1:
         print(f"🚨 MAINTENANCE ALERT: {rig_id} has {data['failure_type']}")
-
-    # Threshold alerts
-    alerts = []
-    for metric, threshold in ALERT_THRESHOLDS.items():
-        value = data.get(metric)
-        if value is not None and value > threshold:
-            alerts.append(f"{metric} ({value:.2f} > {threshold:.2f})")
-
-    if alerts:
-        print(f"⚠️ THRESHOLD ALERT for {rig_id}: {' | '.join(alerts)}")
 
     history_dict, numeric_cols = get_history_for_anomaly(50)
     data = flag_anomaly(data, history_dict, numeric_cols)
