@@ -43,7 +43,8 @@ def process_message(msg):
 
     history_dict, numeric_cols = get_history_for_anomaly(50)
     data = flag_anomaly(data, history_dict, numeric_cols)
-    insert_message(data)
+    # insert_message(data)
+
 
     return data
 
@@ -62,8 +63,6 @@ def aggregate_data(consumer, duration_seconds=60):
                 continue
             if msg.error():
                 raise KafkaException(msg.error())
-
-            print(msg)
 
             data = process_message(msg)
             if not data:

@@ -6,19 +6,20 @@ import psycopg2
 import os
 
 COLUMNS = [
-    "Timestamp", "Rig_ID", "Depth", "WOB", "RPM", "Torque", "ROP", "Mud_Flow_Rate",
-    "Mud_Pressure", "Mud_Temperature", "Mud_Density", "Mud_Viscosity", "Mud_PH",
-    "Gamma_Ray", "Resistivity", "Pump_Status", "Compressor_Status", "Power_Consumption",
-    "Vibration_Level", "Bit_Temperature", "Motor_Temperature", "Maintenance_Flag",
-    "Failure_Type"
+    "timestamp", "rig_id", "depth", "wob", "rpm", "torque", "rop", "mud_flow_rate",
+    "mud_pressure", "mud_temperature", "mud_density", "mud_viscosity", "mud_ph",
+    "gamma_ray", "resistivity", "pump_status", "compressor_status", "power_consumption",
+    "vibration_level", "bit_temperature", "motor_temperature", "maintenance_flag",
+    "failure_type"
 ]
 
+
 INSERT_QUERY = f"""
-INSERT INTO sensor_data (
+INSERT INTO drilling_data (
     {', '.join([f'"{col}"' for col in COLUMNS])}
 ) VALUES ({', '.join(['%s' for _ in COLUMNS])})
-ON CONFLICT ("Timestamp") DO UPDATE SET
-    {', '.join([f'"{col}"=EXCLUDED."{col}"' for col in COLUMNS if col != 'Timestamp'])}
+ON CONFLICT ("timestamp") DO UPDATE SET
+    {', '.join([f'"{col}"=EXCLUDED."{col}"' for col in COLUMNS if col != 'timestamp'])}
 """
 
 # put creds in envs or a single dict (don’t hardcode in multiple places)
@@ -47,15 +48,15 @@ def db_conn(**overrides):
 def insert_message(message: dict):
     data = tuple(message.get(col) for col in COLUMNS)
     with db_conn() as conn, conn.cursor() as cur:
-        print(data)
         cur.execute(INSERT_QUERY, data)
+        conn.commit()
 
 def get_last_n_rows(n, **overrides):
     with db_conn(**overrides) as conn, conn.cursor() as cur:
         cur.execute("""
             SELECT *
-            FROM sensor_data
-            ORDER BY "Timestamp" DESC
+            FROM drilling_data
+            ORDER BY "timestamp" DESC
             LIMIT %s;
         """, (n,))
         rows = cur.fetchall()
