@@ -7,7 +7,7 @@ from collections import defaultdict
 import time
 
 # Kafka configuration
-KAFKA_BROKER = 'localhost:9092'
+KAFKA_BROKER = 'localhost:29092'
 TOPIC_NAME = 'oil_rig_sensor_data'
 CONSUMER_GROUP = 'oil_rig_analytics'
 
@@ -62,6 +62,8 @@ def aggregate_data(consumer, duration_seconds=60):
                 continue
             if msg.error():
                 raise KafkaException(msg.error())
+
+            print(msg)
 
             data = process_message(msg)
             if not data:

@@ -1,7 +1,9 @@
+from contextlib import contextmanager
+
 import pandas as pd
 import numpy as np
 import psycopg2
-
+import os
 
 COLUMNS = [
     "Timestamp", "Rig_ID", "Depth", "WOB", "RPM", "Torque", "ROP", "Mud_Flow_Rate",
@@ -19,48 +21,47 @@ ON CONFLICT ("Timestamp") DO UPDATE SET
     {', '.join([f'"{col}"=EXCLUDED."{col}"' for col in COLUMNS if col != 'Timestamp'])}
 """
 
+# put creds in envs or a single dict (don’t hardcode in multiple places)
+DB_CONFIG = {
+    "dbname": os.getenv("DB_NAME", "oilrig"),
+    "user": os.getenv("DB_USER", "postgres"),
+    "password": os.getenv("DB_PASSWORD", "1234"),
+    "host": os.getenv("DB_HOST", "localhost"),
+    "port": int(os.getenv("DB_PORT", 5432)),
+}
+
+@contextmanager
+def db_conn(**overrides):
+    """Yields a psycopg2 connection with commit/rollback/close handled."""
+    cfg = {**DB_CONFIG, **overrides}
+    conn = psycopg2.connect(**cfg)
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
 def insert_message(message: dict):
-    """Insert a single message into PostgreSQL sensor_data table."""
-
-    conn = psycopg2.connect(
-        dbname="oilrig",
-        user="postgres",
-        password="1234",
-        host="localhost",
-        port=5432
-    )
-
-    cursor = conn.cursor()
     data = tuple(message.get(col) for col in COLUMNS)
-    cursor.execute(INSERT_QUERY, data)
-    conn.commit()
-    cursor.close()
-    conn.close()
+    with db_conn() as conn, conn.cursor() as cur:
+        print(data)
+        cur.execute(INSERT_QUERY, data)
 
-def get_last_n_rows(n, dbname="oilrig", user="postgres", password="1234", host="localhost", port=5432):
-    conn = psycopg2.connect(
-        dbname=dbname,
-        user=user,
-        password=password,
-        host=host,
-        port=port
-    )
-    cursor = conn.cursor()
+def get_last_n_rows(n, **overrides):
+    with db_conn(**overrides) as conn, conn.cursor() as cur:
+        cur.execute("""
+            SELECT *
+            FROM sensor_data
+            ORDER BY "Timestamp" DESC
+            LIMIT %s;
+        """, (n,))
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+    return pd.DataFrame(rows, columns=cols)
 
-    query = f'''
-    SELECT *
-    FROM sensor_data
-    ORDER BY "Timestamp" DESC
-    LIMIT %s;
-    '''
-    cursor.execute(query, (n,))
-    rows = cursor.fetchall()
-    columns = [desc[0] for desc in cursor.description]
-    df = pd.DataFrame(rows, columns=columns)
-
-    cursor.close()
-    conn.close()
-    return df
 
 def zscore_outlier(value, history, threshold=3.0):
     arr = np.array(history)
@@ -105,8 +106,8 @@ def pca_outlier(current_values, history, threshold=3.0):
     z = np.sqrt(np.sum(((current_pc - mean) / std) ** 2))
     return z > threshold
 
-def get_history_for_anomaly(n=50, dbname="oilrig", user="postgres", password="1234", host="localhost", port=5432):
-    df = get_last_n_rows(n, dbname, user, password, host, port)
+def get_history_for_anomaly(n=50):
+    df = get_last_n_rows(n)
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     history_dict = {}
     for col in numeric_cols:

@@ -55,7 +55,7 @@ services:
     command: python producer.py
     environment:
       - PYTHONPATH=/src/backend
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_BOOTSTRAP_SERVERS=localhost:9092
     volumes:
       - ./src:/src
     depends_on:
@@ -70,7 +70,7 @@ services:
     command: python consumer.py
     environment:
       - PYTHONPATH=/src/backend
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_BOOTSTRAP_SERVERS=localhost:9092
     volumes:
       - ./src:/src
     depends_on:

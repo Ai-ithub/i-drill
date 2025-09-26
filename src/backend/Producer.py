@@ -6,7 +6,7 @@ from time import sleep
 from confluent_kafka import Producer
 
 # Kafka configuration
-KAFKA_BROKER = 'localhost:9092'  # Change to your Kafka broker address
+KAFKA_BROKER = 'localhost:29092'  # Change to your Kafka broker address
 TOPIC_NAME = 'oil_rig_sensor_data'
 PRODUCE_FREQUENCY = 1  # seconds between messages
 
@@ -100,6 +100,7 @@ def produce_sensor_data(producer):
         while True:
             for device_id in range(1, num_devices + 1):
                 data = generate_sensor_data(device_id, current_time)
+                print(type(data))
                 producer.produce(
                     TOPIC_NAME,
                     value=json.dumps(data, default=json_serializer).encode('utf-8'),
