@@ -1,0 +1,32 @@
+kafka:
+  bootstrap_servers: "localhost:9092"
+  consumer:
+    group_id: "rig-consumer-group"
+    auto_offset_reset: "earliest"
+    enable_auto_commit: true
+    auto_commit_interval_ms: 1000
+  producer:
+    client_id: "rig-stream-generator"
+    acks: "all"
+    retries: 3
+    batch_size: 16384
+    linger_ms: 10
+  topics:
+    sensor_stream: "rig.sensor.stream"
+    anomaly_alerts: "rig.anomaly.alerts"
+
+database:
+  host: "localhost"
+  port: 5432
+  database: "drilling_db"
+  username: "drill_user"
+  password: "${DB_PASSWORD}"
+  pool_size: 10
+  max_overflow: 20
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "drilling_system.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
