@@ -1,46 +1,113 @@
-from confluent_kafka import Consumer
+from confluent_kafka import Consumer, KafkaException
+from src.processing.dvr import insert_message, get_history_for_anomaly, flag_anomaly
 import json
+from datetime import datetime
+import pandas as pd
+from collections import defaultdict
+import time
 
-# --- Kafka Consumer Configuration ---
-conf = {
-    'bootstrap.servers': 'localhost:9092',
-    'group.id': 'rig-consumer-group',
-    'auto.offset.reset': 'earliest'  # یا latest برای فقط پیام‌های جدید
-}
+# Kafka configuration
+KAFKA_BROKER = 'localhost:29092'
+TOPIC_NAME = 'oil_rig_sensor_data'
+CONSUMER_GROUP = 'oil_rig_analytics'
 
-topic = 'rig.sensor.stream'
+def create_consumer():
+    """Create and return a Confluent Kafka consumer with JSON deserializer"""
+    consumer_conf = {
+        'bootstrap.servers': KAFKA_BROKER,
+        'group.id': CONSUMER_GROUP,
+        'auto.offset.reset': 'latest',   # Start from latest messages
+        'enable.auto.commit': True
+    }
+    consumer = Consumer(consumer_conf)
+    consumer.subscribe(["oil_rig_sensor_data"])
+    return consumer
 
-# --- Create Consumer ---
-consumer = Consumer(conf)
-consumer.subscribe([topic])
 
-print(f"📥 Listening to Kafka topic '{topic}' for RIG sensor data... (Press Ctrl+C to stop)")
+def process_message(msg):
+    """Process a single Kafka message and check for alerts"""
+    try:
+        data = json.loads(msg.value().decode('utf-8'))
+    except Exception as e:
+        print(f"⚠️ Error decoding message: {e}")
+        return None
 
-try:
-    while True:
-        msg = consumer.poll(1.0)  # 1 second timeout
-        if msg is None:
+    rig_id = data['rig_id']
+    timestamp = datetime.fromisoformat(data['timestamp'])
+
+    print(f"\n📥 Processing data from {rig_id} at {timestamp}")
+
+    # Maintenance flag alerts
+    if data['maintenance_flag'] == 1:
+        print(f"🚨 MAINTENANCE ALERT: {rig_id} has {data['failure_type']}")
+
+    history_dict, numeric_cols = get_history_for_anomaly(50)
+    data = flag_anomaly(data, history_dict, numeric_cols)
+    # insert_message(data)
+
+
+    return data
+
+
+def aggregate_data(consumer, duration_seconds=60):
+    """Aggregate data over a time window and display summary"""
+    print(f"\n🚀 Starting consumer. Aggregating data in {duration_seconds}-second windows...")
+
+    try:
+        window_start = time.time()
+        window_data = defaultdict(list)
+
+        while True:
+            msg = consumer.poll(timeout=1.0)  # Wait for messages
+            if msg is None:
+                continue
+            if msg.error():
+                raise KafkaException(msg.error())
+
+            data = process_message(msg)
+            if not data:
+                continue
+
+            rig_id = data['rig_id']
+            window_data[rig_id].append(data)
+
+            # Check if the time window has elapsed
+            if time.time() - window_start >= duration_seconds:
+                analyze_window(window_data)
+                window_data = defaultdict(list)  # Reset
+                window_start = time.time()
+
+    except KeyboardInterrupt:
+        print("\n🛑 Stopping consumer...")
+    finally:
+        consumer.close()
+
+
+def analyze_window(window_data):
+    """Analyze aggregated data for a time window"""
+    print("\n" + "=" * 50)
+    print("📊 WINDOW SUMMARY ANALYSIS")
+    print("=" * 50)
+
+    for rig_id, records in window_data.items():
+        if not records:
             continue
-        if msg.error():
-            print(f"⚠️ Error: {msg.error()}")
-            continue
 
-        # Decode JSON
-        key = msg.key().decode('utf-8') if msg.key() else None
-        value = json.loads(msg.value().decode('utf-8'))
+        df = pd.DataFrame(records)
+        numeric_cols = [col for col in df.columns if col not in ['timestamp', 'rig_id', 'failure_type']]
+        df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce')
 
-        # --- Print received data summary ---
-        print("────────────────────────────────────────────")
-        print(f"📦 Record ID: {key}")
-        print(f"🕒 Timestamp: {value.get('Timestamp')}")
-        print(f"🛢  RIG: {value.get('Rig_ID')} | Depth: {value.get('Depth'):.2f}")
-        print(f"🔧 WOB: {value.get('WOB'):.2f} | RPM: {value.get('RPM'):.2f} | Torque: {value.get('Torque'):.2f}")
-        print(f"💧 Mud Flow: {value.get('Mud_Flow_Rate'):.2f} | Pressure: {value.get('Mud_Pressure'):.2f} psi")
-        print(f"🌡  Bit Temp: {value.get('Bit_Temperature'):.2f} °C | Motor Temp: {value.get('Motor_Temperature'):.2f} °C")
-        print(f"⚡ Power: {value.get('Power_Consumption'):.2f} kW | Vibration: {value.get('Vibration_Level'):.2f}")
-        print("────────────────────────────────────────────")
+        print(f"\n{rig_id} - {len(records)} records")
+        print("Average values:")
+        print(df[numeric_cols].mean().to_string())
 
-except KeyboardInterrupt:
-    print("\n⛔️ Stopped by user.")
-finally:
-    consumer.close()
+        # Maintenance events in this window
+        maintenance_count = df['maintenance_flag'].sum()
+        if maintenance_count > 0:
+            print(f"\n🔴 {maintenance_count} maintenance events detected:")
+            print(df[df['maintenance_flag'] == 1][['timestamp', 'failure_type']].to_string(index=False))
+
+
+if __name__ == "__main__":
+    consumer = create_consumer()
+    aggregate_data(consumer, duration_seconds=60)
