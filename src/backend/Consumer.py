@@ -43,7 +43,7 @@ def process_message(msg):
 
     history_dict, numeric_cols = get_history_for_anomaly(50)
     data = flag_anomaly(data, history_dict, numeric_cols)
-    # insert_message(data)
+    insert_message(data)
 
 
     return data

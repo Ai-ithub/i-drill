@@ -1,5 +1,4 @@
 from contextlib import contextmanager
-
 import pandas as pd
 import numpy as np
 import psycopg2
@@ -36,6 +35,7 @@ def db_conn(**overrides):
     """Yields a psycopg2 connection with commit/rollback/close handled."""
     cfg = {**DB_CONFIG, **overrides}
     conn = psycopg2.connect(**cfg)
+
     try:
         yield conn
         conn.commit()
