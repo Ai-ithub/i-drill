@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 import pandas as pd
 import numpy as np
-import psycopg2
+from psycopg2.pool import SimpleConnectionPool
 import os
 
 COLUMNS = [
@@ -27,12 +27,19 @@ DB_CONFIG = {
     "port": int(os.getenv("DB_PORT", 5432)),
 }
 
+_POOL = None
+def _get_pool(cfg):
+    global _POOL
+    if _POOL is None:
+        _POOL = SimpleConnectionPool(1, 10, **cfg)
+    return _POOL
+
 @contextmanager
 def db_conn(**overrides):
-    """Yields a psycopg2 connection with commit/rollback/close handled."""
+    """Yields a pooled connection; commits/rolls back automatically."""
     cfg = {**DB_CONFIG, **overrides}
-    conn = psycopg2.connect(**cfg)
-
+    pool = _get_pool(cfg)             # first call creates pool
+    conn = pool.getconn()             # borrow from pool
     try:
         yield conn
         conn.commit()
@@ -40,7 +47,7 @@ def db_conn(**overrides):
         conn.rollback()
         raise
     finally:
-        conn.close()
+        pool.putconn(conn)
 
 def insert_message(message: dict):
     data = tuple(message.get(col) for col in COLUMNS)
