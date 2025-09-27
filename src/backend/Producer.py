@@ -13,8 +13,6 @@ config_path = BASE_DIR / "config.yml"
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
 
-print(config)
-
 KAFKA_BROKER = config["kafka"]["broker"]
 TOPIC_NAME = config["kafka"]["topic"]
 

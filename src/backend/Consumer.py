@@ -148,5 +148,18 @@ def analyze_window(window_data):
 
 
 if __name__ == "__main__":
-    consumer = create_consumer()
-    aggregate_data(consumer, duration_seconds=60)
+    consumer = None
+    try:
+        consumer = create_consumer()
+        aggregate_data(consumer, duration_seconds=60)
+    except Exception:
+        logging.critical("Fatal error in main", exc_info=True)
+        raise
+    finally:
+        if consumer is not None:
+            try:
+                consumer.close()
+            except Exception:
+                logging.exception("Error while closing Kafka consumer")
+
+
