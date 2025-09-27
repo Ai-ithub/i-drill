@@ -4,11 +4,21 @@ import random
 import json
 from time import sleep
 from confluent_kafka import Producer
+from pathlib import Path
+import yaml
 
-# Kafka configuration
-KAFKA_BROKER = 'localhost:29092'  # Change to your Kafka broker address
-TOPIC_NAME = 'oil_rig_sensor_data'
-PRODUCE_FREQUENCY = 1  # seconds between messages
+BASE_DIR = Path(__file__).resolve().parents[2]
+config_path = BASE_DIR / "config.yml"
+
+with open(config_path, "r") as f:
+    config = yaml.safe_load(f)
+
+print(config)
+
+KAFKA_BROKER = config["kafka"]["broker"]
+TOPIC_NAME = config["kafka"]["topic"]
+
+PRODUCE_FREQUENCY = 1
 
 # Data generation configuration
 num_devices = 10

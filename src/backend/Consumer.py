@@ -1,3 +1,4 @@
+import logging
 from confluent_kafka import Consumer, KafkaException
 from src.processing.dvr import insert_message, get_history_for_anomaly, flag_anomaly
 import json
@@ -7,71 +8,102 @@ from collections import defaultdict
 import time
 from pathlib import Path
 import yaml
+import sys
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 config_path = BASE_DIR / "config.yml"
 
-with open(config_path, "r") as f:
-    config = yaml.safe_load(f)
+try:
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+except FileNotFoundError:
+    logging.critical(f"Config file not found: {config_path}")
+    sys.exit(1)
+except yaml.YAMLError as e:
+    logging.critical(f"Error parsing config file: {e}")
+    sys.exit(1)
 
-print(config)
+logging.info(f"Loaded config: {config}")
 
 KAFKA_BROKER = config["kafka"]["broker"]
 TOPIC_NAME = config["kafka"]["topic"]
 CONSUMER_GROUP = config["kafka"]["group"]
 
+
 def create_consumer():
-    """Create and return a Confluent Kafka consumer with JSON deserializer"""
-    consumer_conf = {
-        'bootstrap.servers': KAFKA_BROKER,
-        'group.id': CONSUMER_GROUP,
-        'auto.offset.reset': 'latest',   # Start from latest messages
-        'enable.auto.commit': True
-    }
-    consumer = Consumer(consumer_conf)
-    consumer.subscribe(["oil_rig_sensor_data"])
-    return consumer
+    try:
+        consumer_conf = {
+            'bootstrap.servers': KAFKA_BROKER,
+            'group.id': CONSUMER_GROUP,
+            'auto.offset.reset': 'latest',
+            'enable.auto.commit': True
+        }
+        consumer = Consumer(consumer_conf)
+        consumer.subscribe([TOPIC_NAME])
+        return consumer
+    except KafkaException as e:
+        logging.critical(f"Kafka consumer creation failed: {e}")
+        sys.exit(1)
 
 
 def process_message(msg):
-    """Process a single Kafka message and check for alerts"""
     try:
         data = json.loads(msg.value().decode('utf-8'))
     except Exception as e:
-        print(f"⚠️ Error decoding message: {e}")
+        logging.warning(f"Error decoding message: {e}")
         return None
 
-    rig_id = data['rig_id']
-    timestamp = datetime.fromisoformat(data['timestamp'])
+    try:
+        rig_id = data['rig_id']
+        timestamp = datetime.fromisoformat(data['timestamp'])
+    except KeyError as e:
+        logging.warning(f"Missing expected key: {e}")
+        return None
+    except ValueError as e:
+        logging.warning(f"Invalid timestamp format: {e}")
+        return None
 
-    print(f"\n📥 Processing data from {rig_id} at {timestamp}")
+    logging.info(f"Processing data from {rig_id} at {timestamp}")
 
-    # Maintenance flag alerts
-    if data['maintenance_flag'] == 1:
-        print(f"🚨 MAINTENANCE ALERT: {rig_id} has {data['failure_type']}")
+    if data.get('maintenance_flag') == 1:
+        logging.error(f"MAINTENANCE ALERT: {rig_id} has {data.get('failure_type', 'UNKNOWN')}")
 
-    history_dict, numeric_cols = get_history_for_anomaly(50)
-    data = flag_anomaly(data, history_dict, numeric_cols)
-    insert_message(data)
-
+    try:
+        history_dict, numeric_cols = get_history_for_anomaly(50)
+        data = flag_anomaly(data, history_dict, numeric_cols)
+        insert_message(data)
+    except Exception as e:
+        logging.error(f"Error during anomaly processing or DB insert: {e}")
+        return None
 
     return data
 
 
 def aggregate_data(consumer, duration_seconds=60):
-    """Aggregate data over a time window and display summary"""
-    print(f"\n🚀 Starting consumer. Aggregating data in {duration_seconds}-second windows...")
+    logging.info(f"Starting consumer. Aggregating data in {duration_seconds}-second windows...")
 
     try:
         window_start = time.time()
         window_data = defaultdict(list)
 
         while True:
-            msg = consumer.poll(timeout=1.0)  # Wait for messages
+            try:
+                msg = consumer.poll(timeout=1.0)
+            except KafkaException as e:
+                logging.error(f"Kafka poll error: {e}")
+                continue
+
             if msg is None:
                 continue
             if msg.error():
-                raise KafkaException(msg.error())
+                logging.error(f"Kafka message error: {msg.error()}")
+                continue
 
             data = process_message(msg)
             if not data:
@@ -80,41 +112,39 @@ def aggregate_data(consumer, duration_seconds=60):
             rig_id = data['rig_id']
             window_data[rig_id].append(data)
 
-            # Check if the time window has elapsed
             if time.time() - window_start >= duration_seconds:
                 analyze_window(window_data)
-                window_data = defaultdict(list)  # Reset
+                window_data = defaultdict(list)
                 window_start = time.time()
 
     except KeyboardInterrupt:
-        print("\n🛑 Stopping consumer...")
+        logging.info("Stopping consumer...")
+    except Exception as e:
+        logging.critical(f"Unexpected error in consumer loop: {e}")
     finally:
         consumer.close()
 
 
 def analyze_window(window_data):
-    """Analyze aggregated data for a time window"""
-    print("\n" + "=" * 50)
-    print("📊 WINDOW SUMMARY ANALYSIS")
-    print("=" * 50)
-
+    logging.info("WINDOW SUMMARY ANALYSIS START")
     for rig_id, records in window_data.items():
         if not records:
             continue
+        try:
+            df = pd.DataFrame(records)
+            numeric_cols = [col for col in df.columns if col not in ['timestamp', 'rig_id', 'failure_type']]
+            df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce')
 
-        df = pd.DataFrame(records)
-        numeric_cols = [col for col in df.columns if col not in ['timestamp', 'rig_id', 'failure_type']]
-        df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce')
+            logging.info(f"{rig_id} - {len(records)} records")
+            logging.info("Averages:\n%s", df[numeric_cols].mean().to_string())
 
-        print(f"\n{rig_id} - {len(records)} records")
-        print("Average values:")
-        print(df[numeric_cols].mean().to_string())
-
-        # Maintenance events in this window
-        maintenance_count = df['maintenance_flag'].sum()
-        if maintenance_count > 0:
-            print(f"\n🔴 {maintenance_count} maintenance events detected:")
-            print(df[df['maintenance_flag'] == 1][['timestamp', 'failure_type']].to_string(index=False))
+            maintenance_count = df['maintenance_flag'].sum()
+            if maintenance_count > 0:
+                logging.warning(f"{maintenance_count} maintenance events detected for {rig_id}")
+                logging.warning("\n%s", df[df['maintenance_flag'] == 1][['timestamp', 'failure_type']].to_string(index=False))
+        except Exception as e:
+            logging.error(f"Error analyzing window for {rig_id}: {e}")
+    logging.info("WINDOW SUMMARY ANALYSIS END")
 
 
 if __name__ == "__main__":
