@@ -16,12 +16,9 @@ COLUMNS = [
 INSERT_QUERY = f"""
 INSERT INTO drilling_data (
     {', '.join([f'"{col}"' for col in COLUMNS])}
-) VALUES ({', '.join(['%s' for _ in COLUMNS])})
-ON CONFLICT ("timestamp") DO UPDATE SET
-    {', '.join([f'"{col}"=EXCLUDED."{col}"' for col in COLUMNS if col != 'timestamp'])}
+) VALUES ({', '.join(['%s' for _ in COLUMNS])});
 """
 
-# put creds in envs or a single dict (don’t hardcode in multiple places)
 DB_CONFIG = {
     "dbname": os.getenv("DB_NAME", "oilrig"),
     "user": os.getenv("DB_USER", "postgres"),
@@ -62,7 +59,6 @@ def get_last_n_rows(n, **overrides):
         rows = cur.fetchall()
         cols = [d[0] for d in cur.description]
     return pd.DataFrame(rows, columns=cols)
-
 
 def zscore_outlier(value, history, threshold=3.0):
     arr = np.array(history)

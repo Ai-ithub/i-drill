@@ -5,11 +5,20 @@ from datetime import datetime
 import pandas as pd
 from collections import defaultdict
 import time
+from pathlib import Path
+import yaml
 
-# Kafka configuration
-KAFKA_BROKER = 'localhost:29092'
-TOPIC_NAME = 'oil_rig_sensor_data'
-CONSUMER_GROUP = 'oil_rig_analytics'
+BASE_DIR = Path(__file__).resolve().parents[2]
+config_path = BASE_DIR / "config.yml"
+
+with open(config_path, "r") as f:
+    config = yaml.safe_load(f)
+
+print(config)
+
+KAFKA_BROKER = config["kafka"]["broker"]
+TOPIC_NAME = config["kafka"]["topic"]
+CONSUMER_GROUP = config["kafka"]["group"]
 
 def create_consumer():
     """Create and return a Confluent Kafka consumer with JSON deserializer"""

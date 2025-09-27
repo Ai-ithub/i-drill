@@ -1,0 +1,8 @@
+kafka:
+  broker: localhost:29092
+  topic: oil_rig_sensor_data
+  group: oil_rig_analytics
+
+consumer:
+  auto_offset_reset: lastest
+  enable_auto_commit: true
