@@ -1,16 +1,16 @@
 # **Software Requirements Specification (SRS)**  
-**Project:** **Intelligent Drilling Rig Automation System with Synthetic Data Generation**  
+**Project:** **Intelligent Drilling Rig Automation System with Single Well Synthetic Data Generation**  
 
 ---
 
 ## **1. Introduction**  
 
 ### **1.1 Purpose**  
-This document outlines the comprehensive requirements for an **Intelligent Drilling Automation System** with **synthetic data generation capabilities** for **10 wells** simulating **6 months of drilling operations** with **1-second timestep resolution**. The system integrates **real-time monitoring, AI-driven optimization, predictive maintenance, Data Validation & Reconciliation (DVR), and full MLOps/DevOps capabilities** with **synthetic LWD/MWD data generation**.
+This document outlines the comprehensive requirements for an **Intelligent Drilling Automation System** with **synthetic data generation capabilities** for **1 well** simulating **6 months of drilling operations** with **1-second timestep resolution**. The system integrates **real-time monitoring, AI-driven optimization, predictive maintenance, Data Validation & Reconciliation (DVR), and full MLOps/DevOps capabilities** with **synthetic LWD/MWD data generation**.
 
 ### **1.2 Scope**  
 The system includes:  
-- **Synthetic LWD/MWD data generation** for 10 wells with 6-month duration at 1-second intervals  
+- **Synthetic LWD/MWD data generation** for 1 well with 6-month duration at 1-second intervals  
 - **Real-time sensor monitoring** (WOB, RPM, torque, mud flow, pressure, gamma ray, resistivity, density)  
 - **AI-driven optimization** (automated parameter tuning for drilling efficiency)  
 - **Predictive maintenance** (failure forecasting, RUL estimation)  
@@ -24,11 +24,12 @@ The system includes:
 ### **1.3 Synthetic Data Generation Specifications**  
 
 **Data Generation Scope:**
-- **Number of Wells:** 10 distinct well profiles
-- **Duration:** 6 months continuous operation per well
+- **Number of Wells:** 1 comprehensive well profile
+- **Duration:** 6 months continuous operation
 - **Timestep Resolution:** 1-second intervals
-- **Total Data Points:** ~15.5 million records per well
-- **Total Dataset:** ~155 million records across 10 wells
+- **Total Data Points:** ~15.5 million records
+- **Daily Data Points:** ~86,400 records
+- **Hourly Data Points:** ~3,600 records
 
 **LWD/MWD Data Parameters:**
 | Parameter | Range | Unit | Description |
@@ -43,6 +44,9 @@ The system includes:
 | **Density** | 1.5-3.0 | g/cc | Formation Density |
 | **Porosity** | 5-25 | % | Formation Porosity |
 | **ROP** | 10-100 | ft/hr | Rate of Penetration |
+| **Hook Load** | 100,000-500,000 | lbs | String Weight |
+| **Mud Temperature** | 40-80 | °C | Mud Return Temperature |
+| **Vibration** | 0-10 | g | Drill String Vibration |
 
 ### **1.4 Definitions & Acronyms**  
 
@@ -56,233 +60,228 @@ The system includes:
 | **DVR** | Data Validation & Reconciliation |  
 | **RUL** | Remaining Useful Life |  
 | **Kafka** | Apache Kafka (real-time data streaming) |  
-| **MLOps** | Machine Learning Operations |  
-| **CI/CD** | Continuous Integration/Continuous Deployment |  
 
 ---
 
 ## **2. Overall Description**  
 
 ### **2.1 System Overview**  
-The system provides a comprehensive AI-driven automation platform with integrated synthetic data generation:  
-✔ **Synthetic LWD/MWD data generator** for 10 wells with realistic drilling scenarios  
+The system provides a comprehensive AI-driven automation platform with integrated synthetic data generation for a single well:  
+✔ **Synthetic LWD/MWD data generator** for 1 well with detailed drilling scenarios  
 ✔ **Real-time drilling parameter monitoring and control**  
 ✔ **AI-driven optimization** (automated drilling parameter adjustments)  
 ✔ **Predictive maintenance** (equipment health monitoring and RUL prediction)  
 ✔ **Data quality assurance** (DVR for sensor reliability)  
-✔ **Full MLOps lifecycle management** (from experimentation to production)  
+✔ **Full MLOps lifecycle management**  
 ✔ **Robust DevOps practices** (CI/CD, infrastructure as code, monitoring)  
-✔ **Unified React.js dashboard** with role-based views and responsive design  
+✔ **Unified React.js dashboard** with role-based views  
 
 ### **2.2 Key Features**  
 
 | Feature | Description |  
 |---------|------------|  
-| **Synthetic Data Generator** | Physics-based LWD/MWD data simulation for 10 wells with realistic formation responses |  
+| **Single Well Data Generator** | Comprehensive physics-based LWD/MWD simulation for one well |  
 | **Real-Time Monitoring** | Live visualization of drilling parameters with <500ms latency |  
 | **Optimization Engine** | **Reinforcement Learning (RL)** for optimal drilling parameters |  
-| **Predictive Maintenance** | **LSTM/Transformer/XGBoost** for RUL prediction & anomaly detection |  
+| **Predictive Maintenance** | **LSTM/Transformer** for RUL prediction & anomaly detection |  
 | **Data Validation (DVR)** | **Statistical/ML-based error detection & correction** |  
-| **Kafka Stream Processing** | Real-time data ingestion and processing at 10,000+ events/sec |  
+| **Kafka Stream Processing** | Real-time data ingestion and processing at 1,800+ events/sec |  
 | **MLOps Pipeline** | End-to-end model management with synthetic data validation |  
-| **Unified React Dashboard** | Single application with synthetic data visualization and control |  
 
 ### **2.3 User Roles**  
 
 | Role | Access Level | Dashboard View |  
 |------|-------------|----------------|  
-| **Rig Operator** | Real-time control and monitoring | **Operator View** - Real-time controls, synthetic data streams |  
-| **Drilling Engineer** | Analytics, optimization, configuration | **Engineering View** - Advanced analytics, synthetic scenario testing |  
-| **Data Scientist** | Model development and experimentation | **Data Science View** - Model performance, synthetic data experiments |  
-| **MLOps Engineer** | Model deployment and pipeline management | **MLOps View** - Pipeline status, model versions with synthetic data |  
-| **Synthetic Data Manager** | Data generation control and configuration | **Data Generation View** - Well configuration, scenario management |  
+| **Rig Operator** | Real-time control and monitoring | **Operator View** - Real-time controls, data streams |  
+| **Drilling Engineer** | Analytics, optimization, configuration | **Engineering View** - Advanced analytics, scenario testing |  
+| **Data Scientist** | Model development and experimentation | **Data Science View** - Model performance, data experiments |  
+| **Maintenance Team** | Equipment health monitoring | **Maintenance View** - RUL predictions, work orders |  
 
 ---
 
 ## **3. Functional Requirements**  
 
-### **3.1 Synthetic Data Generation System**  
-- **FR-01:** **Configurable well profiles** for 10 distinct wells with different geological formations
+### **3.1 Single Well Synthetic Data Generation**  
+- **FR-01:** **Comprehensive well profile** with detailed geological formation layers
 - **FR-02:** **Physics-based drilling simulation** with realistic ROP, torque, and pressure responses
-- **FR-03:** **Formation property generation** (gamma ray, resistivity, density, porosity) with realistic stratigraphy
-- **FR-04:** **Equipment failure simulation** with progressive degradation patterns
-- **FR-05:** **Drilling event simulation** (stick-slip, whirl, lost circulation, gas influx)
+- **FR-03:** **Formation property generation** with realistic stratigraphy and lithology changes
+- **FR-04:** **Equipment failure simulation** with progressive degradation patterns for all major components
+- **FR-05:** **Drilling event simulation** (stick-slip, whirl, lost circulation, gas influx, wellbore instability)
 - **FR-06:** **Real-time data streaming** at 1-second intervals with configurable noise levels
-- **FR-07:** **Data export capabilities** in multiple formats (CSV, Parquet, real-time stream)
+- **FR-07:** **Multiple data export formats** (CSV, Parquet, JSON, real-time Kafka streams)
 
 ### **3.2 Real-Time Monitoring Dashboard**  
-- **FR-08:** **Unified React.js dashboard** with synthetic data visualization
-- **FR-09:** Display **LWD/MWD parameters** in ≤ **500ms latency** from synthetic stream
-- **FR-10:** **Interactive drill-down charts** with synthetic formation visualization
+- **FR-08:** **Unified React.js dashboard** with comprehensive data visualization
+- **FR-09:** Display **all LWD/MWD parameters** in ≤ **500ms latency** from synthetic stream
+- **FR-10:** **Interactive depth-based charts** with formation visualization
 - **FR-11:** **Real-time data persistence** with configurable retention policies
-- **FR-12:** **Multi-well monitoring** with simultaneous display of 10 well streams
+- **FR-12:** **Historical data replay** capability for training and analysis
 
 ### **3.3 AI-Driven Optimization**  
-- **FR-13:** **Reinforcement Learning (PPO/SAC)** trained on synthetic drilling scenarios
-- **FR-14:** **Digital Twin integration** using synthetic well models
-- **FR-15:** **Auto-adjustment of drilling parameters** based on synthetic formation responses
-- **FR-16:** **A/B testing framework** for comparing optimization strategies on synthetic wells
-- **FR-17:** **Optimization recommendations** with confidence scores
+- **FR-13:** **Reinforcement Learning (PPO/SAC)** trained on comprehensive synthetic drilling scenarios
+- **FR-14:** **Digital Twin integration** using detailed well model
+- **FR-15:** **Auto-adjustment of drilling parameters** based on real-time formation responses
+- **FR-16:** **Optimization recommendations** with confidence scores and impact analysis
+- **FR-17:** **Safety constraint enforcement** with automatic parameter limits
 
 ### **3.4 Predictive Maintenance**  
-- **FR-18:** **LSTM/Transformer-based RUL prediction** using synthetic equipment degradation data
-- **FR-19:** **Anomaly detection** on synthetic drilling dysfunction patterns
-- **FR-20:** **Maintenance scheduling** based on synthetic equipment health forecasts
-- **FR-21:** **Failure mode simulation** for training predictive models
+- **FR-18:** **LSTM/Transformer-based RUL prediction** for top drive, mud pumps, drawworks
+- **FR-19:** **Real-time anomaly detection** on drilling dysfunction patterns
+- **FR-20:** **Maintenance scheduling** based on equipment health forecasts
+- **FR-21:** **Failure mode simulation** for comprehensive training of predictive models
+- **FR-22:** **Spare parts optimization** based on predicted maintenance needs
 
 ### **3.5 Data Validation & Reconciliation (DVR)**  
-- **FR-22:** **Statistical checks** on synthetic data streams for quality validation
-- **FR-23:** **ML-based imputation** for simulated sensor failures and data gaps
-- **FR-24:** **Reconciliation reports** for synthetic data quality assessment
-- **FR-25:** **Real-time data quality scoring** for synthetic sensor streams
+- **FR-23:** **Statistical quality checks** on all data streams
+- **FR-24:** **ML-based imputation** for simulated sensor failures and data gaps
+- **FR-25:** **Real-time data quality scoring** for each sensor stream
+- **FR-26:** **Automated calibration detection** and correction
+- **FR-27:** **Data reconciliation reports** with audit trail
 
 ### **3.6 Kafka Stream Processing**  
-- **FR-26:** **Ingest 10,000+ synthetic sensor readings/sec** per well
-- **FR-27:** **Real-time aggregation & filtering** of synthetic drilling data
-- **FR-28:** **Integration with ML models** for real-time inference on synthetic streams
-- **FR-29:** **Stream processing monitoring** with synthetic data validation
+- **FR-28:** **Ingest 1,800+ synthetic sensor readings/sec** continuously
+- **FR-29:** **Real-time aggregation & filtering** of drilling data
+- **FR-30:** **Integration with ML models** for real-time inference
+- **FR-31:** **Stream processing monitoring** with performance metrics
 
 ### **3.7 MLOps Pipeline**  
-- **FR-30:** **Model version control** with synthetic dataset versioning
-- **FR-31:** **Automated model training** on synthetic data with experiment tracking
-- **FR-32:** **Model deployment automation** with synthetic data validation
-- **FR-33:** **Model performance monitoring** on synthetic test scenarios
-- **FR-34:** **Automated model retraining** based on synthetic scenario performance
-
-### **3.8 Synthetic Data Management**  
-- **FR-35:** **Well configuration management** for 10 synthetic well profiles
-- **FR-36:** **Scenario editor** for creating custom drilling scenarios
-- **FR-37:** **Data generation control** (start/stop/pause/resume synthetic streams)
-- **FR-38:** **Synthetic data validation** against physical drilling models
-- **FR-39:** **Export/Import capabilities** for synthetic well configurations
+- **FR-32:** **Model version control** with dataset versioning
+- **FR-33:** **Automated model training** on synthetic data
+- **FR-34:** **Model deployment automation** with validation
+- **FR-35:** **Model performance monitoring** with drift detection
+- **FR-36:** **Automated model retraining** based on performance metrics
 
 ---
 
 ## **4. Non-Functional Requirements**  
 
 ### **4.1 Performance**  
-- **≤ 500ms latency** for real-time synthetic data visualization
-- **≤ 2 seconds** for ML model inference on synthetic streams
-- **Generate 10,000+ synthetic records/sec** across 10 wells
-- **Support 50+ concurrent users** with synthetic data access
-- **99.9% uptime** for synthetic data generation services
+- **≤ 500ms latency** for real-time data visualization
+- **≤ 2 seconds** for ML model inference
+- **Generate 1,800+ synthetic records/sec** continuously
+- **Support 20+ concurrent users** with data access
+- **99.9% uptime** for data generation services
 
 ### **4.2 Reliability**  
-- **99.9% system uptime** for continuous synthetic data generation
-- **Data loss < 0.1%** during synthetic stream processing
-- **Graceful degradation** when synthetic services are overloaded
-- **Automated failover** for synthetic data generation nodes
+- **99.9% system uptime** for continuous data generation
+- **Data loss < 0.1%** during stream processing
+- **Graceful degradation** when services are overloaded
+- **Automated failover** for critical components
 
 ### **4.3 Scalability**  
-- **Kubernetes deployment** with auto-scaling for synthetic data generation
-- **Support additional synthetic wells** without architectural changes
-- **Horizontal scaling** for synthetic data ingestion and processing
-- **Database sharding** for synthetic time-series data
+- **Containerized deployment** with resource optimization
+- **Efficient memory usage** for single well data handling
+- **Optimized storage** for time-series data
+- **Horizontal scaling readiness** for future multi-well expansion
 
 ### **4.4 Data Quality**  
-- **Realistic drilling physics** in synthetic data generation
+- **Realistic drilling physics** in data generation
 - **Configurable noise levels** for sensor realism
-- **Statistical validation** of synthetic data distributions
-- **Cross-well correlation** in synthetic formation properties
+- **Statistical validation** of data distributions
+- **Physical consistency** across all parameters
 
 ---
 
 ## **5. External Interfaces**  
 
 ### **5.1 User Interfaces**  
-- **Unified React.js Dashboard** - Synthetic data visualization and control
-- **Synthetic Data Manager** - Well configuration and scenario management
-- **REST API** - For synthetic data access and configuration
-- **WebSocket API** - Real-time synthetic data streaming
+- **Unified React.js Dashboard** - Data visualization and control
+- **REST API** - For data access and configuration
+- **WebSocket API** - Real-time data streaming
+- **Configuration Interface** - Well profile and scenario setup
 
 ### **5.2 Software Interfaces**  
-- **Kafka** (synthetic data streaming platform)
-- **InfluxDB** (synthetic time-series data storage)
-- **PostgreSQL** (synthetic well configurations, metadata)
-- **Redis** (caching for synthetic data streams)
-- **MLflow** (model management with synthetic experiments)
+- **Kafka** (data streaming platform)
+- **InfluxDB** (time-series data storage)
+- **PostgreSQL** (well configuration, metadata)
+- **Redis** (caching for data streams)
+- **MLflow** (model management)
 
 ---
 
 ## **6. AI & Algorithm Requirements**  
 
 ### **6.1 Synthetic Data Generation Algorithms**  
-| Algorithm | Use Case | Requirements |  
-|-----------|---------|-------------|  
-| **Physics-based Drilling Models** | ROP, torque, pressure simulation | Real-time generation at 1-second intervals |  
-| **Stochastic Process Models** | Sensor noise and uncertainty | Configurable noise parameters |  
-| **Formation Property Generators** | Gamma ray, resistivity, density | Geologically realistic sequences |  
-| **Equipment Degradation Models** | Progressive failure simulation | Realistic failure progression curves |  
+| Algorithm | Use Case |  
+|-----------|---------|  
+| **Physics-based Drilling Models** | ROP, torque, pressure simulation |  
+| **Formation Property Generators** | Gamma ray, resistivity, density sequences |  
+| **Equipment Degradation Models** | Progressive failure simulation |  
+| **Drilling Dynamics Models** | Vibration, stick-slip, whirl simulation |  
 
 ### **6.2 Optimization Algorithms**  
-| Algorithm | Use Case | Requirements |  
-|-----------|---------|-------------|  
-| **Reinforcement Learning** | Drilling parameter optimization | Training on synthetic scenarios |  
-| **Bayesian Optimization** | Parameter tuning | Convergence on synthetic wells |  
+| Algorithm | Use Case |  
+|-----------|---------|  
+| **Reinforcement Learning** | Drilling parameter optimization |  
+| **Bayesian Optimization** | Real-time parameter tuning |  
 
 ### **6.3 Predictive Maintenance Models**  
 | Model | Use Case | Accuracy Target |  
 |-------|---------|----------------|  
-| **LSTM/Transformer** | RUL prediction on synthetic data | >90% accuracy |  
+| **LSTM/Transformer** | RUL prediction | >90% accuracy |  
 | **Isolation Forest** | Anomaly detection | <5% false positive rate |  
 
 ---
 
 ## **7. Implementation Phases**  
 
-### **Phase 1: Synthetic Data Foundation (Months 1-3)**  
-- Synthetic data generator development for 10 wells
+### **Phase 1: Core System (Months 1-3)**  
+- Synthetic data generator development
 - Basic LWD/MWD parameter simulation
-- Kafka infrastructure for synthetic data streaming
-- React.js dashboard foundation with synthetic data display
+- Kafka infrastructure setup
+- React.js dashboard foundation
 
-### **Phase 2: Advanced Simulation (Months 4-6)**  
-- Physics-based drilling models implementation
-- Formation property generation with realistic stratigraphy
-- Equipment failure and drilling event simulation
-- Advanced visualization for synthetic formations
+### **Phase 2: Advanced Features (Months 4-6)**  
+- Physics-based drilling models
+- Formation property generation
+- Equipment failure simulation
+- Advanced visualization
 
 ### **Phase 3: AI Integration (Months 7-9)**  
-- ML model training on synthetic datasets
-- Reinforcement Learning for drilling optimization
-- Predictive maintenance on synthetic equipment data
-- MLOps pipeline with synthetic data validation
+- ML model training on synthetic data
+- Reinforcement Learning optimization
+- Predictive maintenance implementation
+- MLOps pipeline setup
 
 ### **Phase 4: Production Ready (Months 10-12)**  
-- Performance optimization for 10-well simulation
-- Comprehensive testing with synthetic scenarios
-- User acceptance testing with synthetic data
-- Documentation and training materials
+- Performance optimization
+- Comprehensive testing
+- User acceptance testing
+- Documentation completion
 
 ---
 
-## **8. Data Generation Specifications**  
+## **8. Single Well Specifications**  
 
-### **8.1 Well Profiles Configuration**  
-**10 Distinct Well Types:**
-1. **Vertical Exploration Well** - Greenfield exploration
-2. **Directional Development Well** - Brownfield development  
-3. **Horizontal Production Well** - Unconventional reservoir
-4. **Deepwater Analog Well** - High-pressure high-temperature
-5. **Geothermal Well** - High-temperature formation
-6. **Slimhole Well** - Reduced diameter drilling
-7. **Multilateral Well** - Complex well architecture
-8. **Extended Reach Well** - Long horizontal section
-9. **Underbalanced Well** - Managed pressure drilling
-10. **Cobalt-Rich Crust Well** - Mining application
+### **8.1 Well Profile Configuration**  
+**Comprehensive Well Type: Directional Development Well**
+- **Total Depth:** 12,000 feet
+- **Kick-off Point:** 2,000 feet
+- **Build Rate:** 2-3°/100 feet
+- **Maximum Inclination:** 45°
+- **Target Zone:** 8,000-12,000 feet
 
-### **8.2 Data Volume Calculations**  
-- **Records per well:** 6 months × 30 days × 24 hours × 3600 seconds = **15,552,000 records**
-- **Total records:** 10 wells × 15,552,000 = **155,520,000 records**
-- **Storage estimate:** ~500 GB compressed, ~1.5 TB uncompressed
-- **Streaming rate:** ~1,800 records/second sustained
+### **8.2 Geological Formation Layers**  
+| Depth (ft) | Formation | Lithology | Characteristics |
+|------------|-----------|-----------|----------------|
+| 0-2,000 | Surface | Sandstone/Shale | Unconsolidated, easy drilling |
+| 2,000-5,000 | Intermediate | Limestone/Shale | Stable, moderate drilling |
+| 5,000-8,000 | Target Zone | Dolomite | Hard, abrasive drilling |
+| 8,000-12,000 | Reservoir | Porous Sandstone | Production zone, risk of lost circulation |
 
-### **8.3 Data Quality Metrics**  
-- **Physical consistency:** Drilling parameters within operational limits
-- **Temporal correlation:** Realistic time-series patterns
-- **Formation realism:** Geologically plausible property sequences
-- **Event realism:** Physically accurate drilling dysfunction simulation
+### **8.3 Data Volume Specifications**  
+- **Total Records:** 15,552,000
+- **Daily Records:** 86,400
+- **Parameters per Record:** 15+ drilling parameters
+- **Storage Requirement:** ~50 GB compressed
+- **Streaming Rate:** 1,800 records/second
+
+### **8.4 Data Quality Assurance**  
+- **Physical Parameter Ranges:** All values within operational limits
+- **Temporal Consistency:** Realistic time-series patterns
+- **Formation Correlation:** Geologically accurate property sequences
+- **Event Realism:** Physically plausible drilling events and dysfunctions
 
 ---
 
-This **synthetic data-focused SRS** defines a **comprehensive drilling automation system** with **realistic LWD/MWD data generation** for **10 wells over 6 months**, enabling **robust AI/ML development** and **comprehensive system testing** without requiring actual field data. 🚀
+This **single well SRS** defines a **focused drilling automation system** with **comprehensive synthetic data generation** for **one well over 6 months**, providing **detailed data for robust AI/ML development** and **thorough system validation** with manageable data volume and complexity. 🚀
