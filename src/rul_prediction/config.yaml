@@ -1,0 +1,25 @@
+data:
+  data_path: ./data/task31_processed
+  scaler_type: standard
+  sequence_length: 50
+  test_size: 0.2
+  val_size: 0.1
+evaluation:
+  detailed_analysis: true
+  save_predictions: true
+model:
+  bidirectional: true
+  dropout: 0.2
+  hidden_dim: 128
+  num_layers: 2
+  type: lstm
+paths:
+  checkpoints: ./checkpoints
+  results: ./results
+training:
+  batch_size: 32
+  epochs: 100
+  learning_rate: 0.001
+  patience: 10
+  scheduler_type: cosine
+  weight_decay: 1.0e-05

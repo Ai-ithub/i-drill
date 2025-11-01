@@ -4,7 +4,34 @@ import random
 import json
 from time import sleep
 from confluent_kafka import Producer
+import logging
+from config_loader import config_loader
 
+# --- Setup logging ---
+logging_config = config_loader.get_logging_config()
+logging.basicConfig(
+    level=getattr(logging, logging_config.get('level', 'INFO')),
+    format=logging_config.get('format', '%(asctime)s - %(levelname)s - %(message)s'),
+    filename=logging_config.get('file', 'producer.log')
+)
+logger = logging.getLogger(__name__)
+
+# --- Load Kafka Configuration ---
+kafka_config = config_loader.get_kafka_config()
+producer_config = kafka_config.get('producer', {})
+
+producer = Producer({
+    'bootstrap.servers': kafka_config.get('bootstrap_servers', 'localhost:9092'),
+    'client.id': producer_config.get('client_id', 'rig-stream-generator'),
+    'acks': producer_config.get('acks', 'all'),
+    'retries': producer_config.get('retries', 3),
+    'batch.size': producer_config.get('batch_size', 16384),
+    'linger.ms': producer_config.get('linger_ms', 10)
+})
+
+topic = kafka_config.get('topics', {}).get('sensor_stream', 'rig.sensor.stream')
+
+logger.info(f"Producer initialized with topic: {topic}")
 # Kafka configuration
 KAFKA_BROKER = 'localhost:29092'  # Change to your Kafka broker address
 TOPIC_NAME = 'oil_rig_sensor_data'
@@ -73,6 +100,36 @@ def generate_sensor_data(device_id, timestamp):
         'failure_type': 'None'
     }
 
+    # حذف هدف‌ها (در اینجا تولید نشده‌اند)
+    return record
+
+# --- Infinite Stream ---
+print(f"📡 Sending streaming data for {rig_id} to Kafka topic '{topic}' ... (Ctrl+C to stop)")
+
+record_id = 0
+try:
+    while True:
+        record = generate_one_record(seconds_since_start)
+        
+        try:
+            producer.produce(topic, key=str(record_id), value=json.dumps(record))
+            producer.poll(0)
+            print(f"[{record_id}] Sent record at {record['Timestamp']}")
+            logger.debug(f"Produced record {record_id} to topic {topic}")
+            
+        except Exception as e:
+            logger.error(f"Failed to produce record {record_id}: {e}")
+            print(f"❌ Failed to send record {record_id}: {e}")
+        
+        record_id += 1
+        seconds_since_start += 1
+        time.sleep(1)
+
+except KeyboardInterrupt:
+    logger.info("Producer stopped by user")
+    print("\n⛔️ Stopped by user.")
+    producer.flush()
+    logger.info("Producer flushed and closed")
     # Add 5% chance of failure
     if random.random() < 0.05:
         data['maintenance_flag'] = 1
