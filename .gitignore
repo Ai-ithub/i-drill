@@ -72,9 +72,11 @@ tensorboard_logs/
 # Docker
 .dockerignore
 
-# OS
+# OS and System Files
 Thumbs.db
 .DS_Store
+AppData/
+**/AppData/
 
 # Results and outputs
 results/
