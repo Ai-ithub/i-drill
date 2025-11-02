@@ -1,0 +1,295 @@
+"""
+Sensor Data API Routes
+"""
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, HTTPException
+from typing import Optional, List
+from datetime import datetime, timedelta
+from api.models.schemas import (
+    SensorDataResponse,
+    HistoricalDataQuery,
+    SensorDataPoint,
+    WebSocketMessage
+)
+from services.data_service import DataService
+from services.kafka_service import kafka_service
+from services.websocket_manager import websocket_manager
+import logging
+import asyncio
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/sensor-data", tags=["sensor-data"])
+data_service = DataService()
+
+
+@router.get("/realtime", response_model=SensorDataResponse)
+async def get_realtime_data(
+    rig_id: Optional[str] = Query(None, description="Filter by rig ID"),
+    limit: int = Query(100, le=10000, ge=1, description="Number of records to return")
+):
+    """
+    Get latest real-time sensor data
+    
+    Returns the most recent sensor readings from the database.
+    """
+    try:
+        data = data_service.get_latest_sensor_data(rig_id=rig_id, limit=limit)
+        
+        # Convert to Pydantic models
+        sensor_points = [SensorDataPoint(**record) for record in data]
+        
+        return SensorDataResponse(
+            success=True,
+            count=len(sensor_points),
+            data=sensor_points
+        )
+    except Exception as e:
+        logger.error(f"Error getting realtime data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/historical", response_model=SensorDataResponse)
+async def get_historical_data(
+    rig_id: Optional[str] = Query(None, description="Filter by rig ID"),
+    start_time: datetime = Query(..., description="Start time for query"),
+    end_time: datetime = Query(..., description="End time for query"),
+    parameters: Optional[str] = Query(None, description="Comma-separated list of parameters to include"),
+    limit: int = Query(1000, le=10000, ge=1, description="Number of records to return"),
+    offset: int = Query(0, ge=0, description="Offset for pagination")
+):
+    """
+    Get historical sensor data
+    
+    Query historical sensor data with flexible filtering options.
+    """
+    try:
+        # Parse parameters
+        param_list = None
+        if parameters:
+            param_list = [p.strip() for p in parameters.split(',')]
+        
+        # Validate time range
+        if start_time >= end_time:
+            raise HTTPException(status_code=400, detail="start_time must be before end_time")
+        
+        data = data_service.get_historical_data(
+            rig_id=rig_id,
+            start_time=start_time,
+            end_time=end_time,
+            parameters=param_list,
+            limit=limit,
+            offset=offset
+        )
+        
+        # Convert to Pydantic models
+        sensor_points = [SensorDataPoint(**record) for record in data]
+        
+        return SensorDataResponse(
+            success=True,
+            count=len(sensor_points),
+            data=sensor_points
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting historical data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/aggregated")
+async def get_aggregated_data(
+    rig_id: str = Query(..., description="Rig ID"),
+    time_bucket_seconds: int = Query(60, ge=1, le=3600, description="Time bucket size in seconds"),
+    start_time: Optional[datetime] = Query(None, description="Start time (defaults to 24 hours ago)"),
+    end_time: Optional[datetime] = Query(None, description="End time (defaults to now)")
+):
+    """
+    Get aggregated time series data
+    
+    Returns aggregated sensor data over time buckets for visualization.
+    """
+    try:
+        data = data_service.get_time_series_aggregated(
+            rig_id=rig_id,
+            time_bucket_seconds=time_bucket_seconds,
+            start_time=start_time,
+            end_time=end_time
+        )
+        
+        return {
+            "success": True,
+            "count": len(data),
+            "data": data
+        }
+    except Exception as e:
+        logger.error(f"Error getting aggregated data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/analytics/{rig_id}")
+async def get_analytics_summary(rig_id: str):
+    """
+    Get analytics summary for a specific rig
+    
+    Returns drilling statistics and summary metrics.
+    """
+    try:
+        summary = data_service.get_analytics_summary(rig_id)
+        
+        if summary is None:
+            raise HTTPException(status_code=404, detail=f"No data found for rig {rig_id}")
+        
+        return {
+            "success": True,
+            "summary": summary
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting analytics summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/")
+async def create_sensor_data(data: SensorDataPoint):
+    """
+    Create a new sensor data record
+    
+    Inserts a new sensor reading into the database.
+    """
+    try:
+        success = data_service.insert_sensor_data(data.dict())
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to insert sensor data")
+        
+        return {
+            "success": True,
+            "message": "Sensor data created successfully",
+            "data": data
+        }
+    except Exception as e:
+        logger.error(f"Error creating sensor data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.websocket("/ws/{rig_id}")
+async def websocket_sensor_data(websocket: WebSocket, rig_id: str):
+    """
+    WebSocket endpoint for real-time sensor data streaming
+    
+    Establishes a WebSocket connection and streams real-time data from Kafka.
+    """
+    await websocket_manager.connect(websocket, rig_id)
+    logger.info(f"WebSocket connection established for rig {rig_id}")
+    
+    consumer_id = None
+    
+    try:
+        # Create Kafka consumer for this connection
+        consumer_id = f"ws_{rig_id}_{id(websocket)}"
+        topic = kafka_service.kafka_config.get('topics', {}).get('sensor_stream', 'rig.sensor.stream')
+        
+        if not kafka_service.create_consumer(consumer_id, topic):
+            await websocket.send_json({
+                "message_type": "error",
+                "data": {
+                    "error": "Failed to connect to Kafka stream",
+                    "timestamp": datetime.now().isoformat()
+                }
+            })
+            await websocket.close()
+            return
+        
+        # Send initial connection message
+        await websocket.send_json({
+            "message_type": "status_update",
+            "data": {
+                "status": "connected",
+                "rig_id": rig_id,
+                "timestamp": datetime.now().isoformat()
+            },
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        # Start ping task
+        ping_task = asyncio.create_task(_ping_client(websocket))
+        
+        # Stream data
+        while True:
+            # Check for client messages
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=0.1)
+                if data == "ping":
+                    await websocket.send_json({
+                        "message_type": "status_update",
+                        "data": {"status": "alive"},
+                        "timestamp": datetime.now().isoformat()
+                    })
+                elif data == "close":
+                    break
+            except asyncio.TimeoutError:
+                pass
+            except Exception as e:
+                logger.debug(f"Error receiving client message: {e}")
+            
+            # Consume from Kafka (non-blocking)
+            kafka_data = kafka_service.consume_messages(consumer_id, timeout=0.1)
+            
+            if kafka_data:
+                # Filter by rig_id if needed
+                if kafka_data.get('rig_id') == rig_id or not rig_id:
+                    message = WebSocketMessage(
+                        message_type="sensor_data",
+                        data=kafka_data,
+                        timestamp=datetime.now()
+                    )
+                    await websocket.send_json(message.dict())
+            
+            # Small delay to prevent CPU spinning
+            await asyncio.sleep(0.05)
+            
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected for rig {rig_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error for rig {rig_id}: {e}")
+        try:
+            await websocket.send_json({
+                "message_type": "error",
+                "data": {
+                    "error": str(e),
+                    "timestamp": datetime.now().isoformat()
+                },
+                "timestamp": datetime.now().isoformat()
+            })
+        except:
+            pass
+    finally:
+        # Cancel ping task
+        if 'ping_task' in locals():
+            ping_task.cancel()
+        
+        # Cleanup Kafka consumer
+        if consumer_id:
+            kafka_service.close_consumer(consumer_id)
+        
+        # Remove from manager
+        websocket_manager.disconnect(websocket)
+        logger.info(f"WebSocket cleanup completed for rig {rig_id}")
+
+
+async def _ping_client(websocket: WebSocket):
+    """Send periodic ping to keep connection alive"""
+    try:
+        while True:
+            await asyncio.sleep(30)  # Ping every 30 seconds
+            await websocket.send_json({
+                "message_type": "status_update",
+                "data": {"status": "ping"},
+                "timestamp": datetime.now().isoformat()
+            })
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.debug(f"Ping task error: {e}")
+
