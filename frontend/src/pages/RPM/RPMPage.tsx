@@ -1,16 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { CircularGauge, LinearGauge } from '../../components/Gauges';
+import { useState, useEffect } from 'react'
+import { CircularGauge, LinearGauge } from '@/components/Gauges'
 
 interface DrillMetrics {
-  rpm: number;
-  torque: number;
-  pressure: number;
-  wob: number;
-  rop: number;
-  temperature: number;
+  rpm: number
+  torque: number
+  pressure: number
+  wob: number
+  rop: number
+  temperature: number
 }
 
-const RPMPage: React.FC = () => {
+export default function RPMPage() {
   const [metrics, setMetrics] = useState<DrillMetrics>({
     rpm: 120,
     torque: 28.5,
@@ -18,9 +18,9 @@ const RPMPage: React.FC = () => {
     wob: 32.5,
     rop: 125.3,
     temperature: 185
-  });
+  })
 
-  const [isLive, setIsLive] = useState(false);
+  const [isLive, setIsLive] = useState(false)
 
   useEffect(() => {
     if (isLive) {
@@ -32,12 +32,12 @@ const RPMPage: React.FC = () => {
           wob: 25 + Math.random() * 20,
           rop: 100 + Math.random() * 50,
           temperature: 170 + Math.random() * 30
-        });
-      }, 1000);
+        })
+      }, 1000)
 
-      return () => clearInterval(interval);
+      return () => clearInterval(interval)
     }
-  }, [isLive]);
+  }, [isLive])
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6">
@@ -299,8 +299,5 @@ const RPMPage: React.FC = () => {
         </div>
       </div>
     </div>
-  );
-};
-
-export default RPMPage;
-
+  )
+}

@@ -1,17 +1,17 @@
-import React, { useState } from 'react';
-import { Play, Pause, Square, AlertTriangle } from 'lucide-react';
+import { useState } from 'react'
+import { Play, Pause, Square, AlertTriangle } from 'lucide-react'
 
 interface ThresholdConfig {
-  parameter: string;
-  min: number;
-  max: number;
-  current: number;
-  unit: string;
-  critical: boolean;
+  parameter: string
+  min: number
+  max: number
+  current: number
+  unit: string
+  critical: boolean
 }
 
-const ControlPage: React.FC = () => {
-  const [isRunning, setIsRunning] = useState(false);
+export default function ControlPage() {
+  const [isRunning, setIsRunning] = useState(false)
   const [thresholds, setThresholds] = useState<ThresholdConfig[]>([
     { parameter: 'WOB', min: 0, max: 50, current: 32.5, unit: 'klbs', critical: false },
     { parameter: 'RPM', min: 0, max: 200, current: 120, unit: 'rpm', critical: false },
@@ -19,25 +19,25 @@ const ControlPage: React.FC = () => {
     { parameter: 'Pressure', min: 0, max: 5000, current: 3200, unit: 'psi', critical: false },
     { parameter: 'Flow Rate', min: 0, max: 1000, current: 650, unit: 'gpm', critical: false },
     { parameter: 'Temperature', min: 0, max: 300, current: 185, unit: '°F', critical: true },
-  ]);
+  ])
 
   const handleStart = () => {
-    setIsRunning(true);
-  };
+    setIsRunning(true)
+  }
 
   const handlePause = () => {
-    setIsRunning(false);
-  };
+    setIsRunning(false)
+  }
 
   const handleStop = () => {
-    setIsRunning(false);
-  };
+    setIsRunning(false)
+  }
 
   const updateThreshold = (index: number, field: 'min' | 'max', value: number) => {
-    const newThresholds = [...thresholds];
-    newThresholds[index][field] = value;
-    setThresholds(newThresholds);
-  };
+    const newThresholds = [...thresholds]
+    newThresholds[index][field] = value
+    setThresholds(newThresholds)
+  }
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6">
@@ -143,8 +143,8 @@ const ControlPage: React.FC = () => {
 
             <div className="space-y-4">
               {thresholds.map((threshold, index) => {
-                const percentage = ((threshold.current - threshold.min) / (threshold.max - threshold.min)) * 100;
-                const isWarning = percentage > 80 || percentage < 20;
+                const percentage = ((threshold.current - threshold.min) / (threshold.max - threshold.min)) * 100
+                const isWarning = percentage > 80 || percentage < 20
 
                 return (
                   <div key={index} className="bg-gray-700 rounded-lg p-4">
@@ -211,7 +211,7 @@ const ControlPage: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                );
+                )
               })}
             </div>
 
@@ -228,8 +228,5 @@ const ControlPage: React.FC = () => {
         </div>
       </div>
     </div>
-  );
-};
-
-export default ControlPage;
-
+  )
+}

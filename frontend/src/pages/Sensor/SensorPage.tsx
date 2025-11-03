@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { useState, useEffect } from 'react'
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 // Mock data for noise signal
 const generateNoiseSignal = (points: number = 100) => {
@@ -7,33 +7,33 @@ const generateNoiseSignal = (points: number = 100) => {
     time: i,
     signal: Math.sin(i * 0.1) + Math.random() * 0.5 - 0.25,
     noise: Math.random() * 0.3 - 0.15
-  }));
-};
+  }))
+}
 
 // Mock data for histogram
 const generateHistogram = () => {
-  const bins = 20;
+  const bins = 20
   return Array.from({ length: bins }, (_, i) => ({
     bin: ((i - bins/2) * 0.2).toFixed(1),
     frequency: Math.floor(Math.random() * 50 + 10)
-  }));
-};
+  }))
+}
 
-const SensorPage: React.FC = () => {
-  const [signalData, setSignalData] = useState(generateNoiseSignal());
-  const [histogramData, setHistogramData] = useState(generateHistogram());
-  const [isRecording, setIsRecording] = useState(false);
+export default function SensorPage() {
+  const [signalData, setSignalData] = useState(generateNoiseSignal())
+  const [histogramData, setHistogramData] = useState(generateHistogram())
+  const [isRecording, setIsRecording] = useState(false)
 
   useEffect(() => {
     if (isRecording) {
       const interval = setInterval(() => {
-        setSignalData(generateNoiseSignal());
-        setHistogramData(generateHistogram());
-      }, 1000);
+        setSignalData(generateNoiseSignal())
+        setHistogramData(generateHistogram())
+      }, 1000)
 
-      return () => clearInterval(interval);
+      return () => clearInterval(interval)
     }
-  }, [isRecording]);
+  }, [isRecording])
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6">
@@ -237,8 +237,6 @@ const SensorPage: React.FC = () => {
         </div>
       </div>
     </div>
-  );
-};
-
-export default SensorPage;
+  )
+}
 
