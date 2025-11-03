@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>i-Drill Dashboard Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            direction: rtl;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+            animation: fadeInDown 0.8s ease;
+        }
+
+        .header h1 {
+            font-size: 3.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .status-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #10B981, #059669);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin-top: 15px;
+            animation: pulse 2s infinite;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+            animation: fadeInUp 0.8s ease;
+            cursor: pointer;
+        }
+
+        .card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .card-icon {
+            font-size: 2.5rem;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .card-title {
+            flex: 1;
+        }
+
+        .card-title h3 {
+            font-size: 1.5rem;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .card-title p {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .card-content {
+            margin-bottom: 20px;
+        }
+
+        .feature-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .feature-list li {
+            padding: 8px 0;
+            color: #555;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .feature-list li:before {
+            content: '✓';
+            color: #10B981;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+
+        .card-link {
+            display: block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+            padding: 12px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .card-link:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .main-links {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-bottom: 40px;
+            flex-wrap: wrap;
+        }
+
+        .main-link {
+            padding: 15px 30px;
+            background: white;
+            color: #667eea;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: bold;
+            font-size: 1.1rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+        }
+
+        .main-link:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+
+        .footer {
+            text-align: center;
+            color: white;
+            margin-top: 50px;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        .iframe-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: white;
+            z-index: 1000;
+            display: none;
+        }
+
+        .iframe-container.active {
+            display: block;
+        }
+
+        .iframe-header {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .close-btn {
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1rem;
+        }
+
+        .close-btn:hover {
+            background: #f0f0f0;
+        }
+
+        iframe {
+            width: 100%;
+            height: calc(100% - 60px);
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛢️ داشبورد i-Drill</h1>
+            <p>سیستم هوشمند نظارت و کنترل عملیات حفاری</p>
+            <div class="status-badge">🟢 سیستم در حال اجرا</div>
+        </div>
+
+        <div class="main-links">
+            <a href="http://localhost:3000" target="_blank" class="main-link">
+                🌐 داشبورد اصلی
+            </a>
+            <a href="http://localhost:8001/docs" target="_blank" class="main-link">
+                📚 مستندات API
+            </a>
+            <a href="http://localhost:8001" target="_blank" class="main-link">
+                ⚡ Backend API
+            </a>
+        </div>
+
+        <div class="grid">
+            <!-- Gauge Page -->
+            <div class="card" onclick="openPage('http://localhost:3000/display/gauge')">
+                <div class="card-header">
+                    <div class="card-icon">🎯</div>
+                    <div class="card-title">
+                        <h3>صفحه Gauge</h3>
+                        <p>نمایشگرهای دایره‌ای و خطی</p>
+                    </div>
+                </div>
+                <div class="card-content">
+                    <ul class="feature-list">
+                        <li>Circular Gauges برای WOB, RPM, Torque</li>
+                        <li>Linear Gauges برای Pressure و Flow</li>
+                        <li>طراحی TURBIN با رنگ‌های متنوع</li>
+                        <li>نمایش Real-time مقادیر</li>
+                    </ul>
+                </div>
+                <a href="http://localhost:3000/display/gauge" target="_blank" class="card-link" onclick="event.stopPropagation()">
+                    مشاهده صفحه Gauge →
+                </a>
+            </div>
+
+            <!-- RPM Page -->
+            <div class="card" onclick="openPage('http://localhost:3000/display/rpm')">
+                <div class="card-header">
+                    <div class="card-icon">⚡</div>
+                    <div class="card-title">
+                        <h3>صفحه RPM</h3>
+                        <p>پارامترهای حفاری و عملکرد</p>
+                    </div>
+                </div>
+                <div class="card-content">
+                    <ul class="feature-list">
+                        <li>RPM, Torque, Pressure Gauges</li>
+                        <li>WOB و ROP Linear Gauges</li>
+                        <li>Temperature Display با Gradient</li>
+                        <li>Performance Indicators و Alarms</li>
+                    </ul>
+                </div>
+                <a href="http://localhost:3000/display/rpm" target="_blank" class="card-link" onclick="event.stopPropagation()">
+                    مشاهده صفحه RPM →
+                </a>
+            </div>
+
+            <!-- Sensor Page -->
+            <div class="card" onclick="openPage('http://localhost:3000/display/sensor')">
+                <div class="card-header">
+                    <div class="card-icon">📊</div>
+                    <div class="card-title">
+                        <h3>صفحه SENSOR</h3>
+                        <p>تحلیل سیگنال و نویز</p>
+                    </div>
+                </div>
+                <div class="card-content">
+                    <ul class="feature-list">
+                        <li>Noise Signal Chart Real-time</li>
+                        <li>Distribution Histogram</li>
+                        <li>FFT Spectrum Analysis</li>
+                        <li>آمار کامل (Mean, STD, SNR, RMS)</li>
+                    </ul>
+                </div>
+                <a href="http://localhost:3000/display/sensor" target="_blank" class="card-link" onclick="event.stopPropagation()">
+                    مشاهده صفحه SENSOR →
+                </a>
+            </div>
+
+            <!-- Control Page -->
+            <div class="card" onclick="openPage('http://localhost:3000/display/control')">
+                <div class="card-header">
+                    <div class="card-icon">🎮</div>
+                    <div class="card-title">
+                        <h3>صفحه Control</h3>
+                        <p>کنترل عملیات و Thresholds</p>
+                    </div>
+                </div>
+                <div class="card-content">
+                    <ul class="feature-list">
+                        <li>دکمه‌های START/PAUSE/STOP</li>
+                        <li>EMERGENCY STOP</li>
+                        <li>Threshold Settings برای 6 پارامتر</li>
+                        <li>Runtime Info و Status Display</li>
+                    </ul>
+                </div>
+                <a href="http://localhost:3000/display/control" target="_blank" class="card-link" onclick="event.stopPropagation()">
+                    مشاهده صفحه Control →
+                </a>
+            </div>
+
+            <!-- Real-Time Monitoring -->
+            <div class="card" onclick="openPage('http://localhost:3000/realtime')">
+                <div class="card-header">
+                    <div class="card-icon">📡</div>
+                    <div class="card-title">
+                        <h3>نظارت Real-Time</h3>
+                        <p>مانیتورینگ لحظه‌ای</p>
+                    </div>
+                </div>
+                <div class="card-content">
+                    <ul class="feature-list">
+                        <li>WebSocket Real-time Data</li>
+                        <li>Charts تعاملی با Recharts</li>
+                        <li>Status Cards برای پارامترها</li>
+                        <li>Connection Management</li>
+                    </ul>
+                </div>
+                <a href="http://localhost:3000/realtime" target="_blank" class="card-link" onclick="event.stopPropagation()">
+                    مشاهده Real-Time →
+                </a>
+            </div>
+
+            <!-- Dashboard -->
+            <div class="card" onclick="openPage('http://localhost:3000/dashboard')">
+                <div class="card-header">
+                    <div class="card-icon">📈</div>
+                    <div class="card-title">
+                        <h3>داشبورد اصلی</h3>
+                        <p>نمای کلی سیستم</p>
+                    </div>
+                </div>
+                <div class="card-content">
+                    <ul class="feature-list">
+                        <li>نمای کلی عملیات</li>
+                        <li>KPI ها و Metrics</li>
+                        <li>Analytics Summary</li>
+                        <li>System Status Overview</li>
+                    </ul>
+                </div>
+                <a href="http://localhost:3000/dashboard" target="_blank" class="card-link" onclick="event.stopPropagation()">
+                    مشاهده Dashboard →
+                </a>
+            </div>
+        </div>
+
+        <div class="footer">
+            <h3>🚀 راهنمای سریع</h3>
+            <p style="margin: 15px 0;">
+                • برای مشاهده هر صفحه، روی کارت مربوطه کلیک کنید<br>
+                • Sidebar سبز در سمت راست برای ناوبری استفاده کنید<br>
+                • دکمه‌های START/LIVE DATA برای فعال‌سازی Real-time<br>
+                • مرورگر Chrome برای بهترین تجربه توصیه می‌شود
+            </p>
+            <p style="margin-top: 20px; font-size: 0.9rem; opacity: 0.8;">
+                © 2025 i-Drill Project - Developed by Parsa
+            </p>
+        </div>
+    </div>
+
+    <div id="iframeContainer" class="iframe-container">
+        <div class="iframe-header">
+            <h2 id="iframeTitle">داشبورد i-Drill</h2>
+            <button class="close-btn" onclick="closeIframe()">✕ بستن</button>
+        </div>
+        <iframe id="dashboardIframe" src=""></iframe>
+    </div>
+
+    <script>
+        function openPage(url) {
+            // Open in new tab
+            window.open(url, '_blank');
+        }
+
+        function closeIframe() {
+            document.getElementById('iframeContainer').classList.remove('active');
+            document.getElementById('dashboardIframe').src = '';
+        }
+
+        // Auto-refresh status
+        setInterval(() => {
+            fetch('http://localhost:3000')
+                .then(() => {
+                    document.querySelector('.status-badge').innerHTML = '🟢 سیستم در حال اجرا';
+                    document.querySelector('.status-badge').style.background = 'linear-gradient(135deg, #10B981, #059669)';
+                })
+                .catch(() => {
+                    document.querySelector('.status-badge').innerHTML = '🔴 سیستم آفلاین';
+                    document.querySelector('.status-badge').style.background = 'linear-gradient(135deg, #EF4444, #DC2626)';
+                });
+        }, 5000);
+    </script>
+</body>
+</html>
+
