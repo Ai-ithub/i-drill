@@ -1,0 +1,290 @@
+"""
+Database Connection Management with SQLAlchemy
+Provides connection pooling, session management, and initialization
+"""
+from sqlalchemy import create_engine, event, pool
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.exc import SQLAlchemyError
+from contextlib import contextmanager
+import logging
+from typing import Generator
+import os
+
+from api.models.database_models import Base
+
+logger = logging.getLogger(__name__)
+
+
+class DatabaseManager:
+    """
+    Database Manager for handling connections and sessions
+    """
+    
+    def __init__(self):
+        self.engine = None
+        self.SessionLocal = None
+        self._initialized = False
+        
+    def initialize(
+        self,
+        database_url: str = None,
+        echo: bool = False,
+        pool_size: int = 10,
+        max_overflow: int = 20,
+        pool_timeout: int = 30,
+        pool_recycle: int = 3600,
+    ):
+        """
+        Initialize database connection
+        
+        Args:
+            database_url: Database connection URL
+            echo: Enable SQL logging
+            pool_size: Connection pool size
+            max_overflow: Max overflow connections
+            pool_timeout: Connection timeout
+            pool_recycle: Recycle connections after this many seconds
+        """
+        if self._initialized:
+            logger.warning("Database already initialized")
+            return
+        
+        # Get database URL from environment or use default
+        if database_url is None:
+            database_url = os.getenv(
+                'DATABASE_URL',
+                'postgresql://postgres:postgres@localhost:5432/drilling_db'
+            )
+        
+        try:
+            # Create engine with connection pooling
+            self.engine = create_engine(
+                database_url,
+                echo=echo,
+                pool_size=pool_size,
+                max_overflow=max_overflow,
+                pool_timeout=pool_timeout,
+                pool_recycle=pool_recycle,
+                pool_pre_ping=True,  # Verify connections before using
+            )
+            
+            # Add connection event listeners
+            @event.listens_for(self.engine, "connect")
+            def receive_connect(dbapi_conn, connection_record):
+                logger.debug("New database connection established")
+            
+            @event.listens_for(self.engine, "close")
+            def receive_close(dbapi_conn, connection_record):
+                logger.debug("Database connection closed")
+            
+            # Create session factory
+            self.SessionLocal = sessionmaker(
+                autocommit=False,
+                autoflush=False,
+                bind=self.engine
+            )
+            
+            self._initialized = True
+            logger.info(f"Database initialized successfully: {self._mask_password(database_url)}")
+            
+        except SQLAlchemyError as e:
+            logger.error(f"Failed to initialize database: {e}")
+            raise
+    
+    def create_tables(self):
+        """Create all database tables"""
+        if not self._initialized:
+            raise RuntimeError("Database not initialized. Call initialize() first.")
+        
+        try:
+            Base.metadata.create_all(bind=self.engine)
+            logger.info("Database tables created successfully")
+        except SQLAlchemyError as e:
+            logger.error(f"Failed to create tables: {e}")
+            raise
+    
+    def drop_tables(self):
+        """Drop all database tables (use with caution!)"""
+        if not self._initialized:
+            raise RuntimeError("Database not initialized. Call initialize() first.")
+        
+        try:
+            Base.metadata.drop_all(bind=self.engine)
+            logger.warning("All database tables dropped")
+        except SQLAlchemyError as e:
+            logger.error(f"Failed to drop tables: {e}")
+            raise
+    
+    def get_session(self) -> Session:
+        """
+        Get a new database session
+        
+        Returns:
+            SQLAlchemy Session instance
+        """
+        if not self._initialized:
+            raise RuntimeError("Database not initialized. Call initialize() first.")
+        
+        return self.SessionLocal()
+    
+    @contextmanager
+    def session_scope(self) -> Generator[Session, None, None]:
+        """
+        Context manager for database sessions with automatic commit/rollback
+        
+        Usage:
+            with db_manager.session_scope() as session:
+                session.query(Model).all()
+        
+        Yields:
+            Database session
+        """
+        session = self.get_session()
+        try:
+            yield session
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Database session error: {e}")
+            raise
+        finally:
+            session.close()
+    
+    def check_connection(self) -> bool:
+        """
+        Check if database connection is healthy
+        
+        Returns:
+            True if connection is healthy, False otherwise
+        """
+        if not self._initialized:
+            return False
+        
+        try:
+            with self.session_scope() as session:
+                session.execute("SELECT 1")
+            return True
+        except Exception as e:
+            logger.error(f"Database health check failed: {e}")
+            return False
+    
+    def close(self):
+        """Close database connections and cleanup"""
+        if self.engine:
+            self.engine.dispose()
+            self._initialized = False
+            logger.info("Database connections closed")
+    
+    @staticmethod
+    def _mask_password(url: str) -> str:
+        """Mask password in database URL for logging"""
+        try:
+            if '@' in url and '://' in url:
+                protocol, rest = url.split('://', 1)
+                if '@' in rest:
+                    credentials, host = rest.split('@', 1)
+                    if ':' in credentials:
+                        username = credentials.split(':', 1)[0]
+                        return f"{protocol}://{username}:****@{host}"
+            return url
+        except:
+            return url
+
+
+# Global database manager instance
+db_manager = DatabaseManager()
+
+
+def get_db() -> Generator[Session, None, None]:
+    """
+    Dependency function for FastAPI to get database sessions
+    
+    Usage in FastAPI:
+        @app.get("/items")
+        def get_items(db: Session = Depends(get_db)):
+            return db.query(Item).all()
+    
+    Yields:
+        Database session
+    """
+    session = db_manager.get_session()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+def init_database(
+    database_url: str = None,
+    create_tables: bool = True,
+    **kwargs
+):
+    """
+    Initialize database with optional table creation
+    
+    Args:
+        database_url: Database connection URL
+        create_tables: Whether to create tables
+        **kwargs: Additional arguments for DatabaseManager.initialize()
+    """
+    try:
+        db_manager.initialize(database_url=database_url, **kwargs)
+        
+        if create_tables:
+            db_manager.create_tables()
+        
+        logger.info("Database initialization completed")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
+        return False
+
+
+def check_database_health() -> dict:
+    """
+    Check database health and return status
+    
+    Returns:
+        Dictionary with health status
+    """
+    is_healthy = db_manager.check_connection()
+    
+    return {
+        "database": "healthy" if is_healthy else "unhealthy",
+        "initialized": db_manager._initialized,
+        "engine_pool_size": db_manager.engine.pool.size() if db_manager.engine else 0,
+    }
+
+
+# Database utilities
+
+def execute_raw_sql(sql: str, params: dict = None) -> list:
+    """
+    Execute raw SQL query
+    
+    Args:
+        sql: SQL query string
+        params: Query parameters
+    
+    Returns:
+        Query results
+    """
+    with db_manager.session_scope() as session:
+        result = session.execute(sql, params or {})
+        return result.fetchall()
+
+
+def bulk_insert(model_class, data: list[dict]):
+    """
+    Bulk insert data
+    
+    Args:
+        model_class: SQLAlchemy model class
+        data: List of dictionaries with data to insert
+    """
+    with db_manager.session_scope() as session:
+        objects = [model_class(**item) for item in data]
+        session.bulk_save_objects(objects)
+        logger.info(f"Bulk inserted {len(data)} records into {model_class.__tablename__}")
+

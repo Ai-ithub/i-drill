@@ -192,6 +192,25 @@ class KafkaService:
             self.producer.flush()
             self.producer = None
             logger.info("Kafka producer closed")
+    
+    def check_connection(self) -> bool:
+        """
+        Check if Kafka connection is healthy
+        
+        Returns:
+            True if Kafka is connected, False otherwise
+        """
+        try:
+            if self.producer is None:
+                return False
+            
+            # Try to list topics (lightweight check)
+            metadata = self.producer.list_topics(timeout=2)
+            return metadata is not None
+            
+        except Exception as e:
+            logger.error(f"Kafka connection check failed: {e}")
+            return False
 
 # Global instance
 kafka_service = KafkaService()

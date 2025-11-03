@@ -1,215 +1,298 @@
 """
-Configuration and Well Profiles API Routes
+Configuration API Routes
 """
-from fastapi import APIRouter, HTTPException, Query
-from typing import List, Optional
-from api.models.schemas import WellProfile, ConfigurationUpdate
-from datetime import datetime
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.orm import Session
+from typing import Optional, List
 import logging
+
+from api.models.schemas import (
+    WellProfileConfig,
+    DrillingParametersConfig,
+    ErrorResponse
+)
+from api.models.database_models import WellProfileDB
+from database import get_db
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/config", tags=["configuration"])
 
 
-@router.get("/well-profiles", response_model=List[WellProfile])
+@router.get("/well-profiles")
 async def get_well_profiles(
-    rig_id: Optional[str] = Query(None, description="Filter by rig ID"),
-    well_id: Optional[str] = Query(None, description="Filter by well ID")
+    rig_id: Optional[str] = None,
+    db: Session = Depends(get_db)
 ):
     """
-    Get well profiles
+    Get well profile configurations
     
-    Returns configured well profiles with drilling parameters.
+    Args:
+        rig_id: Optional filter by rig ID
+        
+    Returns:
+        List of well profiles
     """
     try:
-        # TODO: Implement actual database query
-        # Mock response
-        profiles = []
+        query = db.query(WellProfileDB)
         
-        profile = {
-            "well_id": well_id or "WELL_001",
-            "rig_id": rig_id or "RIG_01",
-            "well_name": "North Field Alpha",
-            "location": "28.5°N, 51.8°E",
-            "target_depth": 10000.0,
-            "formation_layers": [
-                {"name": "Shale", "start_depth": 0, "end_depth": 3000},
-                {"name": "Sandstone", "start_depth": 3000, "end_depth": 6000},
-                {"name": "Limestone", "start_depth": 6000, "end_depth": 10000}
-            ],
-            "drilling_parameters": {
-                "max_wob": 2000,
-                "max_rpm": 120,
-                "mud_type": "WBM"
-            },
-            "created_at": datetime(2025, 1, 1),
-            "updated_at": datetime.now()
+        if rig_id:
+            query = query.filter(WellProfileDB.rig_id == rig_id)
+        
+        profiles = query.all()
+        
+        return {
+            "success": True,
+            "count": len(profiles),
+            "profiles": [
+                {
+                    "id": p.id,
+                    "well_id": p.well_id,
+                    "rig_id": p.rig_id,
+                    "total_depth": p.total_depth,
+                    "kick_off_point": p.kick_off_point,
+                    "build_rate": p.build_rate,
+                    "max_inclination": p.max_inclination,
+                    "target_zone_start": p.target_zone_start,
+                    "target_zone_end": p.target_zone_end,
+                    "geological_data": p.geological_data,
+                    "created_at": p.created_at.isoformat(),
+                    "updated_at": p.updated_at.isoformat()
+                }
+                for p in profiles
+            ]
         }
-        profiles.append(profile)
-        
-        return profiles
         
     except Exception as e:
         logger.error(f"Error getting well profiles: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/well-profiles/{well_id}", response_model=WellProfile)
-async def get_well_profile(well_id: str):
+@router.get("/well-profiles/{well_id}")
+async def get_well_profile(
+    well_id: str,
+    db: Session = Depends(get_db)
+):
     """
     Get a specific well profile
+    
+    Args:
+        well_id: Well identifier
+        
+    Returns:
+        Well profile details
     """
     try:
-        # TODO: Implement actual database query
-        # Mock response
-        profile = {
-            "well_id": well_id,
-            "rig_id": "RIG_01",
-            "well_name": "North Field Alpha",
-            "location": "28.5°N, 51.8°E",
-            "target_depth": 10000.0,
-            "formation_layers": [
-                {"name": "Shale", "start_depth": 0, "end_depth": 3000},
-                {"name": "Sandstone", "start_depth": 3000, "end_depth": 6000},
-                {"name": "Limestone", "start_depth": 6000, "end_depth": 10000}
-            ],
-            "drilling_parameters": {
-                "max_wob": 2000,
-                "max_rpm": 120,
-                "mud_type": "WBM"
-            },
-            "created_at": datetime(2025, 1, 1),
-            "updated_at": datetime.now()
+        profile = db.query(WellProfileDB).filter(
+            WellProfileDB.well_id == well_id
+        ).first()
+        
+        if not profile:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Well profile {well_id} not found"
+            )
+        
+        return {
+            "success": True,
+            "profile": {
+                "id": profile.id,
+                "well_id": profile.well_id,
+                "rig_id": profile.rig_id,
+                "total_depth": profile.total_depth,
+                "kick_off_point": profile.kick_off_point,
+                "build_rate": profile.build_rate,
+                "max_inclination": profile.max_inclination,
+                "target_zone_start": profile.target_zone_start,
+                "target_zone_end": profile.target_zone_end,
+                "geological_data": profile.geological_data,
+                "created_at": profile.created_at.isoformat(),
+                "updated_at": profile.updated_at.isoformat()
+            }
         }
         
-        return WellProfile(**profile)
-        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting well profile: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/well-profiles", response_model=WellProfile)
-async def create_well_profile(profile: WellProfile):
+@router.post("/well-profiles")
+async def create_well_profile(
+    config: WellProfileConfig,
+    db: Session = Depends(get_db)
+):
     """
     Create a new well profile
     
-    Adds a new well configuration.
+    Args:
+        config: Well profile configuration
+        
+    Returns:
+        Created well profile
     """
     try:
-        # TODO: Implement actual database insertion
-        logger.info(f"Creating well profile: {profile.well_id}")
+        # Check if well_id already exists
+        existing = db.query(WellProfileDB).filter(
+            WellProfileDB.well_id == config.well_id
+        ).first()
         
-        return profile
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Well profile {config.well_id} already exists"
+            )
         
+        # Create new profile
+        profile = WellProfileDB(
+            well_id=config.well_id,
+            rig_id="RIG_01",  # Default or get from config
+            total_depth=config.total_depth,
+            kick_off_point=config.kick_off_point,
+            build_rate=config.build_rate,
+            max_inclination=config.max_inclination,
+            target_zone_start=config.target_zone_start,
+            target_zone_end=config.target_zone_end
+        )
+        
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+        
+        return {
+            "success": True,
+            "message": "Well profile created successfully",
+            "profile": {
+                "id": profile.id,
+                "well_id": profile.well_id,
+                "rig_id": profile.rig_id,
+                "total_depth": profile.total_depth
+            }
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating well profile: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/well-profiles/{well_id}", response_model=WellProfile)
-async def update_well_profile(well_id: str, profile: WellProfile):
+@router.put("/well-profiles/{well_id}")
+async def update_well_profile(
+    well_id: str,
+    config: WellProfileConfig,
+    db: Session = Depends(get_db)
+):
     """
     Update an existing well profile
+    
+    Args:
+        well_id: Well identifier
+        config: Updated well profile configuration
+        
+    Returns:
+        Updated well profile
     """
     try:
-        # TODO: Implement actual database update
-        logger.info(f"Updating well profile: {well_id}")
+        profile = db.query(WellProfileDB).filter(
+            WellProfileDB.well_id == well_id
+        ).first()
         
-        return profile
+        if not profile:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Well profile {well_id} not found"
+            )
         
+        # Update fields
+        profile.total_depth = config.total_depth
+        profile.kick_off_point = config.kick_off_point
+        profile.build_rate = config.build_rate
+        profile.max_inclination = config.max_inclination
+        profile.target_zone_start = config.target_zone_start
+        profile.target_zone_end = config.target_zone_end
+        
+        db.commit()
+        db.refresh(profile)
+        
+        return {
+            "success": True,
+            "message": "Well profile updated successfully",
+            "profile": {
+                "id": profile.id,
+                "well_id": profile.well_id,
+                "updated_at": profile.updated_at.isoformat()
+            }
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error updating well profile: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/well-profiles/{well_id}")
-async def delete_well_profile(well_id: str):
-    """
-    Delete a well profile
-    """
-    try:
-        # TODO: Implement actual database deletion
-        logger.info(f"Deleting well profile: {well_id}")
-        
-        return {
-            "success": True,
-            "message": "Well profile deleted successfully"
-        }
-        
-    except Exception as e:
-        logger.error(f"Error deleting well profile: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/parameters")
-async def get_configuration_parameters(
-    category: Optional[str] = Query(None, description="Filter by category")
+async def delete_well_profile(
+    well_id: str,
+    db: Session = Depends(get_db)
 ):
     """
-    Get configuration parameters
+    Delete a well profile
     
-    Returns system configuration parameters.
+    Args:
+        well_id: Well identifier
+        
+    Returns:
+        Deletion confirmation
     """
     try:
-        # TODO: Implement actual configuration retrieval
-        # Mock response
-        parameters = {
-            "drilling": {
-                "max_depth": 15000.0,
-                "max_wob": 2500.0,
-                "max_rpm": 150,
-                "mud_types": ["WBM", "OBM", "SBM"]
-            },
-            "sensors": {
-                "sampling_rate": 1.0,
-                "calibration_interval_days": 30,
-                "alert_thresholds": {
-                    "temperature_high": 100,
-                    "vibration_high": 2.0,
-                    "pressure_high": 5000
-                }
-            },
-            "maintenance": {
-                "preventive_interval_hours": 720,
-                "critical_alert_response_hours": 1,
-                "maintenance_duration_estimate_hours": 8
-            }
-        }
+        profile = db.query(WellProfileDB).filter(
+            WellProfileDB.well_id == well_id
+        ).first()
         
-        if category and category in parameters:
-            return {category: parameters[category]}
+        if not profile:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Well profile {well_id} not found"
+            )
         
-        return parameters
-        
-    except Exception as e:
-        logger.error(f"Error getting configuration parameters: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.put("/parameters")
-async def update_configuration_parameters(update: ConfigurationUpdate):
-    """
-    Update configuration parameters
-    
-    Updates system configuration values.
-    """
-    try:
-        # TODO: Implement actual configuration update
-        logger.info(f"Updating configuration parameter: {update.parameter_name}")
+        db.delete(profile)
+        db.commit()
         
         return {
             "success": True,
-            "message": "Configuration updated successfully",
-            "parameter": {
-                "name": update.parameter_name,
-                "value": update.parameter_value,
-                "description": update.description
-            }
+            "message": f"Well profile {well_id} deleted successfully"
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error updating configuration: {e}")
+        logger.error(f"Error deleting well profile: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/system")
+async def get_system_config():
+    """
+    Get system configuration
+    
+    Returns:
+        System configuration settings
+    """
+    return {
+        "success": True,
+        "config": {
+            "api_version": "1.0.0",
+            "max_upload_size_mb": 100,
+            "data_retention_days": 365,
+            "default_rig_id": "RIG_01",
+            "supported_models": ["lstm", "transformer", "cnn_lstm"],
+            "real_time_update_interval_ms": 1000,
+            "max_concurrent_connections": 100
+        }
+    }

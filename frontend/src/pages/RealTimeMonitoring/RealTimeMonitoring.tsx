@@ -1,143 +1,323 @@
-import { useState } from 'react'
-import { useWebSocket } from '@/services/websocket'
+import { useState, useEffect, useCallback } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { SensorDataPoint } from '@/types'
-import { Activity, Wifi, WifiOff } from 'lucide-react'
+import { Activity, Zap, TrendingUp, AlertCircle } from 'lucide-react'
+import { useWebSocket } from '@/hooks/useWebSocket'
+
+interface SensorData {
+  timestamp: string
+  depth: number
+  wob: number
+  rpm: number
+  torque: number
+  rop: number
+  mud_flow: number
+  mud_pressure: number
+  status: string
+}
 
 export default function RealTimeMonitoring() {
   const [rigId, setRigId] = useState('RIG_01')
-  const [dataHistory, setDataHistory] = useState<SensorDataPoint[]>([])
-  const maxHistorySize = 100
+  const [dataPoints, setDataPoints] = useState<SensorData[]>([])
+  const [maxDataPoints] = useState(50) // Keep last 50 points
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting')
 
-  const { isConnected, lastMessage, error, connect, disconnect } = useWebSocket({
-    rigId,
-    autoConnect: false,
-    onMessage: (message) => {
-      if (message.message_type === 'sensor_data') {
-        const sensorData = message.data as SensorDataPoint
-        setDataHistory((prev) => {
-          const newHistory = [sensorData, ...prev].slice(0, maxHistorySize)
-          return newHistory
-        })
+  // WebSocket connection
+  const { data: wsData, isConnected } = useWebSocket(
+    `ws://localhost:8001/api/v1/sensor-data/ws/${rigId}`
+  )
+
+  // Update connection status
+  useEffect(() => {
+    setConnectionStatus(isConnected ? 'connected' : 'disconnected')
+  }, [isConnected])
+
+  // Process incoming WebSocket data
+  useEffect(() => {
+    if (wsData && wsData.message_type === 'sensor_data') {
+      const newData: SensorData = {
+        timestamp: wsData.data.timestamp,
+        depth: wsData.data.depth,
+        wob: wsData.data.wob,
+        rpm: wsData.data.rpm,
+        torque: wsData.data.torque,
+        rop: wsData.data.rop,
+        mud_flow: wsData.data.mud_flow,
+        mud_pressure: wsData.data.mud_pressure,
+        status: wsData.data.status || 'normal'
       }
+
+      setDataPoints(prev => {
+        const updated = [...prev, newData]
+        // Keep only last N points
+        return updated.slice(-maxDataPoints)
+      })
+    }
+  }, [wsData, maxDataPoints])
+
+  // Get latest data point
+  const latestData = dataPoints.length > 0 ? dataPoints[dataPoints.length - 1] : null
+
+  const statsCards = [
+    {
+      label: 'عمق فعلی',
+      value: latestData ? `${latestData.depth.toFixed(1)} ft` : '--',
+      icon: TrendingUp,
+      color: 'bg-blue-500',
     },
-  })
-
-  const chartData = dataHistory.map((point) => ({
-    time: new Date(point.timestamp).toLocaleTimeString('fa-IR'),
-    depth: point.depth,
-    wob: point.wob,
-    rpm: point.rpm,
-    torque: point.torque,
-    rop: point.rop,
-  }))
-
-  const latestData = dataHistory[0]
+    {
+      label: 'WOB',
+      value: latestData ? `${latestData.wob.toFixed(0)} lbs` : '--',
+      icon: Activity,
+      color: 'bg-green-500',
+    },
+    {
+      label: 'RPM',
+      value: latestData ? `${latestData.rpm.toFixed(0)}` : '--',
+      icon: Zap,
+      color: 'bg-yellow-500',
+    },
+    {
+      label: 'ROP',
+      value: latestData ? `${latestData.rop.toFixed(1)} ft/hr` : '--',
+      icon: Activity,
+      color: 'bg-purple-500',
+    },
+  ]
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white mb-2">مانیتورینگ Real-time</h1>
-          <p className="text-slate-400">داده‌های زنده از سنسورها</p>
+          <h1 className="text-3xl font-bold text-white mb-2">مانیتورینگ لحظه‌ای</h1>
+          <p className="text-slate-400">نمایش داده‌های real-time دکل حفاری</p>
         </div>
-        <div className="flex items-center gap-4">
-          <input
-            type="text"
+
+        {/* Connection Status */}
+        <div className="flex items-center gap-3">
+          <select
             value={rigId}
             onChange={(e) => setRigId(e.target.value)}
-            placeholder="Rig ID"
-            className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
-          />
-          {isConnected ? (
-            <button
-              onClick={disconnect}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-            >
-              <WifiOff className="w-4 h-4" />
-              قطع اتصال
-            </button>
-          ) : (
-            <button
-              onClick={connect}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-            >
-              <Wifi className="w-4 h-4" />
-              اتصال
-            </button>
-          )}
-          <div
-            className={`flex items-center gap-2 px-3 py-1 rounded-full ${
-              isConnected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-            }`}
+            className="bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600"
           >
-            {isConnected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
-            <span className="text-sm">{isConnected ? 'متصل' : 'قطع شده'}</span>
+            <option value="RIG_01">دکل 01</option>
+            <option value="RIG_02">دکل 02</option>
+          </select>
+
+          <div className="flex items-center gap-2">
+            <div
+              className={`w-3 h-3 rounded-full ${
+                connectionStatus === 'connected'
+                  ? 'bg-green-500 animate-pulse'
+                  : connectionStatus === 'connecting'
+                  ? 'bg-yellow-500 animate-pulse'
+                  : 'bg-red-500'
+              }`}
+            />
+            <span className="text-sm text-slate-300">
+              {connectionStatus === 'connected'
+                ? 'متصل'
+                : connectionStatus === 'connecting'
+                ? 'در حال اتصال...'
+                : 'قطع شده'}
+            </span>
           </div>
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-500/20 border border-red-500 text-red-400 px-4 py-3 rounded-lg">
-          {error}
-        </div>
-      )}
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {statsCards.map((stat, index) => {
+          const Icon = stat.icon
+          return (
+            <div key={index} className="bg-slate-800 rounded-lg p-6 border border-slate-700">
+              <div className="flex items-center justify-between mb-4">
+                <div className={`${stat.color} p-3 rounded-lg`}>
+                  <Icon className="w-6 h-6 text-white" />
+                </div>
+              </div>
+              <div className="text-slate-400 text-sm mb-1">{stat.label}</div>
+              <div className="text-2xl font-bold text-white">{stat.value}</div>
+            </div>
+          )
+        })}
+      </div>
 
-      {latestData && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <MetricCard label="عمق" value={latestData.depth?.toFixed(2) || 'N/A'} unit="متر" />
-          <MetricCard label="WOB" value={latestData.wob?.toFixed(2) || 'N/A'} unit="kN" />
-          <MetricCard label="RPM" value={latestData.rpm?.toFixed(2) || 'N/A'} unit="rpm" />
-          <MetricCard label="Torque" value={latestData.torque?.toFixed(2) || 'N/A'} unit="N.m" />
-          <MetricCard label="ROP" value={latestData.rop?.toFixed(2) || 'N/A'} unit="m/h" />
-          <MetricCard
-            label="Power"
-            value={latestData.power_consumption?.toFixed(2) || 'N/A'}
-            unit="kW"
-          />
-          <MetricCard
-            label="Bit Temp"
-            value={latestData.bit_temperature?.toFixed(2) || 'N/A'}
-            unit="°C"
-          />
-          <MetricCard
-            label="Vibration"
-            value={latestData.vibration_level?.toFixed(2) || 'N/A'}
-            unit="g"
-          />
-        </div>
-      )}
-
-      {chartData.length > 0 && (
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* WOB Chart */}
         <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
-          <h2 className="text-xl font-semibold text-white mb-4">روند Real-time</h2>
-          <ResponsiveContainer width="100%" height={400}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
-              <XAxis dataKey="time" stroke="#94a3b8" />
-              <YAxis stroke="#94a3b8" />
-              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
+          <h2 className="text-xl font-semibold text-white mb-4">Weight on Bit (WOB)</h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={dataPoints}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis
+                dataKey="timestamp"
+                stroke="#9CA3AF"
+                tick={{ fill: '#9CA3AF' }}
+                tickFormatter={(value) => new Date(value).toLocaleTimeString('fa-IR')}
+              />
+              <YAxis stroke="#9CA3AF" tick={{ fill: '#9CA3AF' }} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1E293B', border: '1px solid #334155' }}
+                labelStyle={{ color: '#F1F5F9' }}
+              />
               <Legend />
-              <Line type="monotone" dataKey="depth" stroke="#3b82f6" strokeWidth={2} />
-              <Line type="monotone" dataKey="wob" stroke="#10b981" strokeWidth={2} />
-              <Line type="monotone" dataKey="rpm" stroke="#f59e0b" strokeWidth={2} />
+              <Line
+                type="monotone"
+                dataKey="wob"
+                stroke="#10B981"
+                strokeWidth={2}
+                dot={false}
+                name="WOB (lbs)"
+              />
             </LineChart>
           </ResponsiveContainer>
         </div>
+
+        {/* RPM Chart */}
+        <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
+          <h2 className="text-xl font-semibold text-white mb-4">Rotary Speed (RPM)</h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={dataPoints}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis
+                dataKey="timestamp"
+                stroke="#9CA3AF"
+                tick={{ fill: '#9CA3AF' }}
+                tickFormatter={(value) => new Date(value).toLocaleTimeString('fa-IR')}
+              />
+              <YAxis stroke="#9CA3AF" tick={{ fill: '#9CA3AF' }} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1E293B', border: '1px solid #334155' }}
+                labelStyle={{ color: '#F1F5F9' }}
+              />
+              <Legend />
+              <Line
+                type="monotone"
+                dataKey="rpm"
+                stroke="#EAB308"
+                strokeWidth={2}
+                dot={false}
+                name="RPM"
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* ROP Chart */}
+        <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
+          <h2 className="text-xl font-semibold text-white mb-4">Rate of Penetration (ROP)</h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={dataPoints}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis
+                dataKey="timestamp"
+                stroke="#9CA3AF"
+                tick={{ fill: '#9CA3AF' }}
+                tickFormatter={(value) => new Date(value).toLocaleTimeString('fa-IR')}
+              />
+              <YAxis stroke="#9CA3AF" tick={{ fill: '#9CA3AF' }} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1E293B', border: '1px solid #334155' }}
+                labelStyle={{ color: '#F1F5F9' }}
+              />
+              <Legend />
+              <Line
+                type="monotone"
+                dataKey="rop"
+                stroke="#A855F7"
+                strokeWidth={2}
+                dot={false}
+                name="ROP (ft/hr)"
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Mud Pressure Chart */}
+        <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
+          <h2 className="text-xl font-semibold text-white mb-4">Mud Pressure</h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={dataPoints}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis
+                dataKey="timestamp"
+                stroke="#9CA3AF"
+                tick={{ fill: '#9CA3AF' }}
+                tickFormatter={(value) => new Date(value).toLocaleTimeString('fa-IR')}
+              />
+              <YAxis stroke="#9CA3AF" tick={{ fill: '#9CA3AF' }} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1E293B', border: '1px solid #334155' }}
+                labelStyle={{ color: '#F1F5F9' }}
+              />
+              <Legend />
+              <Line
+                type="monotone"
+                dataKey="mud_pressure"
+                stroke="#3B82F6"
+                strokeWidth={2}
+                dot={false}
+                name="Pressure (psi)"
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Current Status */}
+      {latestData && (
+        <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
+          <h2 className="text-xl font-semibold text-white mb-4">وضعیت فعلی</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            <div>
+              <div className="text-slate-400 text-sm">Depth</div>
+              <div className="text-white font-semibold">{latestData.depth.toFixed(1)} ft</div>
+            </div>
+            <div>
+              <div className="text-slate-400 text-sm">WOB</div>
+              <div className="text-white font-semibold">{latestData.wob.toFixed(0)} lbs</div>
+            </div>
+            <div>
+              <div className="text-slate-400 text-sm">RPM</div>
+              <div className="text-white font-semibold">{latestData.rpm.toFixed(0)}</div>
+            </div>
+            <div>
+              <div className="text-slate-400 text-sm">Torque</div>
+              <div className="text-white font-semibold">{latestData.torque.toFixed(0)} ft-lbs</div>
+            </div>
+            <div>
+              <div className="text-slate-400 text-sm">ROP</div>
+              <div className="text-white font-semibold">{latestData.rop.toFixed(1)} ft/hr</div>
+            </div>
+            <div>
+              <div className="text-slate-400 text-sm">Status</div>
+              <div className={`font-semibold ${
+                latestData.status === 'normal' ? 'text-green-500' : 'text-red-500'
+              }`}>
+                {latestData.status}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* No Data Message */}
+      {dataPoints.length === 0 && connectionStatus === 'connected' && (
+        <div className="bg-slate-800 rounded-lg p-12 border border-slate-700 text-center">
+          <AlertCircle className="w-12 h-12 text-slate-500 mx-auto mb-4" />
+          <p className="text-slate-400">در انتظار داده‌های real-time...</p>
+        </div>
+      )}
+
+      {/* Disconnected Message */}
+      {connectionStatus === 'disconnected' && (
+        <div className="bg-red-900/20 border border-red-500 rounded-lg p-6 text-center">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <p className="text-red-400">اتصال به سرور قطع شده است. لطفاً دوباره تلاش کنید.</p>
+        </div>
       )}
     </div>
   )
 }
-
-function MetricCard({ label, value, unit }: { label: string; value: string; unit: string }) {
-  return (
-    <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-      <div className="text-slate-400 text-sm mb-1">{label}</div>
-      <div className="flex items-baseline gap-2">
-        <span className="text-2xl font-bold text-white">{value}</span>
-        <span className="text-sm text-slate-400">{unit}</span>
-      </div>
-    </div>
-  )
-}
-

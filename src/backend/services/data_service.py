@@ -1,11 +1,23 @@
 """
-Data Service for managing sensor data operations
+Data Service for handling sensor data operations
+Provides CRUD operations and analytics queries
 """
-import logging
-from typing import List, Dict, Any, Optional
+from sqlalchemy.orm import Session
+from sqlalchemy import func, desc, and_, or_
 from datetime import datetime, timedelta
-from database_manager import db_manager
-from config_loader import config_loader
+from typing import Optional, List, Dict, Any
+import logging
+
+from api.models.database_models import (
+    SensorData, 
+    MaintenanceAlertDB, 
+    MaintenanceScheduleDB,
+    RULPredictionDB,
+    AnomalyDetectionDB,
+    WellProfileDB,
+    DrillingSessionDB
+)
+from database import db_manager
 
 logger = logging.getLogger(__name__)
 
@@ -15,118 +27,90 @@ class DataService:
     
     def __init__(self):
         self.db_manager = db_manager
-        
-    def get_latest_sensor_data(self, rig_id: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+    
+    # ==================== Sensor Data Operations ====================
+    
+    def get_latest_sensor_data(
+        self, 
+        rig_id: Optional[str] = None, 
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
         """
-        Get latest sensor data records
+        Get latest sensor readings
         
         Args:
-            rig_id: Optional rig ID to filter by
-            limit: Maximum number of records to return
+            rig_id: Filter by rig ID
+            limit: Number of records to return
             
         Returns:
-            List of sensor data records
+            List of sensor data dictionaries
         """
         try:
-            with self.db_manager.get_connection() as conn:
-                cursor = conn.cursor()
+            with self.db_manager.session_scope() as session:
+                query = session.query(SensorData)
                 
                 if rig_id:
-                    cursor.execute("""
-                        SELECT * FROM sensor_data 
-                        WHERE rig_id = %s 
-                        ORDER BY timestamp DESC 
-                        LIMIT %s
-                    """, (rig_id, limit))
-                else:
-                    cursor.execute("""
-                        SELECT * FROM sensor_data 
-                        ORDER BY timestamp DESC 
-                        LIMIT %s
-                    """, (limit,))
+                    query = query.filter(SensorData.rig_id == rig_id)
                 
-                columns = [desc[0] for desc in cursor.description]
-                results = []
+                results = query.order_by(desc(SensorData.timestamp)).limit(limit).all()
                 
-                for row in cursor.fetchall():
-                    results.append(dict(zip(columns, row)))
-                
-                logger.info(f"Retrieved {len(results)} latest records")
-                return results
+                return [self._sensor_data_to_dict(record) for record in results]
                 
         except Exception as e:
             logger.error(f"Error getting latest sensor data: {e}")
             return []
     
     def get_historical_data(
-        self, 
+        self,
         rig_id: Optional[str] = None,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime = None,
+        end_time: datetime = None,
         parameters: Optional[List[str]] = None,
         limit: int = 1000,
         offset: int = 0
     ) -> List[Dict[str, Any]]:
         """
-        Get historical sensor data with filters
+        Get historical sensor data with filtering
         
         Args:
-            rig_id: Optional rig ID to filter by
+            rig_id: Filter by rig ID
             start_time: Start time for query
             end_time: End time for query
-            parameters: List of parameter names to include
-            limit: Maximum number of records
+            parameters: Specific parameters to include
+            limit: Number of records to return
             offset: Offset for pagination
             
         Returns:
-            List of historical sensor data records
+            List of sensor data dictionaries
         """
         try:
-            with self.db_manager.get_connection() as conn:
-                cursor = conn.cursor()
+            with self.db_manager.session_scope() as session:
+                # Build query
+                if parameters:
+                    # Select specific columns
+                    columns = [getattr(SensorData, param) for param in parameters if hasattr(SensorData, param)]
+                    columns.insert(0, SensorData.id)
+                    columns.insert(1, SensorData.rig_id)
+                    columns.insert(2, SensorData.timestamp)
+                    query = session.query(*columns)
+                else:
+                    query = session.query(SensorData)
                 
-                # Build dynamic WHERE clause
-                where_conditions = []
-                query_params = []
-                
+                # Apply filters
                 if rig_id:
-                    where_conditions.append("rig_id = %s")
-                    query_params.append(rig_id)
+                    query = query.filter(SensorData.rig_id == rig_id)
                 
                 if start_time:
-                    where_conditions.append("timestamp >= %s")
-                    query_params.append(start_time)
+                    query = query.filter(SensorData.timestamp >= start_time)
                 
                 if end_time:
-                    where_conditions.append("timestamp <= %s")
-                    query_params.append(end_time)
+                    query = query.filter(SensorData.timestamp <= end_time)
                 
-                where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
+                # Order and paginate
+                query = query.order_by(SensorData.timestamp)
+                results = query.offset(offset).limit(limit).all()
                 
-                # Build SELECT clause
-                if parameters:
-                    select_clause = ", ".join(parameters)
-                else:
-                    select_clause = "*"
-                
-                query = f"""
-                    SELECT {select_clause} FROM sensor_data 
-                    WHERE {where_clause} 
-                    ORDER BY timestamp DESC 
-                    LIMIT %s OFFSET %s
-                """
-                
-                query_params.extend([limit, offset])
-                cursor.execute(query, tuple(query_params))
-                
-                columns = [desc[0] for desc in cursor.description]
-                results = []
-                
-                for row in cursor.fetchall():
-                    results.append(dict(zip(columns, row)))
-                
-                logger.info(f"Retrieved {len(results)} historical records")
-                return results
+                return [self._sensor_data_to_dict(record) for record in results]
                 
         except Exception as e:
             logger.error(f"Error getting historical data: {e}")
@@ -140,61 +124,59 @@ class DataService:
         end_time: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
         """
-        Get aggregated time series data
+        Get aggregated time series data for visualization
         
         Args:
-            rig_id: Rig ID
+            rig_id: Rig identifier
             time_bucket_seconds: Time bucket size in seconds
-            start_time: Start time
-            end_time: End time
+            start_time: Start time (defaults to 24 hours ago)
+            end_time: End time (defaults to now)
             
         Returns:
             List of aggregated data points
         """
         try:
-            with self.db_manager.get_connection() as conn:
-                cursor = conn.cursor()
+            # Set default time range
+            if end_time is None:
+                end_time = datetime.now()
+            if start_time is None:
+                start_time = end_time - timedelta(hours=24)
+            
+            with self.db_manager.session_scope() as session:
+                # Calculate time buckets and aggregate
+                # Note: This is PostgreSQL-specific. Adjust for other databases.
+                query = session.query(
+                    func.date_trunc('minute', SensorData.timestamp).label('time_bucket'),
+                    func.avg(SensorData.wob).label('avg_wob'),
+                    func.avg(SensorData.rpm).label('avg_rpm'),
+                    func.avg(SensorData.torque).label('avg_torque'),
+                    func.avg(SensorData.rop).label('avg_rop'),
+                    func.avg(SensorData.mud_flow).label('avg_mud_flow'),
+                    func.avg(SensorData.mud_pressure).label('avg_mud_pressure'),
+                    func.max(SensorData.depth).label('max_depth'),
+                ).filter(
+                    and_(
+                        SensorData.rig_id == rig_id,
+                        SensorData.timestamp >= start_time,
+                        SensorData.timestamp <= end_time
+                    )
+                ).group_by('time_bucket').order_by('time_bucket')
                 
-                # Default to last 24 hours if no time specified
-                if not start_time:
-                    start_time = datetime.now() - timedelta(hours=24)
-                if not end_time:
-                    end_time = datetime.now()
+                results = query.all()
                 
-                query = f"""
-                    SELECT 
-                        DATE_TRUNC('epoch', timestamp)::BIGINT / {time_bucket_seconds} * {time_bucket_seconds} AS time_bucket,
-                        AVG(depth) as avg_depth,
-                        AVG(wob) as avg_wob,
-                        AVG(rpm) as avg_rpm,
-                        AVG(torque) as avg_torque,
-                        AVG(rop) as avg_rop,
-                        AVG(power_consumption) as avg_power_consumption,
-                        COUNT(*) as data_points_count
-                    FROM sensor_data 
-                    WHERE rig_id = %s 
-                        AND timestamp >= %s 
-                        AND timestamp <= %s
-                    GROUP BY time_bucket
-                    ORDER BY time_bucket ASC
-                """
-                
-                cursor.execute(query, (rig_id, start_time, end_time))
-                
-                columns = [desc[0] for desc in cursor.description]
-                results = []
-                
-                for row in cursor.fetchall():
-                    row_dict = dict(zip(columns, row))
-                    # Convert time_bucket to datetime
-                    row_dict['time_bucket'] = datetime.fromtimestamp(row_dict['time_bucket'])
-                    results.append(row_dict)
-                
-                logger.info(f"Retrieved {len(results)} aggregated records")
-                return results
+                return [{
+                    'timestamp': row.time_bucket.isoformat(),
+                    'avg_wob': float(row.avg_wob) if row.avg_wob else None,
+                    'avg_rpm': float(row.avg_rpm) if row.avg_rpm else None,
+                    'avg_torque': float(row.avg_torque) if row.avg_torque else None,
+                    'avg_rop': float(row.avg_rop) if row.avg_rop else None,
+                    'avg_mud_flow': float(row.avg_mud_flow) if row.avg_mud_flow else None,
+                    'avg_mud_pressure': float(row.avg_mud_pressure) if row.avg_mud_pressure else None,
+                    'max_depth': float(row.max_depth) if row.max_depth else None,
+                } for row in results]
                 
         except Exception as e:
-            logger.error(f"Error getting time series aggregated data: {e}")
+            logger.error(f"Error getting aggregated data: {e}")
             return []
     
     def get_analytics_summary(self, rig_id: str) -> Optional[Dict[str, Any]]:
@@ -202,51 +184,58 @@ class DataService:
         Get analytics summary for a rig
         
         Args:
-            rig_id: Rig ID
+            rig_id: Rig identifier
             
         Returns:
-            Dictionary with analytics summary
+            Analytics summary dictionary
         """
         try:
-            with self.db_manager.get_connection() as conn:
-                cursor = conn.cursor()
+            with self.db_manager.session_scope() as session:
+                # Get latest data point
+                latest = session.query(SensorData).filter(
+                    SensorData.rig_id == rig_id
+                ).order_by(desc(SensorData.timestamp)).first()
                 
-                # Get first and last timestamp
-                cursor.execute("""
-                    SELECT 
-                        MIN(timestamp) as first_record,
-                        MAX(timestamp) as last_record,
-                        MAX(depth) as current_depth,
-                        AVG(rop) as avg_rop,
-                        SUM(power_consumption) as total_power
-                    FROM sensor_data 
-                    WHERE rig_id = %s
-                """, (rig_id,))
-                
-                row = cursor.fetchone()
-                
-                if row is None:
+                if not latest:
                     return None
                 
-                # Calculate drilling time in hours
-                first_record = row[0]
-                last_record = row[1]
-                drilling_time_hours = 0
-                if first_record and last_record:
-                    drilling_time_hours = (last_record - first_record).total_seconds() / 3600
+                # Calculate statistics from last 24 hours
+                time_24h_ago = datetime.now() - timedelta(hours=24)
                 
-                summary = {
+                stats = session.query(
+                    func.avg(SensorData.rop).label('avg_rop'),
+                    func.sum(SensorData.rop * 1.0 / 3600).label('total_distance'),  # Assuming rop is ft/hr
+                    func.count(SensorData.id).label('data_points')
+                ).filter(
+                    and_(
+                        SensorData.rig_id == rig_id,
+                        SensorData.timestamp >= time_24h_ago
+                    )
+                ).first()
+                
+                # Get maintenance alerts count
+                alerts_count = session.query(func.count(MaintenanceAlertDB.id)).filter(
+                    and_(
+                        MaintenanceAlertDB.rig_id == rig_id,
+                        MaintenanceAlertDB.resolved == False
+                    )
+                ).scalar()
+                
+                # Calculate drilling time (assuming 1 record per second)
+                drilling_hours = stats.data_points / 3600.0 if stats.data_points else 0
+                
+                # Estimate power consumption (simplified calculation)
+                power_consumption = drilling_hours * 500  # kWh (rough estimate)
+                
+                return {
                     'rig_id': rig_id,
-                    'total_drilling_time_hours': drilling_time_hours,
-                    'current_depth': row[2] or 0,
-                    'average_rop': row[3] or 0,
-                    'total_power_consumption': row[4] or 0,
-                    'maintenance_alerts_count': 0,  # TODO: Get from alerts table
-                    'last_updated': row[1] or datetime.now()
+                    'current_depth': latest.depth,
+                    'average_rop': float(stats.avg_rop) if stats.avg_rop else 0,
+                    'total_drilling_time_hours': drilling_hours,
+                    'total_power_consumption': power_consumption,
+                    'maintenance_alerts_count': alerts_count or 0,
+                    'last_updated': latest.timestamp.isoformat()
                 }
-                
-                logger.info(f"Retrieved analytics summary for {rig_id}")
-                return summary
                 
         except Exception as e:
             logger.error(f"Error getting analytics summary: {e}")
@@ -254,7 +243,7 @@ class DataService:
     
     def insert_sensor_data(self, data: Dict[str, Any]) -> bool:
         """
-        Insert sensor data record
+        Insert a single sensor data record
         
         Args:
             data: Sensor data dictionary
@@ -262,5 +251,241 @@ class DataService:
         Returns:
             True if successful, False otherwise
         """
-        return self.db_manager.insert_sensor_data(data)
-
+        try:
+            with self.db_manager.session_scope() as session:
+                sensor_record = SensorData(**data)
+                session.add(sensor_record)
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error inserting sensor data: {e}")
+            return False
+    
+    def bulk_insert_sensor_data(self, data_list: List[Dict[str, Any]]) -> bool:
+        """
+        Bulk insert sensor data records
+        
+        Args:
+            data_list: List of sensor data dictionaries
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with self.db_manager.session_scope() as session:
+                objects = [SensorData(**data) for data in data_list]
+                session.bulk_save_objects(objects)
+                logger.info(f"Bulk inserted {len(data_list)} sensor records")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error bulk inserting sensor data: {e}")
+            return False
+    
+    # ==================== Maintenance Operations ====================
+    
+    def get_maintenance_alerts(
+        self, 
+        rig_id: Optional[str] = None,
+        severity: Optional[str] = None,
+        resolved: Optional[bool] = None,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Get maintenance alerts"""
+        try:
+            with self.db_manager.session_scope() as session:
+                query = session.query(MaintenanceAlertDB)
+                
+                if rig_id:
+                    query = query.filter(MaintenanceAlertDB.rig_id == rig_id)
+                if severity:
+                    query = query.filter(MaintenanceAlertDB.severity == severity)
+                if resolved is not None:
+                    query = query.filter(MaintenanceAlertDB.resolved == resolved)
+                
+                results = query.order_by(desc(MaintenanceAlertDB.created_at)).limit(limit).all()
+                
+                return [self._alert_to_dict(alert) for alert in results]
+                
+        except Exception as e:
+            logger.error(f"Error getting maintenance alerts: {e}")
+            return []
+    
+    def create_maintenance_alert(self, data: Dict[str, Any]) -> Optional[int]:
+        """Create a maintenance alert"""
+        try:
+            with self.db_manager.session_scope() as session:
+                alert = MaintenanceAlertDB(**data)
+                session.add(alert)
+                session.flush()
+                return alert.id
+                
+        except Exception as e:
+            logger.error(f"Error creating maintenance alert: {e}")
+            return None
+    
+    def get_maintenance_schedules(
+        self,
+        rig_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Get maintenance schedules"""
+        try:
+            with self.db_manager.session_scope() as session:
+                query = session.query(MaintenanceScheduleDB)
+                
+                if rig_id:
+                    query = query.filter(MaintenanceScheduleDB.rig_id == rig_id)
+                if status:
+                    query = query.filter(MaintenanceScheduleDB.status == status)
+                
+                results = query.order_by(MaintenanceScheduleDB.scheduled_date).limit(limit).all()
+                
+                return [self._schedule_to_dict(schedule) for schedule in results]
+                
+        except Exception as e:
+            logger.error(f"Error getting maintenance schedules: {e}")
+            return []
+    
+    def update_maintenance_schedule(
+        self, 
+        schedule_id: int, 
+        data: Dict[str, Any]
+    ) -> bool:
+        """Update maintenance schedule"""
+        try:
+            with self.db_manager.session_scope() as session:
+                schedule = session.query(MaintenanceScheduleDB).filter(
+                    MaintenanceScheduleDB.id == schedule_id
+                ).first()
+                
+                if not schedule:
+                    return False
+                
+                for key, value in data.items():
+                    if hasattr(schedule, key) and value is not None:
+                        setattr(schedule, key, value)
+                
+                schedule.updated_at = datetime.now()
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error updating maintenance schedule: {e}")
+            return False
+    
+    # ==================== RUL Predictions Operations ====================
+    
+    def save_rul_prediction(self, data: Dict[str, Any]) -> Optional[int]:
+        """Save RUL prediction"""
+        try:
+            with self.db_manager.session_scope() as session:
+                prediction = RULPredictionDB(**data)
+                session.add(prediction)
+                session.flush()
+                return prediction.id
+                
+        except Exception as e:
+            logger.error(f"Error saving RUL prediction: {e}")
+            return None
+    
+    def get_rul_predictions(
+        self,
+        rig_id: str,
+        component: Optional[str] = None,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Get RUL predictions history"""
+        try:
+            with self.db_manager.session_scope() as session:
+                query = session.query(RULPredictionDB).filter(
+                    RULPredictionDB.rig_id == rig_id
+                )
+                
+                if component:
+                    query = query.filter(RULPredictionDB.component == component)
+                
+                results = query.order_by(desc(RULPredictionDB.timestamp)).limit(limit).all()
+                
+                return [self._rul_prediction_to_dict(pred) for pred in results]
+                
+        except Exception as e:
+            logger.error(f"Error getting RUL predictions: {e}")
+            return []
+    
+    # ==================== Helper Methods ====================
+    
+    @staticmethod
+    def _sensor_data_to_dict(record: SensorData) -> Dict[str, Any]:
+        """Convert SensorData ORM object to dictionary"""
+        return {
+            'id': record.id,
+            'rig_id': record.rig_id,
+            'timestamp': record.timestamp.isoformat(),
+            'depth': record.depth,
+            'wob': record.wob,
+            'rpm': record.rpm,
+            'torque': record.torque,
+            'rop': record.rop,
+            'mud_flow': record.mud_flow,
+            'mud_pressure': record.mud_pressure,
+            'mud_temperature': record.mud_temperature,
+            'gamma_ray': record.gamma_ray,
+            'resistivity': record.resistivity,
+            'density': record.density,
+            'porosity': record.porosity,
+            'hook_load': record.hook_load,
+            'vibration': record.vibration,
+            'status': record.status,
+        }
+    
+    @staticmethod
+    def _alert_to_dict(alert: MaintenanceAlertDB) -> Dict[str, Any]:
+        """Convert MaintenanceAlertDB to dictionary"""
+        return {
+            'id': alert.id,
+            'rig_id': alert.rig_id,
+            'component': alert.component,
+            'alert_type': alert.alert_type,
+            'severity': alert.severity,
+            'message': alert.message,
+            'predicted_failure_time': alert.predicted_failure_time.isoformat() if alert.predicted_failure_time else None,
+            'created_at': alert.created_at.isoformat(),
+            'acknowledged': alert.acknowledged,
+            'acknowledged_by': alert.acknowledged_by,
+            'acknowledged_at': alert.acknowledged_at.isoformat() if alert.acknowledged_at else None,
+            'resolved': alert.resolved,
+            'resolved_at': alert.resolved_at.isoformat() if alert.resolved_at else None,
+        }
+    
+    @staticmethod
+    def _schedule_to_dict(schedule: MaintenanceScheduleDB) -> Dict[str, Any]:
+        """Convert MaintenanceScheduleDB to dictionary"""
+        return {
+            'id': schedule.id,
+            'rig_id': schedule.rig_id,
+            'component': schedule.component,
+            'maintenance_type': schedule.maintenance_type,
+            'scheduled_date': schedule.scheduled_date.isoformat(),
+            'estimated_duration_hours': schedule.estimated_duration_hours,
+            'priority': schedule.priority,
+            'status': schedule.status,
+            'assigned_to': schedule.assigned_to,
+            'notes': schedule.notes,
+            'created_at': schedule.created_at.isoformat(),
+            'updated_at': schedule.updated_at.isoformat(),
+        }
+    
+    @staticmethod
+    def _rul_prediction_to_dict(prediction: RULPredictionDB) -> Dict[str, Any]:
+        """Convert RULPredictionDB to dictionary"""
+        return {
+            'id': prediction.id,
+            'rig_id': prediction.rig_id,
+            'component': prediction.component,
+            'predicted_rul': prediction.predicted_rul,
+            'confidence': prediction.confidence,
+            'timestamp': prediction.timestamp.isoformat(),
+            'model_used': prediction.model_used,
+            'recommendation': prediction.recommendation,
+        }
