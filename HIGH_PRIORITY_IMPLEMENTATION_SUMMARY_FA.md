@@ -498,7 +498,7 @@ curl -X GET http://localhost:8001/api/v1/sensor-data/realtime \
 
 ---
 
-**نویسنده:** AI Assistant  
+**نویسنده:**  PARSA  
 **تاریخ:** 2025-11-03  
 **ورژن:** 1.0.0
 
