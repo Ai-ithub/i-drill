@@ -41,8 +41,9 @@ export default function NewLayout({ children }: LayoutProps) {
       icon: Eye,
       submenu: [
         { name: 'Gauge', nameEn: 'Gauge', path: '/display/gauge' },
+        { name: 'RPM', nameEn: 'RPM', path: '/display/rpm' },
         { name: 'SENSOR', nameEn: 'SENSOR', path: '/display/sensor' },
-        { name: 'REAL_TIME_M', nameEn: 'REAL_TIME_M', path: '/' }
+        { name: 'Control', nameEn: 'Control', path: '/display/control' }
       ]
     },
     {

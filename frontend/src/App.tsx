@@ -8,6 +8,9 @@ import HistoricalData from './pages/HistoricalData/HistoricalData'
 import Predictions from './pages/Predictions/Predictions'
 import Maintenance from './pages/Maintenance/Maintenance'
 import GaugePage from './pages/Gauge/GaugePage'
+import SensorPage from './pages/Sensor/SensorPage'
+import ControlPage from './pages/Control/ControlPage'
+import RPMPage from './pages/RPM/RPMPage'
 
 function App() {
   return (
@@ -22,7 +25,9 @@ function App() {
             <Route path="/predictions" element={<Predictions />} />
             <Route path="/maintenance" element={<Maintenance />} />
             <Route path="/display/gauge" element={<GaugePage />} />
-            <Route path="/display/sensor" element={<RealTimeMonitoring />} />
+            <Route path="/display/sensor" element={<SensorPage />} />
+            <Route path="/display/control" element={<ControlPage />} />
+            <Route path="/display/rpm" element={<RPMPage />} />
           </Routes>
         </NewLayout>
       </Router>
