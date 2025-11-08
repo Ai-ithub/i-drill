@@ -1,0 +1,5 @@
+version: '3.8'
+services:
+  data-validator:
+    build: .
+    container_name: drilling-data-validator
