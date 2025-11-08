@@ -1,6 +1,6 @@
 # .github/workflows/ci.yml
 
-name: Python CI
+name: CI
 
 on:
   push:
@@ -9,28 +9,42 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
+  backend-tests:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11"] # You can add more python versions
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install -e .  # Install our project in editable mode
-        pip install pytest # Ensure pytest is installed
+      - name: Install backend test dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r src/backend/requirements_test.txt
 
-    - name: Run tests with pytest
-      run: |
-        python -m pytest
+      - name: Run backend unit tests
+        run: pytest tests/test_predictions_api.py tests/test_maintenance_api.py
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build

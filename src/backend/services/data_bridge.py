@@ -11,6 +11,7 @@ from services.data_service import DataService
 import json
 import asyncio
 from datetime import datetime
+from services.kafka_service import kafka_service
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,10 @@ class DataBridge:
         """Start the data bridge consumer thread"""
         if self.running:
             logger.warning("Data bridge is already running")
+            return
+
+        if kafka_service.producer is None:
+            logger.warning("Kafka producer unavailable; data bridge will not start.")
             return
         
         # Store the event loop for async operations
@@ -150,7 +155,6 @@ class DataBridge:
     
     def produce_sensor_data(self, data: Dict[str, Any]) -> bool:
         """Produce sensor data to Kafka (wrapper for kafka_service)"""
-        from services.kafka_service import kafka_service
         topic = self.kafka_config.get('topics', {}).get('sensor_stream', 'rig.sensor.stream')
         return kafka_service.produce_sensor_data(topic, data)
 

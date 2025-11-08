@@ -30,6 +30,30 @@ except ImportError:
     logger.warning("RUL prediction models not available")
 
 
+from services.mlflow_service import mlflow_service  # noqa: E402
+
+
+FEATURE_MAPPINGS: Dict[str, List[str]] = {
+    "depth": ["depth"],
+    "wob": ["wob", "weight_on_bit"],
+    "rpm": ["rpm"],
+    "torque": ["torque"],
+    "rop": ["rop", "rate_of_penetration"],
+    "mud_flow": ["mud_flow", "mud_flow_rate", "flow_rate"],
+    "mud_pressure": ["mud_pressure", "standpipe_pressure", "pressure"],
+    "mud_temperature": ["mud_temperature", "temperature"],
+    "gamma_ray": ["gamma_ray"],
+    "resistivity": ["resistivity"],
+    "density": ["density"],
+    "porosity": ["porosity"],
+    "hook_load": ["hook_load"],
+    "vibration": ["vibration", "vibration_level"],
+    "power_consumption": ["power_consumption"],
+}
+
+FEATURE_ORDER: List[str] = list(FEATURE_MAPPINGS.keys())
+
+
 class PredictionService:
     """Service for making predictions"""
     
@@ -69,22 +93,14 @@ class PredictionService:
         if not RUL_AVAILABLE:
             return {
                 'success': False,
-                'rig_id': rig_id,
-                'predicted_rul_hours': 0,
-                'confidence_score': 0,
-                'prediction_timestamp': datetime.now(),
-                'model_used': model_type,
+                'predictions': [],
                 'message': 'RUL models not available'
             }
         
         if not TORCH_AVAILABLE or not RUL_AVAILABLE:
             return {
                 'success': False,
-                'rig_id': rig_id,
-                'predicted_rul_hours': 0,
-                'confidence_score': 0,
-                'prediction_timestamp': datetime.now(),
-                'model_used': model_type,
+                'predictions': [],
                 'message': 'PyTorch or RUL models not available'
             }
         
@@ -93,11 +109,7 @@ class PredictionService:
             if len(sensor_data) < lookback_window:
                 return {
                     'success': False,
-                    'rig_id': rig_id,
-                    'predicted_rul_hours': 0,
-                    'confidence_score': 0,
-                    'prediction_timestamp': datetime.now(),
-                    'model_used': model_type,
+                    'predictions': [],
                     'message': f'Insufficient data: need {lookback_window} points, got {len(sensor_data)}'
                 }
             
@@ -106,11 +118,7 @@ class PredictionService:
             if model is None:
                 return {
                     'success': False,
-                    'rig_id': rig_id,
-                    'predicted_rul_hours': 0,
-                    'confidence_score': 0,
-                    'prediction_timestamp': datetime.now(),
-                    'model_used': model_type,
+                    'predictions': [],
                     'message': 'Failed to load model'
                 }
             
@@ -119,11 +127,7 @@ class PredictionService:
             if input_data is None:
                 return {
                     'success': False,
-                    'rig_id': rig_id,
-                    'predicted_rul_hours': 0,
-                    'confidence_score': 0,
-                    'prediction_timestamp': datetime.now(),
-                    'model_used': model_type,
+                    'predictions': [],
                     'message': 'Failed to prepare input data'
                 }
             
@@ -139,25 +143,46 @@ class PredictionService:
             
             logger.info(f"RUL prediction for {rig_id}: {predicted_rul:.2f} hours")
             
-            return {
-                'success': True,
+            prediction_entry = {
                 'rig_id': rig_id,
-                'predicted_rul_hours': max(0, predicted_rul),
-                'confidence_score': confidence_score,
-                'prediction_timestamp': datetime.now(),
+                'component': 'general',
+                'predicted_rul': max(0, predicted_rul),
+                'confidence': confidence_score,
+                'timestamp': datetime.now(),
                 'model_used': model_type,
+                'recommendation': None
+            }
+            
+            response_payload = {
+                'success': True,
+                'predictions': [prediction_entry],
                 'message': None
             }
+            
+            if mlflow_service:
+                try:
+                    mlflow_service.log_inference(
+                        model_name=model_type,
+                        metrics={
+                            'predicted_rul': max(0, predicted_rul),
+                            'confidence': confidence_score
+                        },
+                        params={
+                            'rig_id': rig_id,
+                            'lookback_window': lookback_window,
+                            'data_points': len(sensor_data)
+                        }
+                    )
+                except Exception as log_error:
+                    logger.debug(f"Failed to log inference to MLflow: {log_error}")
+            
+            return response_payload
             
         except Exception as e:
             logger.error(f"Error predicting RUL: {e}")
             return {
                 'success': False,
-                'rig_id': rig_id,
-                'predicted_rul_hours': 0,
-                'confidence_score': 0,
-                'prediction_timestamp': datetime.now(),
-                'model_used': model_type,
+                'predictions': [],
                 'message': f'Prediction error: {str(e)}'
             }
     
@@ -167,6 +192,19 @@ class PredictionService:
             # Check if model is already loaded
             if model_type in self.loaded_models:
                 return self.loaded_models[model_type]
+            
+            # Try MLflow registry
+            if mlflow_service:
+                registry_model = mlflow_service.load_pytorch_model(model_type)
+                if registry_model is not None:
+                    try:
+                        if hasattr(registry_model, "to"):
+                            registry_model = registry_model.to(self.device)
+                        registry_model.eval()
+                        self.loaded_models[model_type] = registry_model
+                        return registry_model
+                    except Exception as e:
+                        logger.warning(f"Failed to prepare MLflow model '{model_type}': {e}")
             
             # Try to load from file
             model_path = Path(self.model_dir) / f"{model_type}_rul_model.pth"
@@ -204,27 +242,16 @@ class PredictionService:
             recent_data = sensor_data[-lookback_window:]
             
             # Extract numeric features
-            feature_names = [
-                'depth', 'wob', 'rpm', 'torque', 'rop',
-                'mud_flow_rate', 'mud_pressure', 'mud_temperature',
-                'mud_density', 'mud_viscosity', 'mud_ph',
-                'gamma_ray', 'resistivity', 'power_consumption',
-                'vibration_level'
-            ]
-            
             # Build feature array
             features = []
             for data_point in recent_data:
                 point_features = []
-                for name in feature_names:
-                    # Convert to snake_case if needed
-                    snake_name = name.lower()
-                    camel_name = name[0].upper() + name[1:]
-                    
-                    value = data_point.get(name) or data_point.get(snake_name) or data_point.get(camel_name)
-                    if value is None:
-                        value = 0.0
-                    point_features.append(float(value))
+                for feature_key in FEATURE_ORDER:
+                    value = self._extract_feature_value(
+                        data_point,
+                        FEATURE_MAPPINGS[feature_key]
+                    )
+                    point_features.append(value)
                 
                 features.append(point_features)
             
@@ -237,6 +264,37 @@ class PredictionService:
         except Exception as e:
             logger.error(f"Error preparing input data: {e}")
             return None
+    
+    @staticmethod
+    def _extract_feature_value(data_point: Dict[str, Any], candidates: List[str]) -> float:
+        """Extract a numeric feature value from data point based on candidate keys"""
+        candidate_keys = set()
+        for raw_key in candidates:
+            if not raw_key:
+                continue
+            snake = raw_key.lower()
+            candidate_keys.update({
+                raw_key,
+                snake,
+                snake.replace('-', '_'),
+                snake.replace(' ', '_'),
+                raw_key.upper(),
+                ''.join(part.title() for part in snake.split('_')),
+            })
+            camel = ''.join(part.title() for part in snake.split('_'))
+            if camel:
+                candidate_keys.add(camel[0].lower() + camel[1:])
+        
+        for key in candidate_keys:
+            value = data_point.get(key)
+            if value is None:
+                continue
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+        
+        return 0.0
     
     def detect_anomalies(self, sensor_data: Dict[str, Any]) -> Dict[str, Any]:
         """

@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-interface WebSocketMessage {
+export interface WebSocketMessage {
   message_type: string
   data: any
   timestamp: string
 }
 
-interface UseWebSocketReturn {
+export interface UseWebSocketReturn {
   data: WebSocketMessage | null
   isConnected: boolean
   error: Error | null

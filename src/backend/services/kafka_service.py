@@ -3,7 +3,14 @@ Kafka Service for real-time data streaming
 """
 import logging
 from typing import Dict, Any, Optional, List
-from confluent_kafka import Producer, Consumer, KafkaError
+
+try:
+    from confluent_kafka import Producer, Consumer, KafkaError  # type: ignore
+    KAFKA_AVAILABLE = True
+except ImportError:
+    Producer = Consumer = KafkaError = None  # type: ignore
+    KAFKA_AVAILABLE = False
+
 from config_loader import config_loader
 import json
 import threading
@@ -16,6 +23,14 @@ class KafkaService:
     """Service for Kafka streaming operations"""
     
     def __init__(self):
+        if not KAFKA_AVAILABLE:
+            logger.warning("confluent_kafka is not installed; Kafka streaming is disabled.")
+            self.kafka_config = {'bootstrap_servers': 'localhost:9092'}
+            self.producer = None
+            self.consumer = None
+            self.consumers = {}
+            return
+        
         try:
             self.kafka_config = config_loader.get_kafka_config()
         except Exception as e:
@@ -29,6 +44,8 @@ class KafkaService:
     
     def _initialize_producer(self):
         """Initialize Kafka producer"""
+        if not KAFKA_AVAILABLE:
+            return
         try:
             self.producer = Producer({
                 'bootstrap.servers': self.kafka_config.get('bootstrap_servers', 'localhost:9092'),
@@ -52,6 +69,10 @@ class KafkaService:
         Returns:
             True if successful, False otherwise
         """
+        if not KAFKA_AVAILABLE:
+            logger.debug("Kafka not available; skipping produce")
+            return False
+        
         if not self.producer:
             logger.error("Kafka producer not initialized")
             return False
@@ -96,6 +117,10 @@ class KafkaService:
         Returns:
             True if successful, False otherwise
         """
+        if not KAFKA_AVAILABLE:
+            logger.debug("Kafka not available; skipping consumer creation")
+            return False
+
         try:
             group_id = group_id or f'api-consumer-{consumer_id}'
             
@@ -128,6 +153,10 @@ class KafkaService:
         Returns:
             Message data or None if timeout
         """
+        if not KAFKA_AVAILABLE:
+            logger.debug("Kafka not available; cannot consume messages")
+            return None
+
         if consumer_id not in self.consumers:
             logger.error(f"Consumer {consumer_id} not found")
             return None
@@ -185,6 +214,8 @@ class KafkaService:
     
     def close(self):
         """Close all consumers and producer"""
+        if not KAFKA_AVAILABLE:
+            return
         for consumer_id in list(self.consumers.keys()):
             self.close_consumer(consumer_id)
         
@@ -200,6 +231,9 @@ class KafkaService:
         Returns:
             True if Kafka is connected, False otherwise
         """
+        if not KAFKA_AVAILABLE:
+            return False
+        
         try:
             if self.producer is None:
                 return False

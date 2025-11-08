@@ -23,6 +23,9 @@ SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production-09876
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours
 
+if SECRET_KEY.startswith("your-secret-key"):
+    logger.warning("SECRET_KEY is using the default value. Please set a secure SECRET_KEY in production.")
+
 
 class AuthService:
     """Service for authentication operations"""
@@ -322,3 +325,29 @@ class AuthService:
 # Global auth service instance
 auth_service = AuthService()
 
+
+def ensure_default_admin_account():
+    """Ensure a default admin user exists for initial access"""
+    default_username = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
+    default_password = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
+    default_email = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@example.com")
+
+    try:
+        with db_manager.session_scope() as session:
+            existing = session.query(UserDB).filter(UserDB.username == default_username).first()
+            if existing:
+                return
+
+            hashed_password = auth_service.get_password_hash(default_password)
+            user = UserDB(
+                username=default_username,
+                email=default_email,
+                hashed_password=hashed_password,
+                full_name="System Administrator",
+                role=UserRole.ADMIN.value,
+                is_active=True,
+            )
+            session.add(user)
+            logger.info("Default admin user created: %s", default_username)
+    except Exception as seed_error:
+        logger.error(f"Failed to ensure default admin account: {seed_error}")

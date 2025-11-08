@@ -3,13 +3,21 @@ Maintenance API Routes
 """
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
-from api.models.schemas import MaintenanceAlert, MaintenanceSchedule
+from api.models.schemas import (
+    MaintenanceAlert,
+    MaintenanceSchedule,
+    CreateMaintenanceAlertRequest,
+    UpdateMaintenanceScheduleRequest,
+)
 from datetime import datetime, timedelta
 import logging
+
+from services.data_service import DataService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/maintenance", tags=["maintenance"])
+data_service = DataService()
 
 
 @router.get("/alerts", response_model=List[MaintenanceAlert])
@@ -24,24 +32,14 @@ async def get_maintenance_alerts(
     Returns recent maintenance alerts for drilling equipment.
     """
     try:
-        # TODO: Implement actual database query
-        # For now, return mock data
-        alerts = []
-        
-        # Generate mock alerts based on severity
-        if not severity or severity in ['high', 'critical']:
-            alerts.append({
-                "alert_id": "ALERT_001",
-                "rig_id": rig_id or "RIG_01",
-                "alert_type": "Motor_Failure",
-                "severity": "critical",
-                "component": "Main_Motor",
-                "message": "Motor temperature exceeds threshold",
-                "timestamp": datetime.now(),
-                "recommended_action": "Immediate maintenance required"
-            })
-        
-        return alerts
+        alerts = data_service.get_maintenance_alerts(
+            rig_id=rig_id,
+            severity=severity,
+            resolved=None,
+            limit=100,
+            hours=hours
+        )
+        return [MaintenanceAlert(**alert) for alert in alerts]
         
     except Exception as e:
         logger.error(f"Error getting maintenance alerts: {e}")
@@ -54,23 +52,39 @@ async def get_maintenance_alert(alert_id: str):
     Get a specific maintenance alert
     """
     try:
-        # TODO: Implement actual database query
-        # Mock response
-        alert = {
-            "alert_id": alert_id,
-            "rig_id": "RIG_01",
-            "alert_type": "Motor_Failure",
-            "severity": "critical",
-            "component": "Main_Motor",
-            "message": "Motor temperature exceeds threshold",
-            "timestamp": datetime.now(),
-            "recommended_action": "Immediate maintenance required"
-        }
+        alert = data_service.get_maintenance_alert_by_id(int(alert_id))
+        if not alert:
+            raise HTTPException(status_code=404, detail="Maintenance alert not found")
         
         return MaintenanceAlert(**alert)
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting maintenance alert: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/alerts", response_model=MaintenanceAlert, status_code=201)
+async def create_maintenance_alert(request: CreateMaintenanceAlertRequest):
+    """
+    Create a maintenance alert entry
+    """
+    try:
+        alert_id = data_service.create_maintenance_alert(request.model_dump())
+        if alert_id is None:
+            raise HTTPException(status_code=500, detail="Failed to create maintenance alert")
+        
+        alert = data_service.get_maintenance_alert_by_id(alert_id)
+        if not alert:
+            raise HTTPException(status_code=500, detail="Maintenance alert creation verification failed")
+        
+        return MaintenanceAlert(**alert)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating maintenance alert: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -86,30 +100,20 @@ async def get_maintenance_schedule(
     Returns scheduled maintenance activities.
     """
     try:
-        # TODO: Implement actual database query
-        # Mock response
-        schedules = []
-        
-        for i in range(3):
-            schedule = {
-                "schedule_id": f"SCHEDULE_{i+1:03d}",
-                "rig_id": rig_id or "RIG_01",
-                "component": f"Component_{i+1}",
-                "scheduled_date": datetime.now() + timedelta(days=i*7),
-                "maintenance_type": ["Inspection", "Repair", "Replacement"][i],
-                "estimated_duration_hours": [2.0, 8.0, 24.0][i],
-                "status": "scheduled"
-            }
-            schedules.append(schedule)
-        
-        return schedules
+        schedules = data_service.get_maintenance_schedules(
+            rig_id=rig_id,
+            status=status,
+            limit=100,
+            until_date=datetime.now() + timedelta(days=days_ahead)
+        )
+        return [MaintenanceSchedule(**schedule) for schedule in schedules]
         
     except Exception as e:
         logger.error(f"Error getting maintenance schedule: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/schedule", response_model=MaintenanceSchedule)
+@router.post("/schedule", response_model=MaintenanceSchedule, status_code=201)
 async def create_maintenance_schedule(schedule: MaintenanceSchedule):
     """
     Create a new maintenance schedule
@@ -117,31 +121,40 @@ async def create_maintenance_schedule(schedule: MaintenanceSchedule):
     Adds a new scheduled maintenance activity.
     """
     try:
-        # TODO: Implement actual database insertion
-        logger.info(f"Creating maintenance schedule: {schedule.schedule_id}")
+        payload = schedule.model_dump(
+            exclude={"id", "created_at", "updated_at"},
+            exclude_unset=True,
+        )
+        created_schedule = data_service.create_maintenance_schedule(payload)
         
-        return schedule
+        if created_schedule is None:
+            raise HTTPException(status_code=500, detail="Failed to create maintenance schedule")
         
+        return MaintenanceSchedule(**created_schedule)
+        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating maintenance schedule: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/schedule/{schedule_id}")
-async def update_maintenance_schedule(schedule_id: str, schedule: MaintenanceSchedule):
+@router.put("/schedule/{schedule_id}", response_model=MaintenanceSchedule)
+async def update_maintenance_schedule(schedule_id: str, schedule: UpdateMaintenanceScheduleRequest):
     """
     Update an existing maintenance schedule
     """
     try:
-        # TODO: Implement actual database update
-        logger.info(f"Updating maintenance schedule: {schedule_id}")
+        update_data = schedule.model_dump(exclude_unset=True)
+        updated_schedule = data_service.update_maintenance_schedule(int(schedule_id), update_data)
         
-        return {
-            "success": True,
-            "message": "Maintenance schedule updated successfully",
-            "schedule": schedule
-        }
+        if updated_schedule is None:
+            raise HTTPException(status_code=404, detail="Maintenance schedule not found")
         
+        return MaintenanceSchedule(**updated_schedule)
+        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error updating maintenance schedule: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -153,14 +166,17 @@ async def delete_maintenance_schedule(schedule_id: str):
     Delete a maintenance schedule
     """
     try:
-        # TODO: Implement actual database deletion
-        logger.info(f"Deleting maintenance schedule: {schedule_id}")
+        deleted = data_service.delete_maintenance_schedule(int(schedule_id))
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Maintenance schedule not found")
         
         return {
             "success": True,
             "message": "Maintenance schedule deleted successfully"
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error deleting maintenance schedule: {e}")
         raise HTTPException(status_code=500, detail=str(e))

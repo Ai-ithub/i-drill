@@ -71,6 +71,10 @@ export const maintenanceApi = {
 
   updateSchedule: (scheduleId: string, data: any) =>
     api.put(`/maintenance/schedule/${scheduleId}`, data),
+
+  createSchedule: (data: any) => api.post('/maintenance/schedule', data),
+
+  deleteSchedule: (scheduleId: string) => api.delete(`/maintenance/schedule/${scheduleId}`),
 }
 
 // Health API

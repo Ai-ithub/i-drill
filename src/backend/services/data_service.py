@@ -30,6 +30,12 @@ class DataService:
     
     # ==================== Sensor Data Operations ====================
     
+    def _db_ready(self) -> bool:
+        if not getattr(self.db_manager, "_initialized", False):
+            logger.debug("Database not initialized; skipping data service operation")
+            return False
+        return True
+    
     def get_latest_sensor_data(
         self, 
         rig_id: Optional[str] = None, 
@@ -45,6 +51,8 @@ class DataService:
         Returns:
             List of sensor data dictionaries
         """
+        if not self._db_ready():
+            return []
         try:
             with self.db_manager.session_scope() as session:
                 query = session.query(SensorData)
@@ -83,6 +91,8 @@ class DataService:
         Returns:
             List of sensor data dictionaries
         """
+        if not self._db_ready():
+            return []
         try:
             with self.db_manager.session_scope() as session:
                 # Build query
@@ -135,6 +145,8 @@ class DataService:
         Returns:
             List of aggregated data points
         """
+        if not self._db_ready():
+            return []
         try:
             # Set default time range
             if end_time is None:
@@ -142,11 +154,15 @@ class DataService:
             if start_time is None:
                 start_time = end_time - timedelta(hours=24)
             
+            bucket_expression = func.to_timestamp(
+                func.floor(func.extract('epoch', SensorData.timestamp) / time_bucket_seconds) * time_bucket_seconds
+            ).label('time_bucket')
+
             with self.db_manager.session_scope() as session:
                 # Calculate time buckets and aggregate
                 # Note: This is PostgreSQL-specific. Adjust for other databases.
                 query = session.query(
-                    func.date_trunc('minute', SensorData.timestamp).label('time_bucket'),
+                    bucket_expression,
                     func.avg(SensorData.wob).label('avg_wob'),
                     func.avg(SensorData.rpm).label('avg_rpm'),
                     func.avg(SensorData.torque).label('avg_torque'),
@@ -189,6 +205,8 @@ class DataService:
         Returns:
             Analytics summary dictionary
         """
+        if not self._db_ready():
+            return None
         try:
             with self.db_manager.session_scope() as session:
                 # Get latest data point
@@ -251,6 +269,8 @@ class DataService:
         Returns:
             True if successful, False otherwise
         """
+        if not self._db_ready():
+            return False
         try:
             with self.db_manager.session_scope() as session:
                 sensor_record = SensorData(**data)
@@ -271,6 +291,8 @@ class DataService:
         Returns:
             True if successful, False otherwise
         """
+        if not self._db_ready():
+            return False
         try:
             with self.db_manager.session_scope() as session:
                 objects = [SensorData(**data) for data in data_list]
@@ -285,13 +307,16 @@ class DataService:
     # ==================== Maintenance Operations ====================
     
     def get_maintenance_alerts(
-        self, 
+        self,
         rig_id: Optional[str] = None,
         severity: Optional[str] = None,
         resolved: Optional[bool] = None,
-        limit: int = 100
+        limit: int = 100,
+        hours: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """Get maintenance alerts"""
+        if not self._db_ready():
+            return []
         try:
             with self.db_manager.session_scope() as session:
                 query = session.query(MaintenanceAlertDB)
@@ -302,6 +327,9 @@ class DataService:
                     query = query.filter(MaintenanceAlertDB.severity == severity)
                 if resolved is not None:
                     query = query.filter(MaintenanceAlertDB.resolved == resolved)
+                if hours is not None:
+                    since = datetime.now() - timedelta(hours=hours)
+                    query = query.filter(MaintenanceAlertDB.created_at >= since)
                 
                 results = query.order_by(desc(MaintenanceAlertDB.created_at)).limit(limit).all()
                 
@@ -311,8 +339,28 @@ class DataService:
             logger.error(f"Error getting maintenance alerts: {e}")
             return []
     
+    def get_maintenance_alert_by_id(self, alert_id: int) -> Optional[Dict[str, Any]]:
+        """Get single maintenance alert by id"""
+        if not self._db_ready():
+            return None
+        try:
+            with self.db_manager.session_scope() as session:
+                alert = session.query(MaintenanceAlertDB).filter(
+                    MaintenanceAlertDB.id == alert_id
+                ).first()
+                
+                if not alert:
+                    return None
+                
+                return self._alert_to_dict(alert)
+        except Exception as e:
+            logger.error(f"Error getting maintenance alert by id: {e}")
+            return None
+    
     def create_maintenance_alert(self, data: Dict[str, Any]) -> Optional[int]:
         """Create a maintenance alert"""
+        if not self._db_ready():
+            return None
         try:
             with self.db_manager.session_scope() as session:
                 alert = MaintenanceAlertDB(**data)
@@ -324,13 +372,31 @@ class DataService:
             logger.error(f"Error creating maintenance alert: {e}")
             return None
     
+    def create_maintenance_schedule(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Create a maintenance schedule"""
+        if not self._db_ready():
+            return None
+        try:
+            with self.db_manager.session_scope() as session:
+                schedule = MaintenanceScheduleDB(**data)
+                session.add(schedule)
+                session.flush()
+                session.refresh(schedule)
+                return self._schedule_to_dict(schedule)
+        except Exception as e:
+            logger.error(f"Error creating maintenance schedule: {e}")
+            return None
+    
     def get_maintenance_schedules(
         self,
         rig_id: Optional[str] = None,
         status: Optional[str] = None,
-        limit: int = 100
+        limit: int = 100,
+        until_date: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
         """Get maintenance schedules"""
+        if not self._db_ready():
+            return []
         try:
             with self.db_manager.session_scope() as session:
                 query = session.query(MaintenanceScheduleDB)
@@ -339,6 +405,8 @@ class DataService:
                     query = query.filter(MaintenanceScheduleDB.rig_id == rig_id)
                 if status:
                     query = query.filter(MaintenanceScheduleDB.status == status)
+                if until_date:
+                    query = query.filter(MaintenanceScheduleDB.scheduled_date <= until_date)
                 
                 results = query.order_by(MaintenanceScheduleDB.scheduled_date).limit(limit).all()
                 
@@ -352,8 +420,54 @@ class DataService:
         self, 
         schedule_id: int, 
         data: Dict[str, Any]
-    ) -> bool:
+    ) -> Optional[Dict[str, Any]]:
         """Update maintenance schedule"""
+        if not self._db_ready():
+            return None
+        try:
+            with self.db_manager.session_scope() as session:
+                schedule = session.query(MaintenanceScheduleDB).filter(
+                    MaintenanceScheduleDB.id == schedule_id
+                ).first()
+                
+                if not schedule:
+                    return None
+                
+                for key, value in data.items():
+                    if hasattr(schedule, key) and value is not None:
+                        setattr(schedule, key, value)
+                
+                schedule.updated_at = datetime.now()
+                session.flush()
+                session.refresh(schedule)
+                return self._schedule_to_dict(schedule)
+                
+        except Exception as e:
+            logger.error(f"Error updating maintenance schedule: {e}")
+            return None
+    
+    def get_maintenance_schedule_by_id(self, schedule_id: int) -> Optional[Dict[str, Any]]:
+        """Get maintenance schedule by id"""
+        if not self._db_ready():
+            return None
+        try:
+            with self.db_manager.session_scope() as session:
+                schedule = session.query(MaintenanceScheduleDB).filter(
+                    MaintenanceScheduleDB.id == schedule_id
+                ).first()
+                
+                if not schedule:
+                    return None
+                
+                return self._schedule_to_dict(schedule)
+        except Exception as e:
+            logger.error(f"Error getting maintenance schedule by id: {e}")
+            return None
+    
+    def delete_maintenance_schedule(self, schedule_id: int) -> bool:
+        """Delete a maintenance schedule"""
+        if not self._db_ready():
+            return False
         try:
             with self.db_manager.session_scope() as session:
                 schedule = session.query(MaintenanceScheduleDB).filter(
@@ -363,21 +477,18 @@ class DataService:
                 if not schedule:
                     return False
                 
-                for key, value in data.items():
-                    if hasattr(schedule, key) and value is not None:
-                        setattr(schedule, key, value)
-                
-                schedule.updated_at = datetime.now()
+                session.delete(schedule)
                 return True
-                
         except Exception as e:
-            logger.error(f"Error updating maintenance schedule: {e}")
+            logger.error(f"Error deleting maintenance schedule: {e}")
             return False
     
     # ==================== RUL Predictions Operations ====================
     
     def save_rul_prediction(self, data: Dict[str, Any]) -> Optional[int]:
         """Save RUL prediction"""
+        if not self._db_ready():
+            return None
         try:
             with self.db_manager.session_scope() as session:
                 prediction = RULPredictionDB(**data)
@@ -396,6 +507,8 @@ class DataService:
         limit: int = 100
     ) -> List[Dict[str, Any]]:
         """Get RUL predictions history"""
+        if not self._db_ready():
+            return []
         try:
             with self.db_manager.session_scope() as session:
                 query = session.query(RULPredictionDB).filter(

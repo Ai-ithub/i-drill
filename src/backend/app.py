@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 import logging
 import time
 from datetime import datetime
+import os
 
 # Import database
 from database import init_database, check_database_health, db_manager
@@ -28,6 +29,7 @@ from api.routes import (
 
 # Import services
 from services.data_bridge import DataBridge
+from services.auth_service import ensure_default_admin_account
 
 # Configure logging
 logging.basicConfig(
@@ -60,6 +62,7 @@ async def lifespan(app: FastAPI):
         
         if db_initialized:
             logger.info("✅ Database initialized successfully")
+            ensure_default_admin_account()
         else:
             logger.warning("⚠️ Database initialization failed - running in limited mode")
             
@@ -122,14 +125,18 @@ app = FastAPI(
 # ==================== Middleware Configuration ====================
 
 # CORS Middleware - Allow frontend to access API
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
