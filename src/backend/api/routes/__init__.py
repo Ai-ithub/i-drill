@@ -9,7 +9,9 @@ from . import (
     maintenance,
     producer,
     config,
-    auth
+    auth,
+    rl,
+    dvr
 )
 
 __all__ = [
@@ -19,5 +21,7 @@ __all__ = [
     'maintenance',
     'producer',
     'config',
-    'auth'
+    'auth',
+    'rl',
+    'dvr'
 ]

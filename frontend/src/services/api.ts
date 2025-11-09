@@ -77,6 +77,25 @@ export const maintenanceApi = {
   deleteSchedule: (scheduleId: string) => api.delete(`/maintenance/schedule/${scheduleId}`),
 }
 
+// Reinforcement Learning API
+export const rlApi = {
+  getConfig: () => api.get('/rl/config'),
+  getState: () => api.get('/rl/state'),
+  reset: (randomInit: boolean = false) => api.post('/rl/reset', { random_init: randomInit }),
+  step: (data: { wob: number; rpm: number; flow_rate: number }) => api.post('/rl/step', data),
+  getHistory: (limit = 50) => api.get('/rl/history', { params: { limit } }),
+}
+
+// DVR API
+export const dvrApi = {
+  processRecord: (record: any) => api.post('/dvr/process', { record }),
+  getStats: (limit = 50) => api.get('/dvr/stats', { params: { limit } }),
+  getAnomalies: (historySize = 100) =>
+    api.get('/dvr/anomalies', { params: { history_size: historySize } }),
+  evaluateRecord: (record: any, historySize = 100) =>
+    api.post('/dvr/evaluate', { record, history_size: historySize }),
+}
+
 // Health API
 export const healthApi = {
   check: () => api.get('/health'),

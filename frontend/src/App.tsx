@@ -11,6 +11,8 @@ import GaugePage from './pages/Gauge/GaugePage'
 import SensorPage from './pages/Sensor/SensorPage'
 import ControlPage from './pages/Control/ControlPage'
 import RPMPage from './pages/RPM/RPMPage'
+import RLControl from './pages/RL/RLControl'
+import DVRMonitoring from './pages/DVR/DVRMonitoring'
 
 function App() {
   return (
@@ -28,6 +30,8 @@ function App() {
             <Route path="/display/sensor" element={<SensorPage />} />
             <Route path="/display/control" element={<ControlPage />} />
             <Route path="/display/rpm" element={<RPMPage />} />
+            <Route path="/display/rl" element={<RLControl />} />
+            <Route path="/dvr" element={<DVRMonitoring />} />
           </Routes>
         </NewLayout>
       </Router>

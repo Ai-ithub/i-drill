@@ -6,7 +6,6 @@ import {
   Settings,
   Database,
   Bell,
-  Gauge,
   TrendingUp,
   Wrench,
   FileText,
@@ -43,7 +42,8 @@ export default function NewLayout({ children }: LayoutProps) {
         { name: 'Gauge', nameEn: 'Gauge', path: '/display/gauge' },
         { name: 'RPM', nameEn: 'RPM', path: '/display/rpm' },
         { name: 'SENSOR', nameEn: 'SENSOR', path: '/display/sensor' },
-        { name: 'Control', nameEn: 'Control', path: '/display/control' }
+        { name: 'Control', nameEn: 'Control', path: '/display/control' },
+        { name: 'RL Control', nameEn: 'RL Control', path: '/display/rl' }
       ]
     },
     {
@@ -111,6 +111,12 @@ export default function NewLayout({ children }: LayoutProps) {
       nameEn: 'PDM',
       path: '/maintenance',
       icon: Wrench
+    },
+    {
+      name: 'پایش DVR',
+      nameEn: 'DVR Monitor',
+      path: '/dvr',
+      icon: Activity
     }
   ]
 

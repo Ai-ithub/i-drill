@@ -6,6 +6,7 @@ interface LinearGaugeProps {
   unit: string
   height?: number
   width?: number
+  color?: string
 }
 
 export default function LinearGauge({
@@ -15,7 +16,8 @@ export default function LinearGauge({
   max,
   unit,
   height = 200,
-  width = 60
+  width = 60,
+  color
 }: LinearGaugeProps) {
   // Calculate percentage
   const percentage = ((value - min) / (max - min)) * 100
@@ -29,6 +31,8 @@ export default function LinearGauge({
     const tickY = (i * height) / numTicks
     ticks.push({ y: tickY, value: Math.round(tickValue) })
   }
+
+  const fillColor = color ?? '#22c55e'
 
   return (
     <div className="flex flex-col items-center">
@@ -47,10 +51,11 @@ export default function LinearGauge({
 
         {/* Fill */}
         <div
-          className="absolute bottom-0 bg-gradient-to-t from-green-500 to-green-300 rounded-b transition-all duration-500"
+          className="absolute bottom-0 rounded-b transition-all duration-500"
           style={{
             width,
-            height: `${clampedPercentage}%`
+            height: `${clampedPercentage}%`,
+            backgroundColor: fillColor
           }}
         />
 

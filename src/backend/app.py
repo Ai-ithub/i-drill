@@ -24,7 +24,9 @@ from api.routes import (
     maintenance,
     producer,
     config as config_routes,
-    auth
+    auth,
+    rl,
+    dvr
 )
 
 # Import services
@@ -250,6 +252,18 @@ app.include_router(
     auth.router,
     prefix="/api/v1",
     tags=["Authentication"]
+)
+
+app.include_router(
+    rl.router,
+    prefix="/api/v1",
+    tags=["RL"]
+)
+
+app.include_router(
+    dvr.router,
+    prefix="/api/v1",
+    tags=["DVR"]
 )
 
 

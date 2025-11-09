@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { Activity, Zap, TrendingUp, AlertCircle } from 'lucide-react'
 import { useWebSocket } from '@/hooks/useWebSocket'

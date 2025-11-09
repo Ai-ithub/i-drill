@@ -35,11 +35,14 @@ class DatabaseManager:
             
         except Exception as e:
             logger.error(f"Failed to initialize database pool: {e}")
-            raise
+            self.connection_pool = None
     
     @contextmanager
     def get_connection(self):
         """Get database connection from pool"""
+        if self.connection_pool is None:
+            raise RuntimeError("Database connection pool not available")
+
         connection = None
         try:
             connection = self.connection_pool.getconn()

@@ -5,6 +5,7 @@ interface CircularGaugeProps {
   max: number
   unit: string
   size?: number
+  color?: string
 }
 
 export default function CircularGauge({
@@ -13,7 +14,8 @@ export default function CircularGauge({
   min,
   max,
   unit,
-  size = 200
+  size = 200,
+  color
 }: CircularGaugeProps) {
   // Calculate angle (gauge goes from -135° to +135° = 270° total)
   const percentage = ((value - min) / (max - min)) * 100
@@ -27,6 +29,8 @@ export default function CircularGauge({
     const tickValue = min + ((max - min) * i) / numTicks
     ticks.push({ angle: tickAngle, value: tickValue })
   }
+
+  const strokeColor = color ?? '#4CAF50'
 
   return (
     <div className="flex flex-col items-center">
@@ -45,7 +49,7 @@ export default function CircularGauge({
           <path
             d="M 30 170 A 85 85 0 1 1 170 170"
             fill="none"
-            stroke="#4CAF50"
+            stroke={strokeColor}
             strokeWidth="20"
             strokeDasharray={`${(percentage * 445) / 100} 445`}
             strokeLinecap="round"
