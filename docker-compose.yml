@@ -4,13 +4,23 @@ services:
   fastapi:
     build: .
     container_name: i-drill-fastapi
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      zookeeper:
+        condition: service_started
     ports:
-      - "8000:8000"
+      - "8001:8001"
     working_dir: /src/backend
-    # Assuming ./src/backend/app.py defines: app = FastAPI()
-    command: uvicorn app:app --host 0.0.0.0 --port 8000
+    command: uvicorn app:app --host 0.0.0.0 --port 8001
     environment:
       - PYTHONPATH=/src/backend
+      - APP_ENV=development
+      - SECRET_KEY=dev-secret-change-me
+      - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5175
+      - RATE_LIMIT_DEFAULT=200/minute
     volumes:
       - ./src:/src
 
@@ -47,6 +57,28 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
 
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:15
+    container_name: i-drill-postgres
+    environment:
+      POSTGRES_DB: drilling_db
+      POSTGRES_USER: drill_user
+      POSTGRES_PASSWORD: drill_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U drill_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   producer:
     build: .
@@ -59,8 +91,10 @@ services:
     volumes:
       - ./src:/src
     depends_on:
-      - kafka
-      - zookeeper
+      kafka:
+        condition: service_started
+      zookeeper:
+        condition: service_started
     restart: on-failure
 
   consumer:
@@ -74,8 +108,10 @@ services:
     volumes:
       - ./src:/src
     depends_on:
-      - kafka
-      - zookeeper
+      kafka:
+        condition: service_started
+      zookeeper:
+        condition: service_started
     restart: on-failure
 
 volumes:

@@ -6,7 +6,7 @@ from api.models.schemas import HealthCheckResponse
 from datetime import datetime
 import logging
 from services.kafka_service import kafka_service
-from database import check_database_health
+from database import check_database_health, db_manager
 
 logger = logging.getLogger(__name__)
 
@@ -23,21 +23,23 @@ async def health_check():
     try:
         # Check database health
         db_health = check_database_health()
-        db_healthy = db_health.get("database") == "healthy"
-        
+        db_available = getattr(db_manager, "is_available", lambda: False)()
+        db_healthy = db_health.get("database") == "healthy" and db_available
+
         # Check Kafka health
-        kafka_healthy = _check_kafka_health()
-        
+        kafka_available = kafka_service.is_available()
+        kafka_healthy = kafka_available and _check_kafka_health()
+
         # Check service health
         services = {
             "database": db_healthy,
             "kafka": kafka_healthy,
             "api": True
         }
-        
+
         # Determine overall health
         overall_status = "healthy" if all(services.values()) else "degraded"
-        
+
         return HealthCheckResponse(
             status=overall_status,
             version="1.0.0",
@@ -64,7 +66,7 @@ async def database_health():
     """
     try:
         health = check_database_health()
-        is_healthy = health.get("database") == "healthy"
+        is_healthy = health.get("database") == "healthy" and getattr(db_manager, "is_available", lambda: False)()
         
         return {
             "service": "database",
@@ -91,13 +93,14 @@ async def kafka_health():
     Returns Kafka service health information.
     """
     try:
-        is_healthy = _check_kafka_health()
+        is_healthy = kafka_service.is_available() and _check_kafka_health()
         
         return {
             "service": "kafka",
             "status": "healthy" if is_healthy else "unhealthy",
             "details": {
                 "producer_initialized": kafka_service.producer is not None,
+                "library_installed": getattr(kafka_service, "available", False),
                 "active_consumers": len(kafka_service.consumers)
             },
             "timestamp": datetime.now().isoformat()
@@ -124,7 +127,7 @@ async def readiness_check():
     try:
         # Check critical services
         db_health = check_database_health()
-        db_ready = db_health.get("database") == "healthy"
+        db_ready = db_health.get("database") == "healthy" and getattr(db_manager, "is_available", lambda: False)()
         
         if not db_ready:
             raise HTTPException(
@@ -173,7 +176,7 @@ async def get_services_status():
         
         # Database status
         db_health = check_database_health()
-        db_healthy = db_health.get("database") == "healthy"
+        db_healthy = db_health.get("database") == "healthy" and getattr(db_manager, "is_available", lambda: False)()
         
         services.append({
             "name": "postgresql",
@@ -192,6 +195,7 @@ async def get_services_status():
             "last_check": datetime.now().isoformat(),
             "details": {
                 "producer_initialized": kafka_service.producer is not None,
+                "library_installed": getattr(kafka_service, "available", False),
                 "active_consumers": len(kafka_service.consumers)
             }
         })
@@ -225,6 +229,8 @@ def _check_kafka_health() -> bool:
         True if Kafka is healthy, False otherwise
     """
     try:
+        if not kafka_service.is_available():
+            return False
         return kafka_service.check_connection()
     except Exception as e:
         logger.error(f"Kafka health check failed: {e}")

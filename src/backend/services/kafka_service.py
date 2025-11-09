@@ -23,12 +23,14 @@ class KafkaService:
     """Service for Kafka streaming operations"""
     
     def __init__(self):
+        self.available = KAFKA_AVAILABLE
         if not KAFKA_AVAILABLE:
             logger.warning("confluent_kafka is not installed; Kafka streaming is disabled.")
             self.kafka_config = {'bootstrap_servers': 'localhost:9092'}
             self.producer = None
             self.consumer = None
             self.consumers = {}
+            self.available = False
             return
         
         try:
@@ -54,9 +56,11 @@ class KafkaService:
                 'retries': 3,
             })
             logger.info("Kafka producer initialized")
+            self.available = True
         except Exception as e:
             logger.error(f"Error initializing Kafka producer: {e}")
             self.producer = None
+            self.available = False
     
     def produce_sensor_data(self, topic: str, data: Dict[str, Any]) -> bool:
         """
@@ -223,7 +227,8 @@ class KafkaService:
             self.producer.flush()
             self.producer = None
             logger.info("Kafka producer closed")
-    
+        self.available = False
+
     def check_connection(self) -> bool:
         """
         Check if Kafka connection is healthy
@@ -245,6 +250,9 @@ class KafkaService:
         except Exception as e:
             logger.error(f"Kafka connection check failed: {e}")
             return False
+
+    def is_available(self) -> bool:
+        return bool(self.available and self.producer is not None)
 
 # Global instance
 kafka_service = KafkaService()

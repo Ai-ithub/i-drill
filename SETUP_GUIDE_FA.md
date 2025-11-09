@@ -11,27 +11,32 @@
 
 ## ⚠️ مشکلات و راه‌حل‌ها
 
-### مشکل ۱: پورت 8000 اشغال است
+### مشکل ۱: پورت‌های پیش‌فرض اشغال است
 
-پورت 8000 توسط برنامه دیگری (`httpd`) اشغال شده است. برای حل:
+ممکن است پورت 8001 (بک‌اند) یا 5173 (فرانت‌اند) توسط برنامه دیگری اشغال شده باشد. برای حل:
 
 **گزینه ۱: متوقف کردن برنامه اشغال‌کننده**
 ```powershell
-# پیدا کردن Process ID
-netstat -ano | findstr :8000
+# پیدا کردن Process ID (برای بک‌اند)
+netstat -ano | findstr :8001
 
 # متوقف کردن (به Administrator نیاز دارد)
 Stop-Process -Id [PID] -Force
 ```
 
 **گزینه ۲: استفاده از پورت دیگر**
-اگر نمی‌توانید برنامه را متوقف کنید، بک‌اند را روی پورت دیگری اجرا کنید:
+اگر نمی‌توانید برنامه را متوقف کنید، سرویس‌ها را روی پورت‌های جایگزین اجرا کنید:
 ```powershell
 cd src/backend
-python -m uvicorn app:app --host 0.0.0.0 --port 8001
+python -m uvicorn app:app --host 0.0.0.0 --port 8002
+```
+و برای فرانت‌اند:
+```powershell
+cd frontend
+npm run dev -- --host 0.0.0.0 --port 5175
 ```
 
-و سپس در فایل `frontend/.env` (یا `frontend/vite.config.ts`) آدرس API را تغییر دهید.
+سپس مقدار `VITE_API_URL` یا تنظیمات مشابه را در فرانت‌اند متناسب با پورت جدید به‌روزرسانی کنید.
 
 ### مشکل ۲: Docker Desktop نیاز به تنظیمات
 
@@ -60,33 +65,27 @@ docker-compose up -d
 
 ```powershell
 cd frontend
-npm run dev
+npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
-فرانت‌اند روی `http://localhost:3000` اجرا می‌شود.
+فرانت‌اند روی `http://localhost:5173` اجرا می‌شود (در صورت نیاز می‌توانید پورت را تغییر دهید).
 
 ### ۲. راه‌اندازی بک‌اند
 
-**ابتدا پورت 8000 را آزاد کنید** (یا از پورت دیگری استفاده کنید):
+**ابتدا پورت 8001 را آزاد کنید** (یا از پورت دیگری استفاده کنید):
 
 ```powershell
 cd src/backend
-python app.py
+python -m uvicorn app:app --host 0.0.0.0 --port 8001 --reload
 ```
 
-یا:
-
-```powershell
-python -m uvicorn app:app --host 0.0.0.0 --port 8000 --reload
-```
-
-بک‌اند روی `http://localhost:8000` اجرا می‌شود.
+بک‌اند روی `http://localhost:8001` اجرا می‌شود.
 
 ### ۳. بررسی کارکرد
 
-- **بک‌اند:** http://localhost:8000/docs (Swagger UI)
-- **فرانت‌اند:** http://localhost:3000
-- **Health Check:** http://localhost:8000/api/v1/health
+- **بک‌اند:** http://localhost:8001/docs (Swagger UI)
+- **فرانت‌اند:** http://localhost:5173
+- **Health Check:** http://localhost:8001/api/v1/health
 
 ---
 
@@ -109,24 +108,21 @@ docker-compose up -d
 ```
 
 این دستور سرویس‌های زیر را راه‌اندازی می‌کند:
-- Kafka (پورت 9092)
-- Zookeeper (پورت 2181)
+- Zookeeper (2181)
+- Kafka (9092/29092) با health-check
+- PostgreSQL (5432) با کاربر `drill_user` و گذرواژه `drill_password`
+- FastAPI (8001) با Rate Limit و متغیرهای محیطی توسعه
 - Producer (برای تولید داده)
 - Consumer (برای مصرف داده)
 
-### ۳. راه‌اندازی بک‌اند
-
-```powershell
-cd src/backend
-python app.py
-```
-
-### ۴. راه‌اندازی فرانت‌اند
+### ۳. راه‌اندازی بک‌اند و فرانت‌اند
 
 ```powershell
 cd frontend
 npm run dev
 ```
+
+سرویس FastAPI داخل Docker روی پورت 8001 اجرا می‌شود؛ فرانت‌اند را مطابق مرحله‌ی قبل اجرا کنید یا با پورت دلخواه (مثلاً 5173/5175) بالا بیاورید.
 
 ---
 
@@ -143,7 +139,7 @@ npm run dev
 
 3. **مشکلات رایج:**
    - **Import Error:** مطمئن شوید همه dependencies نصب شده‌اند
-   - **Port Already in Use:** پورت را تغییر دهید یا برنامه اشغال‌کننده را متوقف کنید
+   - **Port Already in Use:** پورت را تغییر دهید یا برنامه اشغال‌کننده را متوقف کنید (به ویژه 8001 و 5173)
    - **Docker Not Starting:** WSL2 و Virtualization را فعال کنید
 
 ---

@@ -5,13 +5,24 @@ i-Drill Backend API Server
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from contextlib import asynccontextmanager
 import logging
 import time
 from datetime import datetime
+from uuid import uuid4
 import os
+from typing import List
+
+try:
+    from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    PROXY_MIDDLEWARE_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    ProxyHeadersMiddleware = None  # type: ignore
+    PROXY_MIDDLEWARE_AVAILABLE = False
 
 # Import database
 from database import init_database, check_database_health, db_manager
@@ -31,7 +42,21 @@ from api.routes import (
 
 # Import services
 from services.data_bridge import DataBridge
-from services.auth_service import ensure_default_admin_account
+from services.auth_service import ensure_default_admin_account, SECRET_KEY
+
+try:
+    from slowapi import Limiter
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+    from slowapi.middleware import SlowAPIMiddleware
+
+    RATE_LIMITING_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    RATE_LIMITING_AVAILABLE = False
+    Limiter = None  # type: ignore
+    get_remote_address = None  # type: ignore
+    RateLimitExceeded = None  # type: ignore
+    SlowAPIMiddleware = None  # type: ignore
 
 # Configure logging
 logging.basicConfig(
@@ -39,6 +64,25 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+APP_ENV = os.getenv("APP_ENV", "development").lower()
+DEFAULT_ALLOWED_ORIGINS = (
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+)
+
+
+def _validate_security_settings(allowed_origins: List[str]) -> None:
+    if APP_ENV != "production":
+        return
+
+    if SECRET_KEY.startswith("your-secret-key"):
+        raise RuntimeError("SECRET_KEY must be configured for production deployments.")
+
+    if set(allowed_origins) == set(DEFAULT_ALLOWED_ORIGINS):
+        raise RuntimeError("ALLOWED_ORIGINS must be explicitly set in production.")
 
 
 # Lifespan context manager for startup/shutdown events
@@ -131,10 +175,12 @@ allowed_origins = [
     origin.strip()
     for origin in os.getenv(
         "ALLOWED_ORIGINS",
-        "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173",
+        ",".join(DEFAULT_ALLOWED_ORIGINS),
     ).split(",")
     if origin.strip()
 ]
+
+_validate_security_settings(allowed_origins)
 
 app.add_middleware(
     CORSMiddleware,
@@ -144,8 +190,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Support proxied deployments (when dependency در دسترس باشد)
+if PROXY_MIDDLEWARE_AVAILABLE and ProxyHeadersMiddleware is not None:
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
+# Optional HTTPS redirect
+if os.getenv("FORCE_HTTPS", "false").lower() == "true":
+    app.add_middleware(HTTPSRedirectMiddleware)
+
 # Compression Middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+limiter = None
+if RATE_LIMITING_AVAILABLE and os.getenv("ENABLE_RATE_LIMIT", "true").lower() != "false":
+    default_limit = os.getenv("RATE_LIMIT_DEFAULT", "100/minute")
+    limiter = Limiter(key_func=get_remote_address, default_limits=[default_limit])  # type: ignore[arg-type]
+    app.state.limiter = limiter
+    app.add_middleware(SlowAPIMiddleware)  # type: ignore[arg-type]
 
 
 # ==================== Request/Response Middleware ====================
@@ -175,6 +236,23 @@ async def log_requests(request: Request, call_next):
     return response
 
 
+# ==================== Rate Limit Handler ====================
+
+if RATE_LIMITING_AVAILABLE:
+
+    @app.exception_handler(RateLimitExceeded)  # type: ignore[misc]
+    async def rate_limit_handler(request: Request, exc: RateLimitExceeded):  # type: ignore[type-arg]
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={
+                "success": False,
+                "error": "Too Many Requests",
+                "message": "Rate limit exceeded. Please try again shortly.",
+                "timestamp": datetime.now().isoformat(),
+            },
+        )
+
+
 # ==================== Exception Handlers ====================
 
 @app.exception_handler(RequestValidationError)
@@ -196,14 +274,20 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle all other exceptions"""
-    logger.error(f"Unhandled exception on {request.url.path}: {str(exc)}", exc_info=True)
+    trace_id = str(uuid4())
+    logger.error(
+        f"Unhandled exception on {request.url.path}: {str(exc)}",
+        exc_info=True,
+        extra={"trace_id": trace_id},
+    )
     
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
             "success": False,
             "error": "Internal Server Error",
-            "detail": str(exc),
+            "message": "An unexpected error occurred. Please try again later.",
+            "trace_id": trace_id,
             "timestamp": datetime.now().isoformat()
         }
     )

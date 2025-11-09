@@ -15,6 +15,7 @@ class DatabaseManager:
     
     def __init__(self):
         self.connection_pool = None
+        self.available = False
         self._initialize_pool()
     
     def _initialize_pool(self):
@@ -32,10 +33,12 @@ class DatabaseManager:
                 password=db_config.get('password', ''),
             )
             logger.info("Database connection pool initialized")
+            self.available = True
             
         except Exception as e:
             logger.error(f"Failed to initialize database pool: {e}")
             self.connection_pool = None
+            self.available = False
     
     @contextmanager
     def get_connection(self):
@@ -55,7 +58,10 @@ class DatabaseManager:
         finally:
             if connection:
                 self.connection_pool.putconn(connection)
-    
+
+    def is_available(self) -> bool:
+        return bool(self.connection_pool is not None and self.available)
+
     def insert_sensor_data(self, record: Dict[str, Any]) -> bool:
         """Insert sensor data record into database"""
         try:
