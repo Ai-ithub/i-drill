@@ -20,16 +20,67 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install backend test dependencies
+      - name: Install backend dependencies
         run: |
           pip install --upgrade pip
+          pip install -r src/backend/requirements_backend.txt
           pip install -r src/backend/requirements_test.txt
 
-      - name: Run backend unit tests
-        run: pytest tests/test_predictions_api.py tests/test_maintenance_api.py
+      - name: Run backend tests
+        run: pytest tests
 
-  frontend-build:
+  frontend-tests:
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Run frontend smoke tests
+        run: |
+          cd frontend
+          npm run test -- --run
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Run backend lint (ruff)
+        run: |
+          pip install --upgrade pip
+          pip install ruff
+          ruff src/backend
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Run frontend lint
+        run: |
+          cd frontend
+          npm ci
+          npm run lint
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests, lint]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
