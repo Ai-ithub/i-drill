@@ -84,6 +84,12 @@ export const rlApi = {
   reset: (randomInit: boolean = false) => api.post('/rl/reset', { random_init: randomInit }),
   step: (data: { wob: number; rpm: number; flow_rate: number }) => api.post('/rl/step', data),
   getHistory: (limit = 50) => api.get('/rl/history', { params: { limit } }),
+  autoStep: () => api.post('/rl/auto-step'),
+  loadPolicy: (payload: { source: 'mlflow' | 'file'; model_name?: string; stage?: string; file_path?: string }) =>
+    api.post('/rl/policy/load', payload),
+  setPolicyMode: (payload: { mode: 'manual' | 'auto'; auto_interval_seconds?: number }) =>
+    api.post('/rl/policy/mode', payload),
+  getPolicyStatus: () => api.get('/rl/policy/status'),
 }
 
 // DVR API
