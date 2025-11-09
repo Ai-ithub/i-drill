@@ -1,6 +1,7 @@
+import { useMemo } from 'react'
 import { useQuery } from 'react-query'
-import { sensorDataApi } from '@/services/api'
-import { Activity, TrendingUp, Zap, AlertTriangle } from 'lucide-react'
+import { sensorDataApi, healthApi } from '@/services/api'
+import { Activity, TrendingUp, Zap, AlertTriangle, WifiOff } from 'lucide-react'
 import SystemStatusBar from '@/components/System/SystemStatusBar'
 
 export default function Dashboard() {
@@ -12,6 +13,15 @@ export default function Dashboard() {
     }
   )
 
+  const { data: serviceStatus } = useQuery(
+    'system-status',
+    () => healthApi.detailed().then((res) => res.data),
+    {
+      refetchInterval: 20000,
+      staleTime: 15000,
+    },
+  )
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -19,6 +29,26 @@ export default function Dashboard() {
       </div>
     )
   }
+
+  const serviceDetails = serviceStatus?.details ?? serviceStatus ?? {}
+  const connectionChips = useMemo(() => {
+    return [
+      { key: 'kafka', label: 'Kafka', status: serviceDetails.kafka?.status ?? serviceDetails.kafka?.kafka },
+      { key: 'db', label: 'PostgreSQL', status: serviceDetails.database?.status ?? serviceDetails.database?.database },
+      { key: 'rl', label: 'محیط RL', status: serviceDetails.rl_environment?.status ?? serviceDetails.rl_environment?.rl_environment },
+      { key: 'mlflow', label: 'MLflow', status: serviceDetails.mlflow?.status ?? serviceDetails.mlflow?.mlflow },
+    ].filter(Boolean)
+  }, [serviceDetails])
+
+  const degradedAlerts = useMemo(() => {
+    const criticalStates = new Set(['unhealthy', 'unavailable', 'degraded'])
+    return connectionChips
+      .filter((chip) => criticalStates.has(String(chip.status ?? '').toLowerCase()))
+      .map((chip) => ({
+        title: `${chip.label}`,
+        body: `وضعیت سرویس ${chip.label} در حالت ${chip.status ?? 'نامشخص'} است. تیم پشتیبانی را مطلع کنید.`,
+      }))
+  }, [connectionChips])
 
   const pendingAlerts = analyticsData?.maintenance_alerts_count ?? 0
   const notificationCards = [
@@ -31,7 +61,17 @@ export default function Dashboard() {
           title: 'هشدار نگهداشت',
           body: 'هیچ هشداری ثبت نشده است.',
         },
+    ...degradedAlerts,
   ]
+
+  const uniqueNotifications = useMemo(
+    () =>
+      notificationCards.filter(
+        (card, index, self) =>
+          self.findIndex((other) => other.title === card.title && other.body === card.body) === index,
+      ),
+    [notificationCards],
+  )
 
   const stats = [
     {
@@ -68,6 +108,23 @@ export default function Dashboard() {
       </div>
 
       <SystemStatusBar />
+
+      <div className="flex flex-wrap items-center gap-2">
+        {connectionChips.map((chip) => {
+          const status = String(chip.status ?? 'نامشخص').toLowerCase()
+          const tone =
+            status === 'healthy' || status === 'available'
+              ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/40'
+              : status === 'degraded'
+              ? 'bg-amber-500/10 text-amber-500 border border-amber-500/40'
+              : 'bg-rose-500/10 text-rose-400 border border-rose-400/40'
+          return (
+            <span key={chip.key} className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${tone}`}>
+              {status === 'unavailable' || status === 'unhealthy' ? <WifiOff className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />} {chip.label} : {chip.status ?? 'نامشخص'}
+            </span>
+          )
+        })}
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, index) => {
@@ -114,7 +171,7 @@ export default function Dashboard() {
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-amber-500" /> اعلان‌های اخیر
           </h2>
-          {notificationCards.map((card, index) => (
+          {uniqueNotifications.map((card, index) => (
             <div key={index} className="rounded-xl border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
               <div className="font-semibold mb-1">{card.title}</div>
               <div>{card.body}</div>
