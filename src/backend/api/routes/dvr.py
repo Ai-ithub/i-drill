@@ -1,5 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from typing import Optional
+import io
 
 from api.models.schemas import (
     DVRProcessRequest,
@@ -80,3 +82,39 @@ async def delete_dvr_history_entry(entry_id: int):
         raise HTTPException(status_code=404, detail="History entry not found")
 
     return {"success": True, "message": "History entry deleted"}
+
+
+@router.get("/history/export/csv")
+async def export_dvr_history_csv(
+    limit: int = Query(500, ge=1, le=2000),
+    rig_id: Optional[str] = Query(None),
+    status: Optional[DVRRecordStatus] = Query(None),
+):
+    content = dvr_service.export_history_csv(limit=limit, rig_id=rig_id, status=status.value if status else None)
+    if content is None:
+        raise HTTPException(status_code=404, detail="No DVR history available for export")
+
+    filename = "dvr-history.csv"
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/history/export/pdf")
+async def export_dvr_history_pdf(
+    limit: int = Query(500, ge=1, le=2000),
+    rig_id: Optional[str] = Query(None),
+    status: Optional[DVRRecordStatus] = Query(None),
+):
+    content = dvr_service.export_history_pdf(limit=limit, rig_id=rig_id, status=status.value if status else None)
+    if content is None:
+        raise HTTPException(status_code=404, detail="No DVR history available for export")
+
+    filename = "dvr-history.pdf"
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

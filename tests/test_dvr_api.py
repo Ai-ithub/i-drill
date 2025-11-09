@@ -64,6 +64,12 @@ class _StubDVRService:
     def delete_history_entry(self, entry_id):
         return entry_id == 1
 
+    def export_history_csv(self, limit=500, rig_id=None, status=None):
+        return b"id,rig_id\n1,RIG-01\n"
+
+    def export_history_pdf(self, limit=500, rig_id=None, status=None):
+        return b"%PDF-1.4 test"
+
 
 client = TestClient(app)
 
@@ -142,3 +148,27 @@ def test_dvr_history_delete(monkeypatch):
     response = client.delete("/api/v1/dvr/history/1")
     assert response.status_code == 200
     assert response.json()["success"] is True
+
+
+def test_dvr_export_csv(monkeypatch):
+    from api.routes import dvr as dvr_routes
+
+    stub = _StubDVRService()
+    monkeypatch.setattr(dvr_routes, "dvr_service", stub, raising=False)
+
+    response = client.get("/api/v1/dvr/history/export/csv")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert b"id,rig_id" in response.content
+
+
+def test_dvr_export_pdf(monkeypatch):
+    from api.routes import dvr as dvr_routes
+
+    stub = _StubDVRService()
+    monkeypatch.setattr(dvr_routes, "dvr_service", stub, raising=False)
+
+    response = client.get("/api/v1/dvr/history/export/pdf")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/pdf")
+    assert response.content.startswith(b"%PDF")

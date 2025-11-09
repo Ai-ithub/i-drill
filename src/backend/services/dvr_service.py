@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Dict, Any, Optional, List
 import logging
+import io
+import json
 
 from sqlalchemy import desc
 
@@ -236,6 +238,104 @@ class DVRService:
         except Exception as exc:
             logger.error(f"Error deleting DVR history entry {entry_id}: {exc}")
             return False
+
+    # ------------------------------------------------------------------ #
+    # Export helpers
+    # ------------------------------------------------------------------ #
+    def export_history_csv(
+        self,
+        limit: int = 500,
+        rig_id: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Optional[bytes]:
+        history = self.get_history(limit=limit, rig_id=rig_id, status=status)
+        if not history:
+            return None
+
+        try:
+            import pandas as pd
+        except ImportError as exc:  # pragma: no cover - dependency guard
+            logger.error(f"pandas is required for CSV export: {exc}")
+            raise
+
+        normalised: List[Dict[str, Any]] = []
+        for entry in history:
+            normalised.append(
+                {
+                    **entry,
+                    "raw_record": json.dumps(entry.get("raw_record"), ensure_ascii=False),
+                    "reconciled_record": json.dumps(entry.get("reconciled_record"), ensure_ascii=False),
+                    "anomaly_details": json.dumps(entry.get("anomaly_details"), ensure_ascii=False),
+                }
+            )
+
+        buffer = io.StringIO()
+        pd.DataFrame(normalised).to_csv(buffer, index=False)
+        return buffer.getvalue().encode("utf-8-sig")
+
+    def export_history_pdf(
+        self,
+        limit: int = 500,
+        rig_id: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Optional[bytes]:
+        history = self.get_history(limit=limit, rig_id=rig_id, status=status)
+        if not history:
+            return None
+
+        try:
+            from reportlab.lib.pagesizes import landscape, letter
+            from reportlab.lib import colors
+            from reportlab.platypus import (
+                SimpleDocTemplate,
+                Table,
+                TableStyle,
+                Paragraph,
+                Spacer,
+            )
+            from reportlab.lib.styles import getSampleStyleSheet
+        except ImportError as exc:  # pragma: no cover - dependency guard
+            logger.error(f"ReportLab is required for PDF export: {exc}")
+            raise
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), title="DVR Process History")
+        styles = getSampleStyleSheet()
+        story = [Paragraph("DVR Process History Export", styles["Title"]), Spacer(1, 12)]
+
+        columns = ["id", "rig_id", "status", "is_valid", "reason", "created_at"]
+        data: List[List[str]] = [columns]
+        for entry in history:
+            row: List[str] = []
+            for column in columns:
+                value = entry.get(column)
+                if isinstance(value, (dict, list)):
+                    value = json.dumps(value, ensure_ascii=False)
+                row.append("" if value is None else str(value))
+            data.append(row)
+
+        table = Table(data, repeatRows=1)
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f172a")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 10),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+                    ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#1e293b")),
+                    ("TEXTCOLOR", (0, 1), (-1, -1), colors.white),
+                    ("FONTSIZE", (0, 1), (-1, -1), 8),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#334155")),
+                ]
+            )
+        )
+
+        story.append(table)
+        doc.build(story)
+        buffer.seek(0)
+        return buffer.read()
 
     # ------------------------------------------------------------------ #
     # Internal helpers
