@@ -5,10 +5,18 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from api.models.schemas import (
     RULPredictionRequest,
-    RULPredictionResponse
+    RULPredictionResponse,
+    TrainingJobRequest,
+    TrainingJobResponse,
+    ModelPromotionRequest,
+    OperationStatusResponse,
+    ModelRegistryEntry,
+    ModelRegistryResponse,
+    ModelVersionListResponse,
 )
 from services.prediction_service import PredictionService
 from services.data_service import DataService
+from services.training_pipeline_service import training_pipeline_service
 from datetime import datetime, timedelta
 import logging
 
@@ -150,4 +158,47 @@ async def get_anomaly_detection_history(
     except Exception as e:
         logger.error(f"Error getting anomaly history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/pipeline/train", response_model=TrainingJobResponse)
+async def start_training_job(request: TrainingJobRequest):
+    result = training_pipeline_service.start_training_job(
+        model_name=request.model_name,
+        parameters=request.parameters,
+        experiment_name=request.experiment_name,
+    )
+
+    if not result.get("success"):
+        message = result.get("message") or "Training job failed"
+        status = 503 if "not configured" in message.lower() else 400
+        raise HTTPException(status_code=status, detail=message)
+
+    return TrainingJobResponse(**result)
+
+
+@router.post("/pipeline/promote", response_model=OperationStatusResponse)
+async def promote_trained_model(request: ModelPromotionRequest):
+    result = training_pipeline_service.promote_model(
+        model_name=request.model_name,
+        version=request.version,
+        stage=request.stage,
+    )
+
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("message") or "Model promotion failed")
+
+    return OperationStatusResponse(success=True, message="Model promoted successfully")
+
+
+@router.get("/pipeline/models", response_model=ModelRegistryResponse)
+async def list_registered_models():
+    models = training_pipeline_service.list_registered_models()
+    registry = [ModelRegistryEntry(**model) for model in models]
+    return ModelRegistryResponse(success=True, models=registry)
+
+
+@router.get("/pipeline/models/{model_name}/versions", response_model=ModelVersionListResponse)
+async def list_model_versions(model_name: str):
+    versions = training_pipeline_service.list_model_versions(model_name)
+    return ModelVersionListResponse(success=True, versions=versions)
 

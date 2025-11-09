@@ -40,6 +40,51 @@ class _FailingMockPredictionService:
         }
 
 
+class _StubTrainingPipelineService:
+    def __init__(self, success: bool = True):
+        self.success = success
+        self.last_train_args = None
+        self.last_promote_args = None
+
+    def start_training_job(self, model_name, parameters=None, experiment_name=None):
+        self.last_train_args = {
+            "model_name": model_name,
+            "parameters": parameters,
+            "experiment_name": experiment_name,
+        }
+        if not self.success:
+            return {"success": False, "message": "MLflow is not configured"}
+        return {
+            "success": True,
+            "run_id": "run-123",
+            "experiment_name": experiment_name or "default",
+            "metrics": {"placeholder_accuracy": 0.9},
+        }
+
+    def promote_model(self, model_name, version, stage):
+        self.last_promote_args = {
+            "model_name": model_name,
+            "version": version,
+            "stage": stage,
+        }
+        if not self.success:
+            return {"success": False, "message": "Promotion failed"}
+        return {"success": True}
+
+    def list_registered_models(self):
+        return [
+            {
+                "name": "demo-model",
+                "creation_timestamp": 123,
+                "last_updated_timestamp": 456,
+                "latest_versions": [{"version": "1", "stage": "Production"}],
+            }
+        ]
+
+    def list_model_versions(self, model_name):
+        return [{"version": "1", "stage": "Production", "run_id": "run-123"}]
+
+
 client = TestClient(app)
 
 
@@ -126,4 +171,81 @@ def test_prepare_input_data_matches_sensor_schema():
     assert prepared.shape == (50, len(FEATURE_ORDER))
     assert prepared[0, 0] == sensor_point["depth"]
     assert prepared[0, 1] == sensor_point["wob"]
+
+
+def test_start_training_job_endpoint(monkeypatch):
+    from api.routes import predictions as predictions_router
+
+    stub_service = _StubTrainingPipelineService(success=True)
+    monkeypatch.setattr(predictions_router, "training_pipeline_service", stub_service, raising=False)
+
+    payload = {
+        "model_name": "demo-model",
+        "experiment_name": "demo-exp",
+        "parameters": {"learning_rate": 0.001},
+    }
+
+    response = client.post("/api/v1/predictions/pipeline/train", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["run_id"] == "run-123"
+    assert stub_service.last_train_args["model_name"] == "demo-model"
+
+
+def test_start_training_job_handles_configuration_error(monkeypatch):
+    from api.routes import predictions as predictions_router
+
+    stub_service = _StubTrainingPipelineService(success=False)
+    monkeypatch.setattr(predictions_router, "training_pipeline_service", stub_service, raising=False)
+
+    payload = {"model_name": "demo-model"}
+    response = client.post("/api/v1/predictions/pipeline/train", json=payload)
+
+    assert response.status_code == 503
+
+
+def test_promote_model_endpoint(monkeypatch):
+    from api.routes import predictions as predictions_router
+
+    stub_service = _StubTrainingPipelineService(success=True)
+    monkeypatch.setattr(predictions_router, "training_pipeline_service", stub_service, raising=False)
+
+    payload = {"model_name": "demo-model", "version": "1", "stage": "Production"}
+    response = client.post("/api/v1/predictions/pipeline/promote", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert stub_service.last_promote_args["stage"] == "Production"
+
+
+def test_list_registered_models(monkeypatch):
+    from api.routes import predictions as predictions_router
+
+    stub_service = _StubTrainingPipelineService(success=True)
+    monkeypatch.setattr(predictions_router, "training_pipeline_service", stub_service, raising=False)
+
+    response = client.get("/api/v1/predictions/pipeline/models")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert len(body["models"]) == 1
+    assert body["models"][0]["name"] == "demo-model"
+
+
+def test_list_model_versions(monkeypatch):
+    from api.routes import predictions as predictions_router
+
+    stub_service = _StubTrainingPipelineService(success=True)
+    monkeypatch.setattr(predictions_router, "training_pipeline_service", stub_service, raising=False)
+
+    response = client.get("/api/v1/predictions/pipeline/models/demo-model/versions")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["versions"][0]["version"] == "1"
 

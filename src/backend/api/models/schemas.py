@@ -175,6 +175,48 @@ class AnomalyDetectionResponse(BaseModel):
     message: Optional[str] = None
 
 
+class TrainingJobRequest(BaseModel):
+    model_name: str
+    experiment_name: Optional[str] = None
+    parameters: Optional[Dict[str, Any]] = None
+
+
+class TrainingJobResponse(BaseModel):
+    success: bool
+    run_id: Optional[str] = None
+    experiment_name: Optional[str] = None
+    metrics: Optional[Dict[str, Any]] = None
+    message: Optional[str] = None
+
+
+class ModelPromotionRequest(BaseModel):
+    model_name: str
+    version: str
+    stage: str
+
+
+class OperationStatusResponse(BaseModel):
+    success: bool
+    message: Optional[str] = None
+
+
+class ModelRegistryEntry(BaseModel):
+    name: str
+    creation_timestamp: Optional[int] = None
+    last_updated_timestamp: Optional[int] = None
+    latest_versions: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class ModelRegistryResponse(BaseModel):
+    success: bool
+    models: List[ModelRegistryEntry]
+
+
+class ModelVersionListResponse(BaseModel):
+    success: bool
+    versions: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 # ==================== Maintenance Schemas ====================
 
 class AlertSeverity(str, Enum):
