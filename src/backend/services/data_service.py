@@ -12,6 +12,7 @@ from api.models.database_models import (
     SensorData, 
     MaintenanceAlertDB, 
     MaintenanceScheduleDB,
+    DVRProcessHistoryDB,
     RULPredictionDB,
     AnomalyDetectionDB,
     WellProfileDB,
@@ -371,6 +372,78 @@ class DataService:
         except Exception as e:
             logger.error(f"Error creating maintenance alert: {e}")
             return None
+
+    def acknowledge_maintenance_alert(
+        self,
+        alert_id: int,
+        acknowledged_by: str,
+        notes: Optional[str] = None,
+        dvr_history_id: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        if not self._db_ready():
+            return None
+        try:
+            with self.db_manager.session_scope() as session:
+                alert = session.query(MaintenanceAlertDB).filter(MaintenanceAlertDB.id == alert_id).first()
+                if alert is None:
+                    return None
+
+                if dvr_history_id is not None:
+                    exists = session.query(DVRProcessHistoryDB.id).filter(DVRProcessHistoryDB.id == dvr_history_id).first()
+                    if not exists:
+                        raise ValueError("DVR history entry not found")
+                    alert.dvr_history_id = dvr_history_id
+
+                alert.acknowledged = True
+                alert.acknowledged_by = acknowledged_by
+                alert.acknowledged_at = datetime.now()
+                alert.acknowledgement_notes = notes
+                session.flush()
+                session.refresh(alert)
+                return self._alert_to_dict(alert)
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Error acknowledging maintenance alert {alert_id}: {e}")
+            return None
+
+    def resolve_maintenance_alert(
+        self,
+        alert_id: int,
+        resolved_by: Optional[str] = None,
+        notes: Optional[str] = None,
+        dvr_history_id: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        if not self._db_ready():
+            return None
+        try:
+            with self.db_manager.session_scope() as session:
+                alert = session.query(MaintenanceAlertDB).filter(MaintenanceAlertDB.id == alert_id).first()
+                if alert is None:
+                    return None
+
+                if dvr_history_id is not None:
+                    exists = session.query(DVRProcessHistoryDB.id).filter(DVRProcessHistoryDB.id == dvr_history_id).first()
+                    if not exists:
+                        raise ValueError("DVR history entry not found")
+                    alert.dvr_history_id = dvr_history_id
+
+                alert.resolved = True
+                alert.resolved_at = datetime.now()
+                alert.resolved_by = resolved_by
+                alert.resolution_notes = notes
+                if not alert.acknowledged:
+                    alert.acknowledged = True
+                    alert.acknowledged_by = resolved_by or alert.acknowledged_by
+                    alert.acknowledged_at = alert.acknowledged_at or datetime.now()
+                session.flush()
+                session.refresh(alert)
+                return self._alert_to_dict(alert)
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Error resolving maintenance alert {alert_id}: {e}")
+            return None
     
     def create_maintenance_schedule(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Create a maintenance schedule"""
@@ -567,8 +640,12 @@ class DataService:
             'acknowledged': alert.acknowledged,
             'acknowledged_by': alert.acknowledged_by,
             'acknowledged_at': alert.acknowledged_at.isoformat() if alert.acknowledged_at else None,
+            'acknowledgement_notes': alert.acknowledgement_notes,
             'resolved': alert.resolved,
             'resolved_at': alert.resolved_at.isoformat() if alert.resolved_at else None,
+            'resolved_by': alert.resolved_by,
+            'resolution_notes': alert.resolution_notes,
+            'dvr_history_id': alert.dvr_history_id,
         }
     
     @staticmethod

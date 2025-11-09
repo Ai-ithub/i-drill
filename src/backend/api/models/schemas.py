@@ -199,8 +199,12 @@ class MaintenanceAlert(BaseModel):
     acknowledged: bool = False
     acknowledged_by: Optional[str] = None
     acknowledged_at: Optional[datetime] = None
+    acknowledgement_notes: Optional[str] = None
     resolved: bool = False
     resolved_at: Optional[datetime] = None
+    resolved_by: Optional[str] = None
+    resolution_notes: Optional[str] = None
+    dvr_history_id: Optional[int] = None
 
 
 class MaintenanceAlertResponse(BaseModel):
@@ -241,7 +245,7 @@ class CreateMaintenanceAlertRequest(BaseModel):
     alert_type: str
     severity: AlertSeverity
     message: str
-    predicted_failure_time: Optional[datetime] = None
+    dvr_history_id: Optional[int] = None
 
 
 class UpdateMaintenanceScheduleRequest(BaseModel):
@@ -251,6 +255,18 @@ class UpdateMaintenanceScheduleRequest(BaseModel):
     status: Optional[str] = Field(None, pattern=r"^(scheduled|in_progress|completed|cancelled)$")
     assigned_to: Optional[str] = None
     notes: Optional[str] = None
+
+
+class MaintenanceAlertAcknowledgeRequest(BaseModel):
+    acknowledged_by: str = Field(..., description="User acknowledging the alert")
+    notes: Optional[str] = None
+    dvr_history_id: Optional[int] = None
+
+
+class MaintenanceAlertResolveRequest(BaseModel):
+    resolved_by: Optional[str] = Field(None, description="User resolving the alert")
+    notes: Optional[str] = None
+    dvr_history_id: Optional[int] = None
 
 
 # ==================== Reinforcement Learning Schemas ====================

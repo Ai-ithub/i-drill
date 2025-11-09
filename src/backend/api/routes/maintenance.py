@@ -8,6 +8,8 @@ from api.models.schemas import (
     MaintenanceSchedule,
     CreateMaintenanceAlertRequest,
     UpdateMaintenanceScheduleRequest,
+    MaintenanceAlertAcknowledgeRequest,
+    MaintenanceAlertResolveRequest,
 )
 from datetime import datetime, timedelta
 import logging
@@ -85,6 +87,48 @@ async def create_maintenance_alert(request: CreateMaintenanceAlertRequest):
         raise
     except Exception as e:
         logger.error(f"Error creating maintenance alert: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/alerts/{alert_id}/acknowledge", response_model=MaintenanceAlert)
+async def acknowledge_maintenance_alert(alert_id: str, request: MaintenanceAlertAcknowledgeRequest):
+    try:
+        alert = data_service.acknowledge_maintenance_alert(
+            int(alert_id),
+            acknowledged_by=request.acknowledged_by,
+            notes=request.notes,
+            dvr_history_id=request.dvr_history_id,
+        )
+        if alert is None:
+            raise HTTPException(status_code=404, detail="Maintenance alert not found")
+        return MaintenanceAlert(**alert)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error acknowledging maintenance alert: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/alerts/{alert_id}/resolve", response_model=MaintenanceAlert)
+async def resolve_maintenance_alert(alert_id: str, request: MaintenanceAlertResolveRequest):
+    try:
+        alert = data_service.resolve_maintenance_alert(
+            int(alert_id),
+            resolved_by=request.resolved_by,
+            notes=request.notes,
+            dvr_history_id=request.dvr_history_id,
+        )
+        if alert is None:
+            raise HTTPException(status_code=404, detail="Maintenance alert not found")
+        return MaintenanceAlert(**alert)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error resolving maintenance alert: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

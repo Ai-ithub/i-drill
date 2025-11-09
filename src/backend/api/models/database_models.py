@@ -63,8 +63,12 @@ class MaintenanceAlertDB(Base):
     acknowledged = Column(Boolean, default=False)
     acknowledged_by = Column(String(100), nullable=True)
     acknowledged_at = Column(DateTime, nullable=True)
+    acknowledgement_notes = Column(Text, nullable=True)
     resolved = Column(Boolean, default=False)
     resolved_at = Column(DateTime, nullable=True)
+    resolved_by = Column(String(100), nullable=True)
+    resolution_notes = Column(Text, nullable=True)
+    dvr_history_id = Column(Integer, ForeignKey('dvr_process_history.id'), nullable=True)
 
 
 class MaintenanceScheduleDB(Base):

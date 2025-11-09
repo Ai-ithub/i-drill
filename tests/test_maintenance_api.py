@@ -77,6 +77,58 @@ class _MockMaintenanceService:
         self.created_alert_payload = payload
         return 2
 
+    def acknowledge_maintenance_alert(self, alert_id, **kwargs):
+        acknowledged_by = kwargs.get("acknowledged_by")
+        notes = kwargs.get("notes")
+        dvr_history_id = kwargs.get("dvr_history_id")
+        if alert_id != 1:
+            return None
+        return {
+            "id": alert_id,
+            "rig_id": "RIG_01",
+            "component": "pump",
+            "alert_type": "overheat",
+            "severity": "critical",
+            "message": "Temperature exceeded threshold",
+            "predicted_failure_time": None,
+            "created_at": datetime.now(),
+            "acknowledged": True,
+            "acknowledged_by": acknowledged_by,
+            "acknowledged_at": datetime.now(),
+            "acknowledgement_notes": notes,
+            "resolved": False,
+            "resolved_at": None,
+            "resolved_by": None,
+            "resolution_notes": None,
+            "dvr_history_id": dvr_history_id,
+        }
+
+    def resolve_maintenance_alert(self, alert_id, **kwargs):
+        resolved_by = kwargs.get("resolved_by")
+        notes = kwargs.get("notes")
+        dvr_history_id = kwargs.get("dvr_history_id")
+        if alert_id != 1:
+            return None
+        return {
+            "id": alert_id,
+            "rig_id": "RIG_01",
+            "component": "pump",
+            "alert_type": "overheat",
+            "severity": "critical",
+            "message": "Temperature exceeded threshold",
+            "predicted_failure_time": None,
+            "created_at": datetime.now(),
+            "acknowledged": True,
+            "acknowledged_by": resolved_by,
+            "acknowledged_at": datetime.now(),
+            "acknowledgement_notes": notes,
+            "resolved": True,
+            "resolved_at": datetime.now(),
+            "resolved_by": resolved_by,
+            "resolution_notes": notes,
+            "dvr_history_id": dvr_history_id,
+        }
+
     # Schedules
     def get_maintenance_schedules(self, **kwargs):
         return [
@@ -205,4 +257,60 @@ def test_create_alert_uses_service(monkeypatch):
     body = response.json()
     assert body["rig_id"] == "RIG_05"
     assert mock_service.created_alert_payload["rig_id"] == "RIG_05"
+
+
+def test_acknowledge_alert(monkeypatch):
+    from api.routes import maintenance as maintenance_router
+
+    mock_service = _MockMaintenanceService()
+    monkeypatch.setattr(maintenance_router, "data_service", mock_service, raising=False)
+
+    payload = {"acknowledged_by": "engineer_c", "notes": "Investigated", "dvr_history_id": 5}
+    response = client.post("/api/v1/maintenance/alerts/1/acknowledge", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["acknowledged"] is True
+    assert body["dvr_history_id"] == 5
+
+
+def test_resolve_alert(monkeypatch):
+    from api.routes import maintenance as maintenance_router
+
+    mock_service = _MockMaintenanceService()
+    monkeypatch.setattr(maintenance_router, "data_service", mock_service, raising=False)
+
+    payload = {"resolved_by": "engineer_d", "notes": "Component replaced"}
+    response = client.post("/api/v1/maintenance/alerts/1/resolve", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["resolved"] is True
+    assert body["resolved_by"] == "engineer_d"
+
+
+def test_acknowledge_alert_not_found(monkeypatch):
+    from api.routes import maintenance as maintenance_router
+
+    mock_service = _MockMaintenanceService()
+    monkeypatch.setattr(maintenance_router, "data_service", mock_service, raising=False)
+
+    response = client.post("/api/v1/maintenance/alerts/99/acknowledge", json={"acknowledged_by": "ops"})
+
+    assert response.status_code == 404
+
+
+def test_resolve_alert_value_error(monkeypatch):
+    from api.routes import maintenance as maintenance_router
+
+    class _ValueErrorService(_MockMaintenanceService):
+        def resolve_maintenance_alert(self, *args, **kwargs):
+            raise ValueError("DVR history entry not found")
+
+    mock_service = _ValueErrorService()
+    monkeypatch.setattr(maintenance_router, "data_service", mock_service, raising=False)
+
+    response = client.post("/api/v1/maintenance/alerts/1/resolve", json={"resolved_by": "ops", "dvr_history_id": 999})
+
+    assert response.status_code == 400
 
