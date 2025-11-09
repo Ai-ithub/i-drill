@@ -3,13 +3,13 @@ import { Link, useLocation } from 'react-router-dom'
 import {
   Activity,
   BellRing,
-  ChartLine,
   ChevronDown,
   ChevronUp,
   Cpu,
   Database,
   Eye,
   LayoutDashboard,
+  LineChart,
   LogIn,
   Moon,
   Sun,
@@ -47,7 +47,7 @@ const menuSections: MenuSection[] = [
     items: [
       { name: 'داشبورد', path: '/dashboard', icon: LayoutDashboard, roles: ['viewer', 'operator', 'engineer', 'maintenance'] },
       { name: 'نمایش لحظه‌ای', path: '/realtime', icon: Eye, roles: ['viewer', 'operator', 'engineer'] },
-      { name: 'داده‌های تاریخی', path: '/historical', icon: ChartLine, roles: ['viewer', 'operator', 'engineer'] },
+      { name: 'داده‌های تاریخی', path: '/historical', icon: LineChart, roles: ['viewer', 'operator', 'engineer'] },
       { name: 'پیش‌بینی', path: '/predictions', icon: Activity, roles: ['engineer'] },
       { name: 'پایش DVR', path: '/dvr', icon: Database, roles: ['engineer', 'maintenance'] },
       { name: 'نگهداشت', path: '/maintenance', icon: Wrench, roles: ['maintenance'] },

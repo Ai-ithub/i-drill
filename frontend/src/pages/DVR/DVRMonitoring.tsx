@@ -36,8 +36,13 @@ export default function DVRMonitoring() {
       validationStatus: 'all',
     }
   })
-  const [historyParams, setHistoryParams] = useState(() => ({
-    rig_id: '',
+  const [historyParams, setHistoryParams] = useState<{
+    rig_id?: string
+    start_time: string
+    end_time: string
+    limit: number
+  }>(() => ({
+    rig_id: undefined,
     start_time: new Date(historyFilters.start).toISOString(),
     end_time: new Date(historyFilters.end).toISOString(),
     limit: 200,

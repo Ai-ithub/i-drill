@@ -364,7 +364,7 @@ export default function HistoricalData() {
           <div className="space-y-2 lg:col-span-2">
             <label className="block text-sm text-slate-500 dark:text-slate-300">پارامترها</label>
             <div className="flex flex-wrap gap-2">
-              {AVAILABLE_METRICS.map((metric, index) => (
+              {AVAILABLE_METRICS.map((metric) => (
                 <button
                   key={metric.key}
                   type="button"
