@@ -47,6 +47,7 @@ ENV/
 *.model
 *.weights
 models/
+!src/backend/api/models/
 checkpoints/
 *.zip
 ppo_drilling_env.zip
