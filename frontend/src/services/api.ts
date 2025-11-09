@@ -100,10 +100,22 @@ export const dvrApi = {
     api.get('/dvr/anomalies', { params: { history_size: historySize } }),
   evaluateRecord: (record: any, historySize = 100) =>
     api.post('/dvr/evaluate', { record, history_size: historySize }),
+  getHistory: (params: { rig_id?: string; start_time?: string; end_time?: string; limit?: number }) =>
+    api.get('/dvr/history', { params }),
+  exportHistoryCsv: (params: { rig_id?: string; start_time?: string; end_time?: string }) =>
+    api.get('/dvr/history/export/csv', { params, responseType: 'blob' }),
+  exportHistoryPdf: (params: { rig_id?: string; start_time?: string; end_time?: string }) =>
+    api.get('/dvr/history/export/pdf', { params, responseType: 'blob' }),
 }
 
 // Health API
 export const healthApi = {
   check: () => api.get('/health'),
+  detailed: () => api.get('/health/services'),
+}
+
+// Auth API (UI role helpers)
+export const authApi = {
+  me: () => api.get('/auth/me'),
 }
 

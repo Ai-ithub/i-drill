@@ -1,21 +1,22 @@
-import { ReactNode, useState } from 'react'
+import { ReactNode, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   Activity,
-  BarChart3,
-  Settings,
-  Database,
-  Bell,
-  TrendingUp,
-  Wrench,
-  FileText,
-  Wifi,
-  Server,
-  Eye,
-  Clock,
+  BellRing,
+  ChartLine,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Cpu,
+  Database,
+  Eye,
+  LayoutDashboard,
+  LogIn,
+  Moon,
+  Sun,
+  Wrench,
 } from 'lucide-react'
+import { useThemeMode } from '@/context/ThemeContext'
+import { useUserRole, UserRole } from '@/context/RoleContext'
 
 interface LayoutProps {
   children: ReactNode
@@ -23,189 +24,204 @@ interface LayoutProps {
 
 interface MenuItem {
   name: string
-  nameEn: string
-  path?: string
+  path: string
   icon: any
-  submenu?: { name: string; nameEn: string; path: string }[]
+  roles: UserRole[]
 }
+
+interface MenuSection {
+  title: string
+  items: MenuItem[]
+}
+
+const ROLE_LABEL: Record<UserRole, string> = {
+  viewer: 'Viewer',
+  operator: 'Operator',
+  engineer: 'Engineer',
+  maintenance: 'Maintenance',
+}
+
+const menuSections: MenuSection[] = [
+  {
+    title: 'پایش',
+    items: [
+      { name: 'داشبورد', path: '/dashboard', icon: LayoutDashboard, roles: ['viewer', 'operator', 'engineer', 'maintenance'] },
+      { name: 'نمایش لحظه‌ای', path: '/realtime', icon: Eye, roles: ['viewer', 'operator', 'engineer'] },
+      { name: 'داده‌های تاریخی', path: '/historical', icon: ChartLine, roles: ['viewer', 'operator', 'engineer'] },
+      { name: 'پیش‌بینی', path: '/predictions', icon: Activity, roles: ['engineer'] },
+      { name: 'پایش DVR', path: '/dvr', icon: Database, roles: ['engineer', 'maintenance'] },
+      { name: 'نگهداشت', path: '/maintenance', icon: Wrench, roles: ['maintenance'] },
+      { name: 'عامل RL', path: '/display/rl', icon: Cpu, roles: ['engineer'] },
+    ],
+  },
+]
 
 export default function NewLayout({ children }: LayoutProps) {
   const location = useLocation()
-  const [expandedMenu, setExpandedMenu] = useState<string | null>(null)
+  const { mode, toggle } = useThemeMode()
+  const { role, setRole } = useUserRole()
+  const [expandedSection, setExpandedSection] = useState<string | null>('پایش')
+  const [isMobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [isScrolled, setScrolled] = useState(false)
 
-  const menuItems: MenuItem[] = [
-    {
-      name: 'نمایش',
-      nameEn: 'display',
-      icon: Eye,
-      submenu: [
-        { name: 'Gauge', nameEn: 'Gauge', path: '/display/gauge' },
-        { name: 'RPM', nameEn: 'RPM', path: '/display/rpm' },
-        { name: 'SENSOR', nameEn: 'SENSOR', path: '/display/sensor' },
-        { name: 'Control', nameEn: 'Control', path: '/display/control' },
-        { name: 'RL Control', nameEn: 'RL Control', path: '/display/rl' }
-      ]
-    },
-    {
-      name: 'لیست بررسی',
-      nameEn: 'check list',
-      path: '/checklist',
-      icon: FileText
-    },
-    {
-      name: 'سیستم هشدار',
-      nameEn: 'Alarm Systems',
-      path: '/alarms',
-      icon: Bell
-    },
-    {
-      name: 'کنترل',
-      nameEn: 'Control',
-      path: '/control',
-      icon: Settings
-    },
-    {
-      name: 'تحلیل نمودار',
-      nameEn: 'Graph_Analysis',
-      path: '/graph-analysis',
-      icon: BarChart3
-    },
-    {
-      name: 'تحلیل 3بعدی',
-      nameEn: '3D_Analysis_OP',
-      path: '/3d-analysis',
-      icon: TrendingUp
-    },
-    {
-      name: 'عملیات زمان‌واقعی',
-      nameEn: 'REAL_TIME_OP',
-      path: '/',
-      icon: Clock
-    },
-    {
-      name: 'گزارش‌دهی',
-      nameEn: 'Reporting',
-      path: '/reporting',
-      icon: FileText
-    },
-    {
-      name: 'اتصال',
-      nameEn: 'Connection',
-      path: '/connection',
-      icon: Wifi
-    },
-    {
-      name: 'ثبت داده',
-      nameEn: 'Data Loggers',
-      path: '/data-loggers',
-      icon: Database
-    },
-    {
-      name: 'پایگاه داده',
-      nameEn: 'Databases',
-      path: '/databases',
-      icon: Server
-    },
-    {
-      name: 'نگهداری',
-      nameEn: 'PDM',
-      path: '/maintenance',
-      icon: Wrench
-    },
-    {
-      name: 'پایش DVR',
-      nameEn: 'DVR Monitor',
-      path: '/dvr',
-      icon: Activity
-    }
-  ]
+  useEffect(() => {
+    const handler = () => setScrolled(window.scrollY > 12)
+    handler()
+    window.addEventListener('scroll', handler)
+    return () => window.removeEventListener('scroll', handler)
+  }, [])
 
-  const toggleMenu = (menuName: string) => {
-    setExpandedMenu(expandedMenu === menuName ? null : menuName)
-  }
+  const filteredSections = useMemo(() => {
+    return menuSections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => item.roles.includes(role)),
+      }))
+      .filter((section) => section.items.length > 0)
+  }, [role])
 
-  const isActive = (path: string) => {
-    return location.pathname === path
-  }
+  const currentRouteAllowed = useMemo(() => {
+    const normalizedPath = location.pathname === '/' ? '/realtime' : location.pathname
+    return menuSections.some((section) =>
+      section.items.some((item) => item.path === normalizedPath && item.roles.includes(role))
+    )
+  }, [location.pathname, role])
 
   return (
-    <div className="flex h-screen bg-black overflow-hidden">
-      {/* Main Content */}
-      <div className="flex-1 overflow-auto">
-        {children}
-      </div>
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 transition-colors duration-300 flex flex-col">
+      <header
+        className={`sticky top-0 z-30 backdrop-blur bg-white/70 dark:bg-slate-950/70 border-b border-slate-200/60 dark:border-slate-800 transition-shadow ${
+          isScrolled ? 'shadow-lg shadow-slate-900/10' : ''
+        }`}
+      >
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              className="lg:hidden rounded-lg border border-slate-200 dark:border-slate-800 p-2"
+              onClick={() => setMobileMenuOpen((prev) => !prev)}
+              aria-label="toggle navigation"
+            >
+              <span className="sr-only">toggle menu</span>
+              {isMobileMenuOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+            </button>
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white font-bold">
+                ID
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-slate-900 dark:text-white">i-Drill Control Room</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">میز فرمان عملیات حفاری</div>
+              </div>
+            </div>
+          </div>
 
-      {/* Right Sidebar */}
-      <div className="w-48 bg-gradient-to-b from-[#8BC34A] to-[#689F38] flex flex-col">
-        {/* Logo/Title */}
-        <div className="p-4 bg-gradient-to-r from-[#7CB342] to-[#8BC34A] border-b-2 border-[#689F38]">
-          <div className="text-white font-bold text-lg tracking-wider">
-            <span className="text-sm">TURBIN</span>
-            <br />
-            <span className="text-xs">Generator</span>
+          <div className="flex items-center gap-3">
+            <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <BellRing className="w-4 h-4 text-amber-500" />
+              <span>۳ اعلان جدید</span>
+            </div>
+
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as UserRole)}
+              className="hidden sm:block bg-slate-200 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-100"
+            >
+              {Object.entries(ROLE_LABEL).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+
+            <button
+              onClick={toggle}
+              className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 text-slate-700 dark:text-slate-200"
+              aria-label="toggle theme"
+            >
+              {mode === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+
+            <button className="hidden md:flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-sm text-slate-600 dark:text-slate-300">
+              <LogIn className="w-4 h-4" />
+              ورود / تغییر کاربر
+            </button>
           </div>
         </div>
+      </header>
 
-        {/* Menu Items */}
-        <nav className="flex-1 overflow-y-auto py-2">
-          {menuItems.map((item, index) => (
-            <div key={index} className="mb-1">
-              {item.submenu ? (
-                <>
-                  <button
-                    onClick={() => toggleMenu(item.nameEn)}
-                    className={`w-full flex items-center justify-between px-4 py-2.5 text-white text-sm hover:bg-[#689F38] transition-colors ${
-                      expandedMenu === item.nameEn ? 'bg-[#689F38]' : ''
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <item.icon className="w-4 h-4" />
-                      <span className="font-medium">{item.nameEn}</span>
-                    </div>
-                    {expandedMenu === item.nameEn ? (
-                      <ChevronUp className="w-3 h-3" />
-                    ) : (
-                      <ChevronDown className="w-3 h-3" />
-                    )}
-                  </button>
-                  {expandedMenu === item.nameEn && (
-                    <div className="bg-[#7CB342]">
-                      {item.submenu.map((subItem, subIndex) => (
+      <div className="flex-1 flex">
+        <aside
+          className={`fixed top-[64px] bottom-0 left-0 right-0 z-20 lg:z-auto lg:relative lg:w-64 w-full transform transition-transform duration-200 ${
+            isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+          } lg:translate-x-0 bg-white/95 dark:bg-slate-950/95 lg:bg-transparent lg:dark:bg-transparent border-r border-slate-200/70 dark:border-slate-800`}
+        >
+          <div className="h-full overflow-y-auto px-4 py-6 space-y-6">
+            <div className="lg:hidden">
+              <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">نقش کاربر</label>
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as UserRole)}
+                className="w-full bg-slate-200 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-100"
+              >
+                {Object.entries(ROLE_LABEL).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {filteredSections.map((section) => (
+              <div key={section.title} className="space-y-2">
+                <button
+                  onClick={() => setExpandedSection((prev) => (prev === section.title ? null : section.title))}
+                  className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400"
+                >
+                  <span>{section.title}</span>
+                  {expandedSection === section.title ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+
+                {expandedSection === section.title && (
+                  <nav className="space-y-1">
+                    {section.items.map((item) => {
+                      const Icon = item.icon
+                      const normalizedPath = location.pathname === '/' ? '/realtime' : location.pathname
+                      const isActive = normalizedPath === item.path
+                      return (
                         <Link
-                          key={subIndex}
-                          to={subItem.path}
-                          className={`block px-8 py-2 text-white text-xs hover:bg-[#689F38] transition-colors ${
-                            isActive(subItem.path) ? 'bg-[#558B2F] font-semibold' : ''
+                          key={item.path}
+                          to={item.path}
+                          onClick={() => setMobileMenuOpen(false)}
+                          className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all ${
+                            isActive
+                              ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 border border-cyan-500/40'
+                              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800/70'
                           }`}
                         >
-                          {subItem.nameEn}
+                          <Icon className="w-4 h-4" />
+                          <span>{item.name}</span>
                         </Link>
-                      ))}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <Link
-                  to={item.path!}
-                  className={`flex items-center gap-2 px-4 py-2.5 text-white text-sm hover:bg-[#689F38] transition-colors ${
-                    isActive(item.path!) ? 'bg-[#558B2F] border-r-4 border-white' : ''
-                  }`}
-                >
-                  <item.icon className="w-4 h-4" />
-                  <span className="font-medium">{item.nameEn}</span>
-                </Link>
-              )}
-            </div>
-          ))}
-        </nav>
-
-        {/* Version/Info */}
-        <div className="p-3 bg-[#558B2F] border-t-2 border-[#689F38] text-center">
-          <div className="text-white text-xs">
-            <div className="font-semibold">i-Drill v1.0</div>
-            <div className="text-[10px] text-green-100">Real-Time System</div>
+                      )
+                    })}
+                  </nav>
+                )}
+              </div>
+            ))}
           </div>
-        </div>
+        </aside>
+
+        <main className="flex-1 bg-slate-50/60 dark:bg-slate-900/50">
+          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+            {!currentRouteAllowed ? (
+              <div className="rounded-2xl border border-amber-400/50 bg-amber-100/40 dark:bg-amber-400/10 px-6 py-10 text-center text-amber-700 dark:text-amber-200">
+                <h2 className="text-xl font-bold mb-2">دسترسی غیرمجاز</h2>
+                <p className="text-sm">نقش فعلی ({ROLE_LABEL[role]}) مجوز مشاهده این بخش را ندارد.</p>
+              </div>
+            ) : (
+              children
+            )}
+          </div>
+        </main>
       </div>
     </div>
   )
