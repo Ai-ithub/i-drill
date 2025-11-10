@@ -39,6 +39,8 @@
    source .venv/bin/activate
    pip install -r requirements_backend.txt
    `
+   > برای نصب کامل شامل پکیج‌های یادگیری ماشین، از ریشه مخزن دستور  
+   > `pip install -r requirements.txt` را اجرا کنید.
 3. نصب وابستگی‌های فرانت‌اند:
    `ash
    cd ../../frontend

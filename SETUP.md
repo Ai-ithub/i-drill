@@ -34,9 +34,20 @@ source drilling_env/bin/activate
 ```
 
 ### 3. Install Dependencies
-```bash
-pip install -r requirements.txt
-```
+Choose the install that matches your workflow:
+
+- **Full stack (backend + ML/RL tooling):**
+  ```bash
+  pip install -r requirements.txt
+  ```
+- **Backend service only:**
+  ```bash
+  pip install -r src/backend/requirements_backend.txt
+  ```
+- **ML/RUL experimentation only:**
+  ```bash
+  pip install -r requirements/ml.txt
+  ```
 
 ### 4. Setup PostgreSQL Database
 1. Install PostgreSQL and create a database:

@@ -80,11 +80,14 @@ i-Drill is a comprehensive intelligent drilling automation platform that combine
 #### Backend
 
 ```bash
+pip install -r requirements/backend.txt
+pip install -r requirements/dev.txt  # optional: adds pytest/ruff tooling
 cd src/backend
-pip install -r requirements_backend.txt
 python setup_backend.py
 uvicorn app:app --reload --port 8001
 ```
+
+> Need the research toolchain? Install `requirements/ml.txt` alongside the backend stack to get PyTorch, TensorBoard, and the rest of the experimentation libraries.
 
 #### Frontend
 
