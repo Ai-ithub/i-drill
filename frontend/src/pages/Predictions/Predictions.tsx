@@ -1,5 +1,5 @@
 import { FormEvent, useState } from 'react'
-import { useMutation } from 'react-query'
+import { useMutation } from '@tanstack/react-query'
 import { predictionsApi } from '@/services/api'
 
 export default function Predictions() {
@@ -28,9 +28,9 @@ export default function Predictions() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-white mb-2">پیش‌بینی عمر باقی‌مانده (RUL)</h1>
+        <h1 className="text-3xl font-bold text-white mb-2">Remaining Useful Life (RUL) Prediction</h1>
         <p className="text-slate-400">
-          اجرای مدل‌های یادگیری ماشین برای تخمین عمر باقیمانده تجهیزات بر اساس داده‌های تاریخی
+          Run machine learning models to estimate equipment remaining useful life based on historical data
         </p>
       </div>
 
@@ -40,7 +40,7 @@ export default function Predictions() {
       >
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
-            <label className="block text-sm text-slate-400">شناسه دکل</label>
+            <label className="block text-sm text-slate-400">Rig ID</label>
             <input
               value={rigId}
               onChange={(e) => setRigId(e.target.value)}
@@ -50,7 +50,7 @@ export default function Predictions() {
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm text-slate-400">بازه زمانی داده (ساعت)</label>
+            <label className="block text-sm text-slate-400">Data Time Range (hours)</label>
             <input
               type="number"
               min={1}
@@ -62,7 +62,7 @@ export default function Predictions() {
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm text-slate-400">مدل</label>
+            <label className="block text-sm text-slate-400">Model</label>
             <select
               value={modelType}
               onChange={(e) => setModelType(e.target.value)}
@@ -77,39 +77,39 @@ export default function Predictions() {
 
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <span className="text-sm text-slate-400">
-            مدل انتخاب‌شده با استفاده از MLflow از آخرین نسخه موجود بارگذاری خواهد شد.
+            The selected model will be loaded from MLflow using the latest available version.
           </span>
           <button
             type="submit"
             className="w-full md:w-auto h-10 px-6 rounded-md bg-cyan-500 hover:bg-cyan-400 text-slate-900 font-semibold transition disabled:opacity-60"
             disabled={predictionMutation.isLoading}
           >
-            {predictionMutation.isLoading ? 'در حال پیش‌بینی...' : 'اجرای پیش‌بینی'}
+            {predictionMutation.isLoading ? 'Predicting...' : 'Run Prediction'}
           </button>
         </div>
 
         {predictionMutation.isError && (
           <div className="rounded-md border border-red-500/40 bg-red-900/20 px-4 py-3 text-sm text-red-300">
-            خطا در اجرای پیش‌بینی: {String((predictionMutation.error as Error)?.message)}
+            Error running prediction: {String((predictionMutation.error as Error)?.message)}
           </div>
         )}
       </form>
 
       <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-white">نتایج آخرین پیش‌بینی</h2>
+          <h2 className="text-xl font-semibold text-white">Latest Prediction Results</h2>
           {predictionMutation.isLoading && (
-            <span className="text-sm text-slate-400">در حال محاسبه...</span>
+            <span className="text-sm text-slate-400">Calculating...</span>
           )}
         </div>
 
         {!latestResult ? (
           <div className="rounded-md border border-slate-700 bg-slate-900/40 px-4 py-10 text-center text-slate-300">
-            برای مشاهده خروجی، یک پیش‌بینی جدید اجرا کنید.
+            Run a new prediction to view the output.
           </div>
         ) : latestResult.success === false ? (
           <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-4 text-amber-100">
-            {latestResult.message || 'مدل قادر به تولید پیش‌بینی نبود.'}
+            {latestResult.message || 'Model was unable to generate a prediction.'}
           </div>
         ) : (
           <div className="space-y-4">
@@ -120,38 +120,38 @@ export default function Predictions() {
               >
                 <div className="flex flex-wrap gap-4 justify-between items-center">
                   <div>
-                    <div className="text-sm text-slate-400">دکل</div>
+                    <div className="text-sm text-slate-400">Rig</div>
                     <div className="text-lg font-semibold text-white">{prediction.rig_id}</div>
                   </div>
                   <div>
-                    <div className="text-sm text-slate-400">کامپوننت</div>
+                    <div className="text-sm text-slate-400">Component</div>
                     <div className="text-lg font-semibold text-white">
-                      {prediction.component || 'نامشخص'}
+                      {prediction.component || 'unknown'}
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-slate-400">عمر باقی‌مانده</div>
+                    <div className="text-sm text-slate-400">Remaining Useful Life</div>
                     <div className="text-lg font-semibold text-cyan-400">
                       {prediction.predicted_rul?.toFixed?.(1) ?? prediction.predicted_rul ?? '-'}{' '}
-                      ساعت
+                      hours
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-slate-400">اطمینان</div>
+                    <div className="text-sm text-slate-400">Confidence</div>
                     <div className="text-lg font-semibold text-emerald-400">
                       {Math.round((prediction.confidence ?? 0) * 100)}%
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-slate-400">مدل</div>
+                    <div className="text-sm text-slate-400">Model</div>
                     <div className="text-lg font-semibold text-white">{prediction.model_used}</div>
                   </div>
                 </div>
                 <div className="mt-4 text-xs text-slate-400 flex justify-between">
                   <span>
-                    به‌روزرسانی:{' '}
+                    Updated:{' '}
                     {prediction.timestamp
-                      ? new Date(prediction.timestamp).toLocaleString('fa-IR')
+                      ? new Date(prediction.timestamp).toLocaleString('en-US')
                       : '-'}
                   </span>
                   {prediction.recommendation && (

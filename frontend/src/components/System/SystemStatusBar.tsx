@@ -1,4 +1,4 @@
-import { useQuery } from 'react-query'
+import { useQuery } from '@tanstack/react-query'
 import { healthApi } from '@/services/api'
 import { AlertTriangle, MessageSquare } from 'lucide-react'
 
@@ -23,7 +23,7 @@ function StatusBadge({ label, status, description }: StatusBadgeProps) {
     <div className="flex flex-col gap-2 rounded-xl bg-white dark:bg-slate-900/60 px-4 py-4 border border-slate-200 dark:border-slate-800 shadow-sm">
       <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
         <span>{label}</span>
-        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${tone}`}>{status || 'نامشخص'}</span>
+        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${tone}`}>{status || 'unknown'}</span>
       </div>
       {description && <p className="text-xs text-slate-500 dark:text-slate-300 leading-relaxed">{description}</p>}
     </div>
@@ -31,13 +31,11 @@ function StatusBadge({ label, status, description }: StatusBadgeProps) {
 }
 
 export default function SystemStatusBar() {
-  const { data, isLoading, isError } = useQuery(
-    'system-status',
-    () => healthApi.detailed().then((res) => res.data),
-    {
-      refetchInterval: 20000,
-    },
-  )
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['system-status'],
+    queryFn: () => healthApi.detailed().then((res) => res.data),
+    refetchInterval: 20000,
+  })
 
   const details = data?.details ?? data ?? {}
   const kafkaStatus = details.kafka?.kafka ?? details.kafka?.status ?? 'unknown'
@@ -50,12 +48,12 @@ export default function SystemStatusBar() {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <MessageSquare className="w-5 h-5 text-cyan-500" />
-          <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-100">وضعیت سرویس‌های زیرساخت</h3>
+          <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-100">Infrastructure Services Status</h3>
         </div>
-        {isLoading && <span className="text-xs text-slate-400">در حال بروزرسانی...</span>}
+        {isLoading && <span className="text-xs text-slate-400">Updating...</span>}
         {isError && (
           <span className="inline-flex items-center gap-1 text-xs text-amber-500">
-            <AlertTriangle className="w-4 h-4" /> خطا در دریافت وضعیت
+            <AlertTriangle className="w-4 h-4" /> Error fetching status
           </span>
         )}
       </div>
@@ -63,7 +61,7 @@ export default function SystemStatusBar() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
         <StatusBadge label="Kafka" status={kafkaStatus} description={details.kafka?.message} />
         <StatusBadge label="PostgreSQL" status={dbStatus} description={details.database?.message} />
-        <StatusBadge label="محیط RL" status={rlStatus} description={details.rl_environment?.message} />
+        <StatusBadge label="RL Environment" status={rlStatus} description={details.rl_environment?.message} />
         <StatusBadge label="MLflow" status={mlflowStatus} description={details.mlflow?.message} />
       </div>
     </div>

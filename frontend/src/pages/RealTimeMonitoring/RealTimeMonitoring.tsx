@@ -59,7 +59,7 @@ export default function RealTimeMonitoring() {
 
   const statsCards = [
     {
-      label: 'عمق فعلی',
+      label: 'Current Depth',
       value: latestData ? `${latestData.depth.toFixed(1)} ft` : '--',
       icon: TrendingUp,
       color: 'bg-blue-500',
@@ -89,8 +89,8 @@ export default function RealTimeMonitoring() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white mb-2">مانیتورینگ لحظه‌ای</h1>
-          <p className="text-slate-400">نمایش داده‌های real-time دکل حفاری</p>
+          <h1 className="text-3xl font-bold text-white mb-2">Real-time Monitoring</h1>
+          <p className="text-slate-400">Display real-time drilling rig data</p>
         </div>
 
         {/* Connection Status */}
@@ -100,8 +100,8 @@ export default function RealTimeMonitoring() {
             onChange={(e) => setRigId(e.target.value)}
             className="bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600"
           >
-            <option value="RIG_01">دکل 01</option>
-            <option value="RIG_02">دکل 02</option>
+            <option value="RIG_01">Rig 01</option>
+            <option value="RIG_02">Rig 02</option>
           </select>
 
           <div className="flex items-center gap-2">
@@ -116,10 +116,10 @@ export default function RealTimeMonitoring() {
             />
             <span className="text-sm text-slate-300">
               {connectionStatus === 'connected'
-                ? 'متصل'
+                ? 'Connected'
                 : connectionStatus === 'connecting'
-                ? 'در حال اتصال...'
-                : 'قطع شده'}
+                ? 'Connecting...'
+                : 'Disconnected'}
             </span>
           </div>
         </div>
@@ -155,7 +155,7 @@ export default function RealTimeMonitoring() {
                 dataKey="timestamp"
                 stroke="#9CA3AF"
                 tick={{ fill: '#9CA3AF' }}
-                tickFormatter={(value) => new Date(value).toLocaleTimeString('fa-IR')}
+                tickFormatter={(value) => new Date(value).toLocaleTimeString('en-US')}
               />
               <YAxis stroke="#9CA3AF" tick={{ fill: '#9CA3AF' }} />
               <Tooltip
@@ -185,7 +185,7 @@ export default function RealTimeMonitoring() {
                 dataKey="timestamp"
                 stroke="#9CA3AF"
                 tick={{ fill: '#9CA3AF' }}
-                tickFormatter={(value) => new Date(value).toLocaleTimeString('fa-IR')}
+                tickFormatter={(value) => new Date(value).toLocaleTimeString('en-US')}
               />
               <YAxis stroke="#9CA3AF" tick={{ fill: '#9CA3AF' }} />
               <Tooltip
@@ -215,7 +215,7 @@ export default function RealTimeMonitoring() {
                 dataKey="timestamp"
                 stroke="#9CA3AF"
                 tick={{ fill: '#9CA3AF' }}
-                tickFormatter={(value) => new Date(value).toLocaleTimeString('fa-IR')}
+                tickFormatter={(value) => new Date(value).toLocaleTimeString('en-US')}
               />
               <YAxis stroke="#9CA3AF" tick={{ fill: '#9CA3AF' }} />
               <Tooltip
@@ -245,7 +245,7 @@ export default function RealTimeMonitoring() {
                 dataKey="timestamp"
                 stroke="#9CA3AF"
                 tick={{ fill: '#9CA3AF' }}
-                tickFormatter={(value) => new Date(value).toLocaleTimeString('fa-IR')}
+                tickFormatter={(value) => new Date(value).toLocaleTimeString('en-US')}
               />
               <YAxis stroke="#9CA3AF" tick={{ fill: '#9CA3AF' }} />
               <Tooltip
@@ -269,7 +269,7 @@ export default function RealTimeMonitoring() {
       {/* Current Status */}
       {latestData && (
         <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
-          <h2 className="text-xl font-semibold text-white mb-4">وضعیت فعلی</h2>
+          <h2 className="text-xl font-semibold text-white mb-4">Current Status</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
             <div>
               <div className="text-slate-400 text-sm">Depth</div>
@@ -307,7 +307,7 @@ export default function RealTimeMonitoring() {
       {dataPoints.length === 0 && connectionStatus === 'connected' && (
         <div className="bg-slate-800 rounded-lg p-12 border border-slate-700 text-center">
           <AlertCircle className="w-12 h-12 text-slate-500 mx-auto mb-4" />
-          <p className="text-slate-400">در انتظار داده‌های real-time...</p>
+          <p className="text-slate-400">Waiting for real-time data...</p>
         </div>
       )}
 
@@ -315,7 +315,7 @@ export default function RealTimeMonitoring() {
       {connectionStatus === 'disconnected' && (
         <div className="bg-red-900/20 border border-red-500 rounded-lg p-6 text-center">
           <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <p className="text-red-400">اتصال به سرور قطع شده است. لطفاً دوباره تلاش کنید.</p>
+          <p className="text-red-400">Connection to server lost. Please try again.</p>
         </div>
       )}
     </div>

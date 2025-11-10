@@ -102,13 +102,13 @@ export default function Maintenance() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
     <div>
-      <h1 className="text-3xl font-bold text-white mb-2">تعمیر و نگهداری</h1>
+      <h1 className="text-3xl font-bold text-white mb-2">Maintenance</h1>
           <p className="text-slate-400">
-            پایش هشدارها، برنامه‌ریزی تعمیرات پیشگیرانه و مدیریت برنامه‌های اجرایی
+            Monitor alerts, schedule preventive maintenance, and manage execution plans
           </p>
         </div>
         <div className="space-y-2 md:space-y-0 md:flex md:items-center md:gap-3">
-          <label className="text-sm text-slate-400">فیلتر بر اساس دکل</label>
+          <label className="text-sm text-slate-400">Filter by Rig</label>
           <input
             value={rigFilter}
             onChange={(e) => setRigFilter(e.target.value)}
@@ -122,17 +122,17 @@ export default function Maintenance() {
         <div className="space-y-6 xl:col-span-2">
           <section className="bg-slate-800 border border-slate-700 rounded-lg p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-white">هشدارهای فعال</h2>
-              {alertsQuery.isFetching && <span className="text-xs text-slate-400">در حال بروزرسانی...</span>}
+              <h2 className="text-xl font-semibold text-white">Active Alerts</h2>
+              {alertsQuery.isFetching && <span className="text-xs text-slate-400">Updating...</span>}
             </div>
 
             {alertsQuery.isError ? (
               <div className="rounded-md border border-red-500/40 bg-red-900/20 px-4 py-3 text-sm text-red-300">
-                خطا در دریافت هشدارها
+                Error fetching alerts
               </div>
             ) : alerts.length === 0 ? (
               <div className="rounded-md border border-slate-700 bg-slate-900/40 px-4 py-8 text-center text-slate-300">
-                هشدار فعالی برای نمایش وجود ندارد.
+                No active alerts to display.
               </div>
             ) : (
               <div className="space-y-4">
@@ -143,15 +143,15 @@ export default function Maintenance() {
                   >
                     <div className="flex flex-wrap items-center justify-between gap-4">
                       <div>
-                        <div className="text-xs text-red-300">دکل</div>
+                        <div className="text-xs text-red-300">Rig</div>
                         <div className="text-lg font-semibold text-white">{alert.rig_id}</div>
                       </div>
                       <div>
-                        <div className="text-xs text-red-300">کامپوننت</div>
+                        <div className="text-xs text-red-300">Component</div>
                         <div className="text-lg font-semibold text-white">{alert.component}</div>
                       </div>
                       <div>
-                        <div className="text-xs text-red-300">شدت</div>
+                        <div className="text-xs text-red-300">Severity</div>
                         <span className="px-3 py-1 rounded-full text-xs bg-red-500/10 border border-red-500/40 text-red-200">
                           {alert.severity}
                         </span>
@@ -160,9 +160,9 @@ export default function Maintenance() {
                     <p className="text-sm text-slate-200 leading-relaxed">{alert.message}</p>
                     <div className="text-xs text-slate-400 flex justify-between">
                       <span>
-                        ثبت:{' '}
+                        Created:{' '}
                         {alert.created_at
-                          ? new Date(alert.created_at).toLocaleString('fa-IR')
+                          ? new Date(alert.created_at).toLocaleString('en-US')
                           : '-'}
                       </span>
                       <span>{alert.alert_type}</span>
@@ -175,17 +175,17 @@ export default function Maintenance() {
 
           <section className="bg-slate-800 border border-slate-700 rounded-lg p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-white">برنامه تعمیرات</h2>
-              {scheduleQuery.isFetching && <span className="text-xs text-slate-400">در حال بروزرسانی...</span>}
+              <h2 className="text-xl font-semibold text-white">Maintenance Schedule</h2>
+              {scheduleQuery.isFetching && <span className="text-xs text-slate-400">Updating...</span>}
             </div>
 
             {scheduleQuery.isError ? (
               <div className="rounded-md border border-red-500/40 bg-red-900/20 px-4 py-3 text-sm text-red-300">
-                خطا در دریافت برنامه تعمیرات
+                Error fetching maintenance schedule
               </div>
             ) : schedules.length === 0 ? (
               <div className="rounded-md border border-slate-700 bg-slate-900/40 px-4 py-8 text-center text-slate-300">
-                برنامه‌ای ثبت نشده است.
+                No schedule has been registered.
               </div>
             ) : (
               <div className="space-y-4">
@@ -196,15 +196,15 @@ export default function Maintenance() {
                   >
                     <div className="flex flex-wrap justify-between gap-4">
                       <div>
-                        <div className="text-xs text-slate-400">دکل</div>
+                        <div className="text-xs text-slate-400">Rig</div>
                         <div className="text-lg font-semibold text-white">{schedule.rig_id}</div>
                       </div>
                       <div>
-                        <div className="text-xs text-slate-400">کامپوننت</div>
+                        <div className="text-xs text-slate-400">Component</div>
                         <div className="text-lg font-semibold text-white">{schedule.component}</div>
                       </div>
                       <div>
-                        <div className="text-xs text-slate-400">وضعیت</div>
+                        <div className="text-xs text-slate-400">Status</div>
                         <span className="px-3 py-1 rounded-full text-xs bg-cyan-500/10 border border-cyan-500/40 text-cyan-200">
                           {schedule.status}
                         </span>
@@ -212,36 +212,36 @@ export default function Maintenance() {
                     </div>
                     <div className="grid grid-cols-2 gap-4 text-sm text-slate-200">
                       <div>
-                        <div className="text-xs text-slate-400">نوع تعمیر</div>
+                        <div className="text-xs text-slate-400">Maintenance Type</div>
                         <div>{schedule.maintenance_type}</div>
                       </div>
                       <div>
-                        <div className="text-xs text-slate-400">اولویت</div>
+                        <div className="text-xs text-slate-400">Priority</div>
                         <div>{schedule.priority}</div>
                       </div>
                       <div>
-                        <div className="text-xs text-slate-400">زمان‌بندی</div>
+                        <div className="text-xs text-slate-400">Scheduled Date</div>
                         <div>
                           {schedule.scheduled_date
-                            ? new Date(schedule.scheduled_date).toLocaleString('fa-IR')
+                            ? new Date(schedule.scheduled_date).toLocaleString('en-US')
                             : '-'}
                         </div>
                       </div>
                       <div>
-                        <div className="text-xs text-slate-400">مدت زمان</div>
-                        <div>{schedule.estimated_duration_hours} ساعت</div>
+                        <div className="text-xs text-slate-400">Duration</div>
+                        <div>{schedule.estimated_duration_hours} hours</div>
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="text-xs text-slate-400">
-                        مسئول: {schedule.assigned_to || 'نامشخص'}
+                        Assigned to: {schedule.assigned_to || 'unknown'}
                       </div>
                       <button
                         onClick={() => deleteScheduleMutation.mutate(String(schedule.id))}
                         className="text-xs text-red-300 hover:text-red-200"
                         disabled={deleteScheduleMutation.isLoading}
                       >
-                        حذف برنامه
+                        Delete Schedule
                       </button>
                     </div>
                   </div>
@@ -254,9 +254,9 @@ export default function Maintenance() {
         <div className="space-y-6">
           <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
             <div>
-              <h2 className="text-lg font-semibold text-white">ثبت هشدار جدید</h2>
+              <h2 className="text-lg font-semibold text-white">Create New Alert</h2>
               <p className="text-xs text-slate-400">
-                ثبت هشدار برای آگاهی تیم تعمیرات و برنامه‌ریزی سریع
+                Create an alert to notify the maintenance team and enable quick planning
               </p>
             </div>
             <form className="space-y-4" onSubmit={handleCreateAlert}>
@@ -265,19 +265,19 @@ export default function Maintenance() {
                   value={alertForm.rig_id}
                   onChange={(e) => setAlertForm((prev) => ({ ...prev, rig_id: e.target.value }))}
                   className="rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:border-cyan-500 focus:outline-none"
-                  placeholder="شناسه دکل"
+                  placeholder="Rig ID"
                 />
                 <input
                   value={alertForm.component}
                   onChange={(e) => setAlertForm((prev) => ({ ...prev, component: e.target.value }))}
                   className="rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:border-cyan-500 focus:outline-none"
-                  placeholder="کامپوننت"
+                  placeholder="Component"
                 />
                 <input
                   value={alertForm.alert_type}
                   onChange={(e) => setAlertForm((prev) => ({ ...prev, alert_type: e.target.value }))}
                   className="rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:border-cyan-500 focus:outline-none"
-                  placeholder="نوع هشدار"
+                  placeholder="Alert Type"
                 />
                 <select
                   value={alertForm.severity}
@@ -294,7 +294,7 @@ export default function Maintenance() {
                   value={alertForm.message}
                   onChange={(e) => setAlertForm((prev) => ({ ...prev, message: e.target.value }))}
                   className="rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:border-cyan-500 focus:outline-none"
-                  placeholder="توضیحات"
+                  placeholder="Description"
                 />
               </div>
               <button
@@ -302,16 +302,16 @@ export default function Maintenance() {
                 className="w-full h-10 rounded-md bg-red-500 hover:bg-red-400 text-white font-semibold transition disabled:opacity-60"
                 disabled={createAlertMutation.isLoading}
               >
-                {createAlertMutation.isLoading ? 'در حال ثبت...' : 'ثبت هشدار'}
+                {createAlertMutation.isLoading ? 'Creating...' : 'Create Alert'}
               </button>
               {createAlertMutation.isError && (
                 <div className="rounded-md border border-red-500/40 bg-red-900/20 px-3 py-2 text-xs text-red-200">
-                  خطا در ثبت هشدار
+                  Error creating alert
                 </div>
               )}
               {createAlertMutation.isSuccess && (
                 <div className="rounded-md border border-emerald-500/40 bg-emerald-900/20 px-3 py-2 text-xs text-emerald-200">
-                  هشدار با موفقیت ثبت شد
+                  Alert created successfully
                 </div>
               )}
             </form>
@@ -319,9 +319,9 @@ export default function Maintenance() {
 
           <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
             <div>
-              <h2 className="text-lg font-semibold text-white">برنامه‌ریزی تعمیر</h2>
+              <h2 className="text-lg font-semibold text-white">Schedule Maintenance</h2>
               <p className="text-xs text-slate-400">
-                ساخت برنامه جدید برای تیم تعمیرات پیشگیرانه
+                Create a new schedule for the preventive maintenance team
               </p>
             </div>
             <form className="space-y-4" onSubmit={handleCreateSchedule}>
@@ -330,7 +330,7 @@ export default function Maintenance() {
                   value={scheduleForm.rig_id}
                   onChange={(e) => setScheduleForm((prev) => ({ ...prev, rig_id: e.target.value }))}
                   className="rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:border-cyan-500 focus:outline-none"
-                  placeholder="شناسه دکل"
+                  placeholder="Rig ID"
                 />
                 <input
                   value={scheduleForm.component}
@@ -338,7 +338,7 @@ export default function Maintenance() {
                     setScheduleForm((prev) => ({ ...prev, component: e.target.value }))
                   }
                   className="rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:border-cyan-500 focus:outline-none"
-                  placeholder="کامپوننت"
+                  placeholder="Component"
                 />
                 <input
                   value={scheduleForm.maintenance_type}
@@ -346,7 +346,7 @@ export default function Maintenance() {
                     setScheduleForm((prev) => ({ ...prev, maintenance_type: e.target.value }))
                   }
                   className="rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:border-cyan-500 focus:outline-none"
-                  placeholder="نوع تعمیر"
+                  placeholder="Maintenance Type"
                 />
                 <input
                   type="datetime-local"
@@ -368,7 +368,7 @@ export default function Maintenance() {
                     }))
                   }
                   className="rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:border-cyan-500 focus:outline-none"
-                  placeholder="مدت زمان (ساعت)"
+                  placeholder="Duration (hours)"
                 />
                 <select
                   value={scheduleForm.priority}
@@ -399,14 +399,14 @@ export default function Maintenance() {
                     setScheduleForm((prev) => ({ ...prev, assigned_to: e.target.value }))
                   }
                   className="rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:border-cyan-500 focus:outline-none"
-                  placeholder="مسئول"
+                  placeholder="Assigned To"
                 />
                 <textarea
                   rows={3}
                   value={scheduleForm.notes}
                   onChange={(e) => setScheduleForm((prev) => ({ ...prev, notes: e.target.value }))}
                   className="rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:border-cyan-500 focus:outline-none"
-                  placeholder="توضیحات"
+                  placeholder="Description"
                 />
               </div>
               <button
@@ -414,16 +414,16 @@ export default function Maintenance() {
                 className="w-full h-10 rounded-md bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-semibold transition disabled:opacity-60"
                 disabled={createScheduleMutation.isLoading}
               >
-                {createScheduleMutation.isLoading ? 'در حال ثبت...' : 'ثبت برنامه'}
+                {createScheduleMutation.isLoading ? 'Creating...' : 'Create Schedule'}
               </button>
               {createScheduleMutation.isError && (
                 <div className="rounded-md border border-red-500/40 bg-red-900/20 px-3 py-2 text-xs text-red-200">
-                  خطا در ثبت برنامه
+                  Error creating schedule
                 </div>
               )}
               {createScheduleMutation.isSuccess && (
                 <div className="rounded-md border border-emerald-500/40 bg-emerald-900/20 px-3 py-2 text-xs text-emerald-200">
-                  برنامه با موفقیت ثبت شد
+                  Schedule created successfully
                 </div>
               )}
             </form>

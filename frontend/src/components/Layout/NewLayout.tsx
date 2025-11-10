@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { useThemeMode } from '@/context/ThemeContext'
 import { useUserRole, UserRole } from '@/context/RoleContext'
+import NotificationBadge from '@/components/Notifications/NotificationBadge'
 
 interface LayoutProps {
   children: ReactNode
@@ -43,15 +44,15 @@ const ROLE_LABEL: Record<UserRole, string> = {
 
 const menuSections: MenuSection[] = [
   {
-    title: 'پایش',
+    title: 'Monitoring',
     items: [
-      { name: 'داشبورد', path: '/dashboard', icon: LayoutDashboard, roles: ['viewer', 'operator', 'engineer', 'maintenance'] },
-      { name: 'نمایش لحظه‌ای', path: '/realtime', icon: Eye, roles: ['viewer', 'operator', 'engineer'] },
-      { name: 'داده‌های تاریخی', path: '/historical', icon: LineChart, roles: ['viewer', 'operator', 'engineer'] },
-      { name: 'پیش‌بینی', path: '/predictions', icon: Activity, roles: ['engineer'] },
-      { name: 'پایش DVR', path: '/dvr', icon: Database, roles: ['engineer', 'maintenance'] },
-      { name: 'نگهداشت', path: '/maintenance', icon: Wrench, roles: ['maintenance'] },
-      { name: 'عامل RL', path: '/display/rl', icon: Cpu, roles: ['engineer'] },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['viewer', 'operator', 'engineer', 'maintenance'] },
+      { name: 'Real-time View', path: '/realtime', icon: Eye, roles: ['viewer', 'operator', 'engineer'] },
+      { name: 'Historical Data', path: '/historical', icon: LineChart, roles: ['viewer', 'operator', 'engineer'] },
+      { name: 'Predictions', path: '/predictions', icon: Activity, roles: ['engineer'] },
+      { name: 'DVR Monitoring', path: '/dvr', icon: Database, roles: ['engineer', 'maintenance'] },
+      { name: 'Maintenance', path: '/maintenance', icon: Wrench, roles: ['maintenance'] },
+      { name: 'RL Agent', path: '/display/rl', icon: Cpu, roles: ['engineer'] },
     ],
   },
 ]
@@ -60,7 +61,7 @@ export default function NewLayout({ children }: LayoutProps) {
   const location = useLocation()
   const { mode, toggle } = useThemeMode()
   const { role, setRole } = useUserRole()
-  const [expandedSection, setExpandedSection] = useState<string | null>('پایش')
+  const [expandedSection, setExpandedSection] = useState<string | null>('Monitoring')
   const [isMobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isScrolled, setScrolled] = useState(false)
 
@@ -110,16 +111,13 @@ export default function NewLayout({ children }: LayoutProps) {
               </div>
               <div>
                 <div className="text-sm font-semibold text-slate-900 dark:text-white">i-Drill Control Room</div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">میز فرمان عملیات حفاری</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">Drilling Operations Control Room</div>
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-              <BellRing className="w-4 h-4 text-amber-500" />
-              <span>۳ اعلان جدید</span>
-            </div>
+            <NotificationBadge />
 
             <select
               value={role}
@@ -143,7 +141,7 @@ export default function NewLayout({ children }: LayoutProps) {
 
             <button className="hidden md:flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-sm text-slate-600 dark:text-slate-300">
               <LogIn className="w-4 h-4" />
-              ورود / تغییر کاربر
+              Login / Switch User
             </button>
           </div>
         </div>
@@ -157,7 +155,7 @@ export default function NewLayout({ children }: LayoutProps) {
         >
           <div className="h-full overflow-y-auto px-4 py-6 space-y-6">
             <div className="lg:hidden">
-              <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">نقش کاربر</label>
+              <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">User Role</label>
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value as UserRole)}
@@ -214,8 +212,8 @@ export default function NewLayout({ children }: LayoutProps) {
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
             {!currentRouteAllowed ? (
               <div className="rounded-2xl border border-amber-400/50 bg-amber-100/40 dark:bg-amber-400/10 px-6 py-10 text-center text-amber-700 dark:text-amber-200">
-                <h2 className="text-xl font-bold mb-2">دسترسی غیرمجاز</h2>
-                <p className="text-sm">نقش فعلی ({ROLE_LABEL[role]}) مجوز مشاهده این بخش را ندارد.</p>
+                <h2 className="text-xl font-bold mb-2">Access Denied</h2>
+                <p className="text-sm">Current role ({ROLE_LABEL[role]}) does not have permission to view this section.</p>
               </div>
             ) : (
               children

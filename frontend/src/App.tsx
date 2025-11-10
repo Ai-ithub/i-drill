@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
-import { QueryClientProvider } from 'react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './utils/queryClient'
 import NewLayout from './components/Layout/NewLayout'
 import Dashboard from './pages/Dashboard/Dashboard'
@@ -13,6 +13,7 @@ import ControlPage from './pages/Control/ControlPage'
 import RPMPage from './pages/RPM/RPMPage'
 import RLControl from './pages/RL/RLControl'
 import DVRMonitoring from './pages/DVR/DVRMonitoring'
+import Data from './pages/Data/Data'
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
           <Routes>
             <Route path="/" element={<RealTimeMonitoring />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/data" element={<Data />} />
             <Route path="/realtime" element={<RealTimeMonitoring />} />
             <Route path="/historical" element={<HistoricalData />} />
             <Route path="/predictions" element={<Predictions />} />

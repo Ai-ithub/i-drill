@@ -1,5 +1,5 @@
 import { FormEvent, useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from 'react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { dvrApi } from '@/services/api'
 import { AlertTriangle, BarChart3, CheckCircle2, Download, Filter, RefreshCcw } from 'lucide-react'
 import {
@@ -48,19 +48,19 @@ export default function DVRMonitoring() {
     limit: 200,
   }))
 
-  const statsQuery = useQuery(['dvr-stats'], () => dvrApi.getStats().then((res) => res.data), {
+  const statsQuery = useQuery({
+    queryKey: ['dvr-stats'],
+    queryFn: () => dvrApi.getStats().then((res) => res.data),
     refetchInterval: 15000,
     refetchOnWindowFocus: false,
   })
 
-  const anomalyQuery = useQuery(
-    ['dvr-anomalies', historySize],
-    () => dvrApi.getAnomalies(historySize).then((res) => res.data),
-    {
-      refetchInterval: 20000,
-      refetchOnWindowFocus: false,
-    }
-  )
+  const anomalyQuery = useQuery({
+    queryKey: ['dvr-anomalies', historySize],
+    queryFn: () => dvrApi.getAnomalies(historySize).then((res) => res.data),
+    refetchInterval: 20000,
+    refetchOnWindowFocus: false,
+  })
 
   const processMutation = useMutation((record: any) => dvrApi.processRecord(record).then((res) => res.data))
 
@@ -76,13 +76,11 @@ export default function DVRMonitoring() {
     }
   )
 
-  const historyQuery = useQuery(
-    ['dvr-history', historyParams],
-    () => dvrApi.getHistory(historyParams).then((res) => res.data),
-    {
-      keepPreviousData: true,
-    }
-  )
+  const historyQuery = useQuery({
+    queryKey: ['dvr-history', historyParams],
+    queryFn: () => dvrApi.getHistory(historyParams).then((res) => res.data),
+    placeholderData: (previousData) => previousData,
+  })
 
   const stats = statsQuery.data
   const anomaly = anomalyQuery.data
@@ -148,7 +146,7 @@ export default function DVRMonitoring() {
       const record = JSON.parse(recordJson)
       processMutation.mutate(record)
     } catch (err) {
-      alert('فرمت JSON معتبر نیست.')
+      alert('Invalid JSON format.')
     }
   }
 
@@ -157,14 +155,14 @@ export default function DVRMonitoring() {
       const record = JSON.parse(recordJson)
       evaluateMutation.mutate({ record, size: historySize })
     } catch (err) {
-      alert('فرمت JSON معتبر نیست.')
+      alert('Invalid JSON format.')
     }
   }
 
   const handleHistorySubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (new Date(historyFilters.start) >= new Date(historyFilters.end)) {
-      alert('بازه زمانی معتبر نیست')
+      alert('Invalid time range')
       return
     }
     setHistoryParams({
@@ -193,13 +191,13 @@ export default function DVRMonitoring() {
       link.click()
       URL.revokeObjectURL(url)
     } catch (error) {
-      alert('خروجی با خطا مواجه شد.')
+      alert('Export failed.')
     }
   }
 
   const handleLocalJsonExport = () => {
     if (!filteredHistory.length) {
-      alert('داده‌ای برای خروجی وجود ندارد.')
+      alert('No data available for export.')
       return
     }
     const blob = new Blob([JSON.stringify(filteredHistory, null, 2)], {
@@ -216,26 +214,26 @@ export default function DVRMonitoring() {
   return (
     <div className="space-y-6 p-6 text-slate-900 dark:text-white">
       <header className="space-y-2">
-        <h1 className="text-3xl font-bold">پایش DVR</h1>
+        <h1 className="text-3xl font-bold">DVR Monitoring</h1>
         <p className="text-slate-500 dark:text-slate-300">
-          مشاهده وضعیت پردازش داده‌ها، آمار رکوردها، نمودار آنومالی و تولید گزارش خروجی.
+          View data processing status, record statistics, anomaly charts, and generate export reports.
         </p>
       </header>
 
       <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <h2 className="text-xl font-semibold flex items-center gap-2">
-            <Filter className="w-5 h-5 text-cyan-500" /> فیلتر تاریخچه پردازش
+            <Filter className="w-5 h-5 text-cyan-500" /> Processing History Filter
           </h2>
           <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-            {historyQuery.isFetching && 'در حال بروزرسانی...'}
-            {historyQuery.isError && 'خطا در دریافت تاریخچه'}
+            {historyQuery.isFetching && 'Updating...'}
+            {historyQuery.isError && 'Error fetching history'}
           </div>
         </div>
 
         <form className="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm" onSubmit={handleHistorySubmit}>
           <div className="space-y-1">
-            <label className="block text-xs text-slate-500 dark:text-slate-300">شناسه دکل</label>
+            <label className="block text-xs text-slate-500 dark:text-slate-300">Rig ID</label>
             <input
               value={historyFilters.rigId}
               onChange={(e) => setHistoryFilters((prev) => ({ ...prev, rigId: e.target.value }))}
@@ -244,7 +242,7 @@ export default function DVRMonitoring() {
             />
           </div>
           <div className="space-y-1">
-            <label className="block text-xs text-slate-500 dark:text-slate-300">از زمان</label>
+            <label className="block text-xs text-slate-500 dark:text-slate-300">From Time</label>
             <input
               type="datetime-local"
               value={historyFilters.start}
@@ -253,7 +251,7 @@ export default function DVRMonitoring() {
             />
           </div>
           <div className="space-y-1">
-            <label className="block text-xs text-slate-500 dark:text-slate-300">تا زمان</label>
+            <label className="block text-xs text-slate-500 dark:text-slate-300">To Time</label>
             <input
               type="datetime-local"
               value={historyFilters.end}
@@ -262,19 +260,19 @@ export default function DVRMonitoring() {
             />
           </div>
           <div className="space-y-1">
-            <label className="block text-xs text-slate-500 dark:text-slate-300">وضعیت اعتبارسنجی</label>
+            <label className="block text-xs text-slate-500 dark:text-slate-300">Validation Status</label>
             <select
               value={historyFilters.validationStatus}
               onChange={(e) => setHistoryFilters((prev) => ({ ...prev, validationStatus: e.target.value }))}
               className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"
             >
-              <option value="all">همه</option>
-              <option value="valid">معتبر</option>
-              <option value="invalid">نامعتبر</option>
+              <option value="all">All</option>
+              <option value="valid">Valid</option>
+              <option value="invalid">Invalid</option>
             </select>
           </div>
           <div className="space-y-1">
-            <label className="block text-xs text-slate-500 dark:text-slate-300">جستجو در توضیحات</label>
+            <label className="block text-xs text-slate-500 dark:text-slate-300">Search in Description</label>
             <input
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -289,7 +287,7 @@ export default function DVRMonitoring() {
               checked={historyFilters.anomalyOnly}
               onChange={(e) => setHistoryFilters((prev) => ({ ...prev, anomalyOnly: e.target.checked }))}
             />
-            فقط رکوردهای آنومالی
+            Anomaly records only
           </div>
 
           <div className="flex items-center gap-2 md:col-span-5 justify-end">
@@ -318,7 +316,7 @@ export default function DVRMonitoring() {
               type="submit"
               className="inline-flex items-center gap-2 rounded-md bg-cyan-500 text-slate-900 px-4 py-2 text-sm font-semibold"
             >
-              جستجو
+              Search
             </button>
           </div>
         </form>
@@ -328,31 +326,31 @@ export default function DVRMonitoring() {
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">آخرین آمار</h2>
+              <h2 className="text-xl font-semibold">Latest Statistics</h2>
               <button
                 onClick={() => queryClient.invalidateQueries(['dvr-stats'])}
                 className="flex items-center gap-2 text-sm px-3 py-2 rounded bg-slate-700 hover:bg-slate-600"
               >
-                <RefreshCcw className="w-4 h-4" /> بروزرسانی
+                <RefreshCcw className="w-4 h-4" /> Refresh
               </button>
             </div>
 
             {stats?.success ? (
               <div className="space-y-4 text-sm">
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  <SummaryCard title="تعداد رکورد" value={stats.summary.count ?? 0} />
+                  <SummaryCard title="Record Count" value={stats.summary.count ?? 0} />
                   <SummaryCard
-                    title="تعداد دکل"
+                    title="Rig Count"
                     value={stats.summary.rig_ids?.length ?? 0}
                   />
                   <SummaryCard
-                    title="آخرین زمان"
+                    title="Latest Time"
                     value={stats.summary.latest?.timestamp ?? '---'}
                   />
                 </div>
 
                 <div className="text-xs text-slate-300">
-                  <h3 className="font-semibold text-slate-100 mb-2">میانگین پارامترهای کلیدی</h3>
+                  <h3 className="font-semibold text-slate-100 mb-2">Average Key Parameters</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {Object.entries(averages).slice(0, 8).map(([key, value]) => (
                       <div key={key} className="bg-slate-900/40 border border-slate-700 rounded px-3 py-2">
@@ -366,16 +364,16 @@ export default function DVRMonitoring() {
             ) : (
               <div className="text-sm text-amber-200 bg-amber-900/20 border border-amber-600 rounded px-4 py-3 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4" />
-                {stats?.message || 'هیچ داده‌ای دریافت نشد.'}
+                {stats?.message || 'No data received.'}
               </div>
             )}
           </div>
 
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm space-y-4">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">عکس فوری آنومالی</h2>
+              <h2 className="text-xl font-semibold">Anomaly Snapshot</h2>
               <div className="flex items-center gap-3">
-                <label className="text-xs text-slate-300">اندازه تاریخچه</label>
+                <label className="text-xs text-slate-300">History Size</label>
                 <input
                   type="number"
                   value={historySize}
@@ -400,7 +398,7 @@ export default function DVRMonitoring() {
               </div>
             ) : (
               <div className="text-sm text-amber-200 bg-amber-900/20 border border-amber-600 rounded px-4 py-3">
-                {anomaly?.message || 'اطلاعاتی در دسترس نیست.'}
+                {anomaly?.message || 'No information available.'}
               </div>
             )}
           </div>
@@ -409,9 +407,9 @@ export default function DVRMonitoring() {
         <div className="space-y-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 space-y-4 shadow-sm">
             <div>
-              <h2 className="text-xl font-semibold">پردازش رکورد</h2>
+              <h2 className="text-xl font-semibold">Process Record</h2>
               <p className="text-xs text-slate-400">
-                یک رکورد JSON وارد کنید تا جریان DVR آن را بررسی، پاک‌سازی و ذخیره کند.
+                Enter a JSON record for the DVR pipeline to validate, clean, and store it.
               </p>
             </div>
 
@@ -426,24 +424,24 @@ export default function DVRMonitoring() {
                 type="submit"
                 className="w-full flex items-center justify-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-slate-900 font-semibold rounded py-2 text-sm"
               >
-                <CheckCircle2 className="w-4 h-4" /> اجرای فرآیند
+                <CheckCircle2 className="w-4 h-4" /> Execute Process
               </button>
             </form>
 
             {processMutation.data && (
               <div className={`text-xs rounded px-3 py-2 border ${processMutation.data.success ? 'border-emerald-500/50 bg-emerald-900/20 text-emerald-200' : 'border-amber-500/50 bg-amber-900/20 text-amber-100'}`}>
-                {processMutation.data.message ?? (processMutation.data.success ? 'با موفقیت ذخیره شد.' : 'پردازش انجام نشد.')}
+                {processMutation.data.message ?? (processMutation.data.success ? 'Successfully saved.' : 'Processing failed.')}
               </div>
             )}
           </div>
 
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 space-y-3 shadow-sm">
-            <h2 className="text-xl font-semibold">تشخیص آنومالی رکورد</h2>
+            <h2 className="text-xl font-semibold">Record Anomaly Detection</h2>
             <button
               onClick={handleEvaluate}
               className="w-full flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded py-2 text-sm"
             >
-              <BarChart3 className="w-4 h-4" /> تحلیل آنومالی
+              <BarChart3 className="w-4 h-4" /> Analyze Anomaly
             </button>
 
             {evaluateMutation.data && (
@@ -460,9 +458,9 @@ export default function DVRMonitoring() {
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">روند آنومالی</h2>
+            <h2 className="text-lg font-semibold">Anomaly Trend</h2>
             <span className="text-xs text-slate-500 dark:text-slate-400">
-              آخرین {anomalyTrend.length} بازه
+              Last {anomalyTrend.length} intervals
             </span>
           </div>
           <div className="h-72">
@@ -483,7 +481,7 @@ export default function DVRMonitoring() {
         </div>
 
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm space-y-4">
-          <h2 className="text-lg font-semibold">ترکیب وضعیت اعتبارسنجی</h2>
+          <h2 className="text-lg font-semibold">Validation Status Breakdown</h2>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={statusBreakdown}>
@@ -500,38 +498,38 @@ export default function DVRMonitoring() {
 
       <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">تاریخچه پردازش</h2>
+          <h2 className="text-lg font-semibold">Processing History</h2>
           <span className="text-xs text-slate-500 dark:text-slate-400">
-            {filteredHistory.length} رکورد نمایش داده می‌شود
+            {filteredHistory.length} records displayed
           </span>
         </div>
 
         {historyQuery.isError ? (
           <div className="text-sm text-amber-200 bg-amber-900/20 border border-amber-600 rounded px-4 py-3">
-            خطا در دریافت تاریخچه
+            Error fetching history
           </div>
         ) : filteredHistory.length === 0 ? (
           <div className="text-sm text-slate-500 dark:text-slate-300 border border-dashed border-slate-300 dark:border-slate-700 rounded-lg px-6 py-10 text-center">
-            داده‌ای مطابق فیلتر انتخاب شده یافت نشد.
+            No data found matching the selected filter.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm text-slate-600 dark:text-slate-200">
               <thead className="bg-slate-100/70 dark:bg-slate-800/70">
                 <tr>
-                  <th className="px-4 py-2 text-right">زمان</th>
-                  <th className="px-4 py-2 text-right">دکل</th>
-                  <th className="px-4 py-2 text-right">اعتبارسنجی</th>
-                  <th className="px-4 py-2 text-right">آشتی</th>
-                  <th className="px-4 py-2 text-right">آنومالی</th>
-                  <th className="px-4 py-2 text-right">شرح</th>
+                  <th className="px-4 py-2 text-right">Time</th>
+                  <th className="px-4 py-2 text-right">Rig</th>
+                  <th className="px-4 py-2 text-right">Validation</th>
+                  <th className="px-4 py-2 text-right">Reconciliation</th>
+                  <th className="px-4 py-2 text-right">Anomaly</th>
+                  <th className="px-4 py-2 text-right">Description</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                 {filteredHistory.slice(0, 200).map((row: any) => (
                   <tr key={`${row.id}-${row.timestamp}`}>
                     <td className="px-4 py-2">
-                      {row.timestamp ? new Date(row.timestamp).toLocaleString('fa-IR') : '---'}
+                      {row.timestamp ? new Date(row.timestamp).toLocaleString('en-US') : '---'}
                     </td>
                     <td className="px-4 py-2">{row.rig_id ?? '---'}</td>
                     <td className="px-4 py-2">
@@ -548,7 +546,7 @@ export default function DVRMonitoring() {
                       {row.anomaly_detected ? (
                         <span className="text-rose-400">✓</span>
                       ) : (
-                        <span className="text-slate-400">ـ</span>
+                        <span className="text-slate-400">—</span>
                       )}
                     </td>
                     <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-300">

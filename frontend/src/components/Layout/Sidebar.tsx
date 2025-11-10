@@ -2,11 +2,11 @@ import { Link, useLocation } from 'react-router-dom'
 import { LayoutDashboard, Activity, Clock, TrendingUp, Wrench } from 'lucide-react'
 
 const menuItems = [
-  { path: '/', label: 'داشبورد', icon: LayoutDashboard },
-  { path: '/realtime', label: 'مانیتورینگ Real-time', icon: Activity },
-  { path: '/historical', label: 'داده‌های تاریخی', icon: Clock },
-  { path: '/predictions', label: 'پیش‌بینی‌ها', icon: TrendingUp },
-  { path: '/maintenance', label: 'تعمیر و نگهداری', icon: Wrench },
+  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/realtime', label: 'Real-time Monitoring', icon: Activity },
+  { path: '/historical', label: 'Historical Data', icon: Clock },
+  { path: '/predictions', label: 'Predictions', icon: TrendingUp },
+  { path: '/maintenance', label: 'Maintenance', icon: Wrench },
 ]
 
 export default function Sidebar() {

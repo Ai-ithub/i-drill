@@ -1,9 +1,11 @@
 import { Wifi, WifiOff } from 'lucide-react'
-import { useQuery } from 'react-query'
+import { useQuery } from '@tanstack/react-query'
 import { healthApi } from '@/services/api'
 
 export default function Header() {
-  const { data: healthData, isLoading } = useQuery('health', healthApi.check, {
+  const { data: healthData, isLoading } = useQuery({
+    queryKey: ['health'],
+    queryFn: healthApi.check,
     refetchInterval: 30000, // Check every 30 seconds
     retry: 1,
   })
@@ -32,7 +34,7 @@ export default function Header() {
           </div>
         </div>
         <div className="text-sm text-slate-400">
-          {new Date().toLocaleString('fa-IR')}
+          {new Date().toLocaleString('en-US')}
         </div>
       </div>
     </header>

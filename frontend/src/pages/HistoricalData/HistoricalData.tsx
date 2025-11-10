@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { useQuery } from 'react-query'
+import { useQuery } from '@tanstack/react-query'
 import { sensorDataApi } from '@/services/api'
 import {
   ResponsiveContainer,
@@ -70,9 +70,9 @@ export default function HistoricalData() {
     }))
   }, [selectedMetrics])
 
-  const historicalQuery = useQuery(
-    ['historical-data', queryParams],
-    () =>
+  const historicalQuery = useQuery({
+    queryKey: ['historical-data', queryParams],
+    queryFn: () =>
       sensorDataApi
         .getHistorical({
           rig_id: queryParams.rig_id,
@@ -82,14 +82,12 @@ export default function HistoricalData() {
           limit: queryParams.limit,
         })
         .then((res) => res.data),
-    {
-      keepPreviousData: true,
-    }
-  )
+    placeholderData: (previousData) => previousData,
+  })
 
-  const aggregatedQuery = useQuery(
-    ['historical-aggregated', queryParams, timeBucket],
-    () =>
+  const aggregatedQuery = useQuery({
+    queryKey: ['historical-aggregated', queryParams, timeBucket],
+    queryFn: () =>
       sensorDataApi
         .getAggregated(
           queryParams.rig_id || 'RIG_01',
@@ -98,11 +96,9 @@ export default function HistoricalData() {
           queryParams.end_time
         )
         .then((res) => res.data),
-    {
-      enabled: showAdvanced,
-      keepPreviousData: true,
-    }
-  )
+    enabled: showAdvanced,
+    placeholderData: (previousData) => previousData,
+  })
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -111,7 +107,7 @@ export default function HistoricalData() {
     const endDate = new Date(formState.end)
 
     if (startDate >= endDate) {
-      setValidationError('بازه زمانی معتبر نیست. زمان شروع باید قبل از زمان پایان باشد.')
+      setValidationError('Invalid time range. Start time must be before end time.')
       return
     }
 
@@ -229,7 +225,7 @@ export default function HistoricalData() {
 
   const handleExport = (type: 'csv' | 'json') => {
     if (!displayRecords.length) {
-      alert('داده‌ای برای خروجی وجود ندارد')
+      alert('No data available for export')
       return
     }
 
@@ -273,7 +269,7 @@ export default function HistoricalData() {
   const handleAggregatedExport = () => {
     const aggregates = aggregatedQuery.data?.data
     if (!aggregates?.length) {
-      alert('داده‌ای برای خروجی تجمعی وجود ندارد')
+      alert('No aggregated data available for export')
       return
     }
     const headers = Object.keys(aggregates[0])
@@ -304,9 +300,9 @@ export default function HistoricalData() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-white mb-2">داده‌های تاریخی</h1>
+        <h1 className="text-3xl font-bold text-white mb-2">Historical Data</h1>
         <p className="text-slate-400">
-          جستجو و بررسی داده‌های تاریخی سنسورها برای تحلیل روند و گزارش‌گیری
+          Search and analyze historical sensor data for trend analysis and reporting
         </p>
       </div>
 
@@ -316,7 +312,7 @@ export default function HistoricalData() {
       >
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           <div className="space-y-2">
-            <label className="block text-sm text-slate-400">شناسه دکل</label>
+            <label className="block text-sm text-slate-400">Rig ID</label>
             <input
               value={formState.rigId}
               onChange={(e) => setFormState((prev) => ({ ...prev, rigId: e.target.value }))}
@@ -326,7 +322,7 @@ export default function HistoricalData() {
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm text-slate-400">از زمان</label>
+            <label className="block text-sm text-slate-400">From Time</label>
             <input
               type="datetime-local"
               value={formState.start}
@@ -336,7 +332,7 @@ export default function HistoricalData() {
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm text-slate-400">تا زمان</label>
+            <label className="block text-sm text-slate-400">To Time</label>
             <input
               type="datetime-local"
               value={formState.end}
@@ -346,7 +342,7 @@ export default function HistoricalData() {
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm text-slate-400">حداکثر رکورد</label>
+            <label className="block text-sm text-slate-400">Max Records</label>
             <input
               type="number"
               min={1}
@@ -362,7 +358,7 @@ export default function HistoricalData() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="space-y-2 lg:col-span-2">
-            <label className="block text-sm text-slate-500 dark:text-slate-300">پارامترها</label>
+            <label className="block text-sm text-slate-500 dark:text-slate-300">Parameters</label>
             <div className="flex flex-wrap gap-2">
               {AVAILABLE_METRICS.map((metric) => (
                 <button
@@ -387,7 +383,7 @@ export default function HistoricalData() {
               className="w-full h-10 rounded-md bg-cyan-500 hover:bg-cyan-400 text-slate-900 font-semibold transition"
               disabled={historicalQuery.isFetching}
             >
-              {historicalQuery.isFetching ? 'در حال بازیابی...' : 'بازیابی داده'}
+              {historicalQuery.isFetching ? 'Fetching...' : 'Fetch Data'}
             </button>
           </div>
         </div>
@@ -398,18 +394,18 @@ export default function HistoricalData() {
             onClick={() => setShowAdvanced((prev) => !prev)}
             className="inline-flex items-center gap-2 rounded-full border border-slate-300 dark:border-slate-700 px-3 py-1.5"
           >
-            <Filter className="w-3.5 h-3.5" /> تنظیمات پیشرفته
+            <Filter className="w-3.5 h-3.5" /> Advanced Settings
           </button>
           <div className="flex items-center gap-2">
-            <label>وضعیت رکورد:</label>
+            <label>Record Status:</label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
               className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs"
             >
-              <option value="all">همه</option>
-              <option value="normal">عادی</option>
-              <option value="warning">غیرعادی</option>
+              <option value="all">All</option>
+              <option value="normal">Normal</option>
+              <option value="warning">Warning</option>
             </select>
           </div>
 
@@ -419,7 +415,7 @@ export default function HistoricalData() {
               onClick={() => handleExport('csv')}
               className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 px-3 py-1.5"
             >
-              <Download className="w-3.5 h-3.5" /> خروجی CSV
+              <Download className="w-3.5 h-3.5" /> Export CSV
             </button>
             <button
               type="button"
@@ -434,7 +430,7 @@ export default function HistoricalData() {
                 onClick={handleAggregatedExport}
                 className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 px-3 py-1.5"
               >
-                خروجی تجمعی
+                Export Aggregated
               </button>
             )}
           </div>
@@ -443,7 +439,7 @@ export default function HistoricalData() {
         {showAdvanced && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-500 dark:text-slate-300">
             <div className="space-y-1">
-              <label className="block">بازه تجمع (ثانیه)</label>
+              <label className="block">Aggregation Interval (seconds)</label>
               <input
                 type="number"
                 min={60}
@@ -454,48 +450,48 @@ export default function HistoricalData() {
               />
             </div>
             <div className="space-y-1">
-              <label className="block">پارامترهای سفارشی</label>
+              <label className="block">Custom Parameters</label>
               <input
                 value={formState.parameters}
                 onChange={(e) => setFormState((prev) => ({ ...prev, parameters: e.target.value }))}
                 placeholder="depth,wob,rpm"
                 className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1"
               />
-              <p className="text-[10px] text-slate-400">در صورت نیاز به ستون‌های خاص از کوئری اصلی استفاده کنید.</p>
+              <p className="text-[10px] text-slate-400">Use the main query if you need specific columns.</p>
             </div>
             <div className="space-y-1">
-              <label className="block">فیلتر محدوده</label>
+              <label className="block">Range Filter</label>
               <div className="grid grid-cols-2 gap-2">
                 <input
                   type="number"
-                  placeholder="حداقل عمق"
+                  placeholder="Min Depth"
                   value={valueFilters.depthMin}
                   onChange={(e) => handleRangeChange('depthMin', e.target.value)}
                   className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1"
                 />
                 <input
                   type="number"
-                  placeholder="حداکثر عمق"
+                  placeholder="Max Depth"
                   value={valueFilters.depthMax}
                   onChange={(e) => handleRangeChange('depthMax', e.target.value)}
                   className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1"
                 />
                 <input
                   type="number"
-                  placeholder="حداقل WOB"
+                  placeholder="Min WOB"
                   value={valueFilters.wobMin}
                   onChange={(e) => handleRangeChange('wobMin', e.target.value)}
                   className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1"
                 />
                 <input
                   type="number"
-                  placeholder="حداکثر WOB"
+                  placeholder="Max WOB"
                   value={valueFilters.wobMax}
                   onChange={(e) => handleRangeChange('wobMax', e.target.value)}
                   className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1"
                 />
               </div>
-              <p className="text-[10px] text-slate-400">فیلترها قبل از نمایش جدول و خروجی اعمال می‌شوند.</p>
+              <p className="text-[10px] text-slate-400">Filters are applied before displaying the table and export.</p>
             </div>
           </div>
         )}
@@ -510,9 +506,9 @@ export default function HistoricalData() {
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 space-y-6 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-xl font-semibold text-white">نتایج</h2>
+            <h2 className="text-xl font-semibold text-white">Results</h2>
             <p className="text-sm text-slate-500 dark:text-slate-300">
-              {historicalQuery.isFetching ? 'در حال بارگذاری...' : `تعداد رکورد: ${displayRecords.length}`}
+              {historicalQuery.isFetching ? 'Loading...' : `Record Count: ${displayRecords.length}`}
             </p>
           </div>
           {historicalQuery.isFetching && <Loader2 className="w-5 h-5 animate-spin text-cyan-400" />}
@@ -521,29 +517,29 @@ export default function HistoricalData() {
         {summary && (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
             <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400 mb-1">تعداد رکورد</div>
+              <div className="text-xs text-slate-400 mb-1">Record Count</div>
               <div className="text-2xl font-mono text-white">{summary.count}</div>
             </div>
             <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400 mb-1">میانگین عمق</div>
+              <div className="text-xs text-slate-400 mb-1">Average Depth</div>
               <div className="text-2xl font-mono text-cyan-400">
                 {summary.avgDepth.toFixed(1)} ft
               </div>
             </div>
             <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400 mb-1">میانگین WOB</div>
+              <div className="text-xs text-slate-400 mb-1">Average WOB</div>
               <div className="text-2xl font-mono text-cyan-400">
                 {summary.avgWob.toFixed(0)} lbs
               </div>
             </div>
             <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400 mb-1">میانگین RPM</div>
+              <div className="text-xs text-slate-400 mb-1">Average RPM</div>
               <div className="text-2xl font-mono text-cyan-400">
                 {summary.avgRpm.toFixed(0)}
               </div>
             </div>
             <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400 mb-1">میانگین ROP</div>
+              <div className="text-xs text-slate-400 mb-1">Average ROP</div>
               <div className="text-2xl font-mono text-cyan-400">
                 {summary.avgRop.toFixed(2)} ft/hr
               </div>
@@ -553,9 +549,9 @@ export default function HistoricalData() {
 
         <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-100/70 dark:bg-slate-900/60 p-4">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-200">نمودار مقایسه‌ای</h3>
+            <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-200">Comparison Chart</h3>
             {aggregatedQuery.isFetching && (
-              <span className="text-xs text-slate-400">در حال محاسبه آمار تجمعی...</span>
+              <span className="text-xs text-slate-400">Calculating aggregated statistics...</span>
             )}
           </div>
           <div className="h-72">
@@ -584,32 +580,32 @@ export default function HistoricalData() {
 
         {historicalQuery.isError ? (
           <div className="rounded-md border border-red-500/40 bg-red-900/20 px-4 py-4 text-red-300">
-            خطا در واکشی داده‌ها: {(historicalQuery.error as Error)?.message ?? 'نامشخص'}
+            Error fetching data: {(historicalQuery.error as Error)?.message ?? 'unknown'}
           </div>
         ) : displayRecords.length === 0 && !historicalQuery.isFetching ? (
           <div className="rounded-md border border-slate-700 bg-slate-900/40 px-4 py-10 text-center text-slate-300">
-            هیچ داده‌ای برای بازه انتخاب شده یافت نشد.
+            No data found for the selected time range.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-700 text-left">
               <thead>
                 <tr className="text-slate-300 text-sm uppercase">
-                  <th className="px-4 py-3">زمان</th>
-                  <th className="px-4 py-3">عمق</th>
+                  <th className="px-4 py-3">Time</th>
+                  <th className="px-4 py-3">Depth</th>
                   <th className="px-4 py-3">WOB</th>
                   <th className="px-4 py-3">RPM</th>
                   <th className="px-4 py-3">Torque</th>
                   <th className="px-4 py-3">ROP</th>
                   <th className="px-4 py-3">Pressure</th>
-                  <th className="px-4 py-3">وضعیت</th>
+                  <th className="px-4 py-3">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800 text-sm text-slate-200 font-mono">
                 {displayRecords.map((row: any) => (
                   <tr key={`${row.id}-${row.timestamp}`}>
                     <td className="px-4 py-2">
-                      {row.timestamp ? new Date(row.timestamp).toLocaleString('fa-IR') : '-'}
+                      {row.timestamp ? new Date(row.timestamp).toLocaleString('en-US') : '-'}
                     </td>
                     <td className="px-4 py-2">{row.depth?.toFixed?.(2) ?? row.depth ?? '-'}</td>
                     <td className="px-4 py-2">{row.wob?.toFixed?.(1) ?? row.wob ?? '-'}</td>
@@ -627,7 +623,7 @@ export default function HistoricalData() {
                             : 'bg-amber-500/10 text-amber-300 border border-amber-500/40'
                         }`}
                       >
-                        {row.status ?? 'نامشخص'}
+                        {row.status ?? 'unknown'}
                       </span>
                     </td>
                   </tr>
