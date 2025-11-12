@@ -32,3 +32,6 @@ seaborn==0.13.2
 # --- Optional evaluation helpers ---
 lpips==0.1.4
 
+# --- MLOps & Model Management ---
+mlflow==2.14.1
+
