@@ -2,7 +2,7 @@
 FastAPI Application - Main Entry Point
 i-Drill Backend API Server
 """
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
@@ -37,12 +37,22 @@ from api.routes import (
     config as config_routes,
     auth,
     rl,
-    dvr
+    dvr,
+    backup
 )
 
 # Import services
 from services.data_bridge import DataBridge
 from services.auth_service import ensure_default_admin_account, SECRET_KEY
+
+# Import error handlers
+from api.exceptions import IDrillException
+from api.error_handlers import (
+    idrill_exception_handler,
+    validation_exception_handler,
+    general_exception_handler,
+    http_exception_handler
+)
 
 try:
     from slowapi import Limiter
@@ -127,14 +137,51 @@ async def lifespan(app: FastAPI):
         logger.error(f"⚠️ Data Bridge startup failed: {e}")
         app.state.data_bridge = None
     
+    # Start ML retraining service if enabled
+    try:
+        from services.ml_retraining_service import ml_retraining_service
+        if ml_retraining_service.enabled:
+            ml_retraining_service.start()
+            app.state.ml_retraining_service = ml_retraining_service
+            logger.info("✅ ML retraining service started")
+    except Exception as e:
+        logger.warning(f"ML retraining service not available: {e}")
+    
+    # Start backup service if enabled
+    try:
+        from services.backup_service import backup_service
+        if backup_service.enabled:
+            backup_service.start()
+            app.state.backup_service = backup_service
+            logger.info("✅ Backup service started")
+    except Exception as e:
+        logger.warning(f"Backup service not available: {e}")
+    
     logger.info("✨ i-Drill Backend API Server is ready!")
     logger.info("📚 API Documentation: http://localhost:8001/docs")
     logger.info("🔍 Health Check: http://localhost:8001/health")
+    logger.info("📊 Metrics: http://localhost:8001/metrics")
     
     yield  # Server is running
     
     # ===== SHUTDOWN =====
     logger.info("🛑 Shutting down i-Drill Backend API Server...")
+    
+    # Stop ML retraining service
+    if hasattr(app.state, 'ml_retraining_service') and app.state.ml_retraining_service:
+        try:
+            app.state.ml_retraining_service.stop()
+            logger.info("✅ ML retraining service stopped")
+        except Exception as e:
+            logger.error(f"Error stopping ML retraining service: {e}")
+    
+    # Stop backup service
+    if hasattr(app.state, 'backup_service') and app.state.backup_service:
+        try:
+            app.state.backup_service.stop()
+            logger.info("✅ Backup service stopped")
+        except Exception as e:
+            logger.error(f"Error stopping backup service: {e}")
     
     # Stop Data Bridge
     if hasattr(app.state, 'data_bridge') and app.state.data_bridge:
@@ -159,12 +206,68 @@ async def lifespan(app: FastAPI):
 # Create FastAPI application
 app = FastAPI(
     title="i-Drill API",
-    description="Intelligent Drilling Rig Automation System API",
+    description="""
+    ## Intelligent Drilling Rig Automation System API
+    
+    Comprehensive API for real-time drilling operations monitoring, AI-driven optimization, and predictive maintenance.
+    
+    ### Features
+    
+    - 🎛️ **Real-Time Monitoring** - Live sensor data streaming with WebSocket support
+    - 🤖 **AI Predictions** - RUL prediction and anomaly detection using ML models
+    - 🔧 **Predictive Maintenance** - Maintenance alerts and scheduling
+    - 🎮 **Reinforcement Learning** - Automated drilling parameter optimization
+    - 📊 **Data Validation & Reconciliation** - DVR system for data quality
+    - 🔐 **Authentication** - JWT-based authentication with RBAC
+    
+    ### Authentication
+    
+    Most endpoints require authentication. Use `/api/v1/auth/login` to obtain a JWT token.
+    
+    ### Error Handling
+    
+    All errors follow a consistent format:
+    ```json
+    {
+        "success": false,
+        "error": {
+            "code": "ERROR_CODE",
+            "message": "Human-readable error message",
+            "details": {}
+        },
+        "trace_id": "uuid",
+        "timestamp": "ISO8601",
+        "path": "/api/v1/endpoint"
+    }
+    ```
+    
+    ### Rate Limiting
+    
+    API requests are rate-limited. Check response headers for rate limit information.
+    """,
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
-    lifespan=lifespan
+    lifespan=lifespan,
+    contact={
+        "name": "i-Drill Support",
+        "url": "https://github.com/Ai-ithub/i-drill",
+    },
+    license_info={
+        "name": "MIT License",
+        "url": "https://opensource.org/licenses/MIT",
+    },
+    servers=[
+        {
+            "url": "http://localhost:8001",
+            "description": "Development server"
+        },
+        {
+            "url": "https://api.i-drill.example.com",
+            "description": "Production server"
+        }
+    ]
 )
 
 
@@ -201,12 +304,39 @@ if os.getenv("FORCE_HTTPS", "false").lower() == "true":
 # Compression Middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+# Import security utilities
+from utils.security import get_rate_limit_config
+
+# Rate Limiting Configuration
+rate_limit_config = get_rate_limit_config()
 limiter = None
-if RATE_LIMITING_AVAILABLE and os.getenv("ENABLE_RATE_LIMIT", "true").lower() != "false":
-    default_limit = os.getenv("RATE_LIMIT_DEFAULT", "100/minute")
-    limiter = Limiter(key_func=get_remote_address, default_limits=[default_limit])  # type: ignore[arg-type]
+
+if RATE_LIMITING_AVAILABLE and rate_limit_config["enabled"]:
+    from slowapi import Limiter
+    from slowapi.util import get_remote_address
+    from slowapi.middleware import SlowAPIMiddleware
+    
+    # Use Redis for rate limiting in production if available
+    storage_url = rate_limit_config["storage_url"]
+    if storage_url == "memory://" and os.getenv("APP_ENV", "development").lower() == "production":
+        # Try to use Redis for rate limiting in production
+        redis_host = os.getenv("REDIS_HOST", "localhost")
+        redis_port = os.getenv("REDIS_PORT", "6379")
+        storage_url = f"redis://{redis_host}:{redis_port}"
+        logger.info(f"Using Redis for rate limiting: {storage_url}")
+    
+    default_limit = rate_limit_config["limits"]["default"]
+    limiter = Limiter(
+        key_func=get_remote_address,
+        default_limits=[default_limit],
+        storage_uri=storage_url
+    )  # type: ignore[arg-type]
     app.state.limiter = limiter
+    app.state.rate_limit_config = rate_limit_config
     app.add_middleware(SlowAPIMiddleware)  # type: ignore[arg-type]
+    logger.info(f"✅ Rate limiting enabled with default limit: {default_limit}")
+else:
+    logger.warning("⚠️ Rate limiting is disabled")
 
 
 # ==================== Request/Response Middleware ====================
@@ -255,42 +385,11 @@ if RATE_LIMITING_AVAILABLE:
 
 # ==================== Exception Handlers ====================
 
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Handle validation errors"""
-    logger.warning(f"Validation error on {request.url.path}: {exc.errors()}")
-    
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={
-            "success": False,
-            "error": "Validation Error",
-            "detail": exc.errors(),
-            "timestamp": datetime.now().isoformat()
-        }
-    )
-
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    """Handle all other exceptions"""
-    trace_id = str(uuid4())
-    logger.error(
-        f"Unhandled exception on {request.url.path}: {str(exc)}",
-        exc_info=True,
-        extra={"trace_id": trace_id},
-    )
-    
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "success": False,
-            "error": "Internal Server Error",
-            "message": "An unexpected error occurred. Please try again later.",
-            "trace_id": trace_id,
-            "timestamp": datetime.now().isoformat()
-        }
-    )
+# Register custom exception handlers
+app.add_exception_handler(IDrillException, idrill_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(Exception, general_exception_handler)
 
 
 # ==================== API Routes ====================
@@ -350,6 +449,12 @@ app.include_router(
     tags=["DVR"]
 )
 
+app.include_router(
+    backup.router,
+    prefix="/api/v1",
+    tags=["Backup"]
+)
+
 
 # ==================== Root Endpoints ====================
 
@@ -380,6 +485,13 @@ async def health_check():
         },
         "version": "1.0.0"
     }
+
+
+@app.get("/metrics", tags=["Monitoring"])
+async def metrics():
+    """Prometheus metrics endpoint"""
+    from utils.prometheus_metrics import metrics_response
+    return metrics_response()
 
 
 # ==================== Main ====================
