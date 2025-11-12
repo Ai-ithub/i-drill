@@ -11,6 +11,10 @@ services:
         condition: service_started
       zookeeper:
         condition: service_started
+      redis:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
     ports:
       - "8001:8001"
     working_dir: /src/backend
@@ -21,8 +25,14 @@ services:
       - SECRET_KEY=dev-secret-change-me
       - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5175
       - RATE_LIMIT_DEFAULT=200/minute
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - MLFLOW_EXPERIMENT_NAME=i-drill-models
     volumes:
       - ./src:/src
+      - mlflow_artifacts:/mlflow/artifacts
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
@@ -80,14 +90,53 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: i-drill-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.14.1
+    container_name: i-drill-mlflow
+    ports:
+      - "5000:5000"
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=postgresql://drill_user:drill_password@postgres:5432/drilling_db
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlflow/artifacts
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://drill_user:drill_password@postgres:5432/drilling_db
+      --default-artifact-root /mlflow/artifacts
+      --host 0.0.0.0
+      --port 5000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   producer:
     build: .
     container_name: i-drill-producer
     working_dir: /src/backend
-    command: python producer.py
+    command: python Producer.py
     environment:
       - PYTHONPATH=/src/backend
-      - KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     volumes:
       - ./src:/src
     depends_on:
@@ -101,10 +150,10 @@ services:
     build: .
     container_name: i-drill-consumer
     working_dir: /src/backend
-    command: python consumer.py
+    command: python Consumer.py
     environment:
       - PYTHONPATH=/src/backend
-      - KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     volumes:
       - ./src:/src
     depends_on:
@@ -118,4 +167,8 @@ volumes:
   postgres_data:
     driver: local
   influxdb_data:
+    driver: local
+  redis_data:
+    driver: local
+  mlflow_artifacts:
     driver: local
