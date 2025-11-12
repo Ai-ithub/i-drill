@@ -22,10 +22,52 @@ router = APIRouter(prefix="/sensor-data", tags=["sensor-data"])
 data_service = DataService()
 
 
-@router.get("/realtime", response_model=SensorDataResponse)
+@router.get(
+    "/realtime",
+    response_model=SensorDataResponse,
+    summary="Get real-time sensor data",
+    description="""
+    Retrieve the latest real-time sensor data from the database.
+    
+    This endpoint returns the most recent sensor readings, optionally filtered by rig ID.
+    Data is sorted by timestamp in descending order (newest first).
+    
+    **Use Cases:**
+    - Dashboard real-time monitoring
+    - Latest sensor readings display
+    - Quick status checks
+    
+    **Rate Limits:** 100 requests per minute
+    """,
+    responses={
+        200: {
+            "description": "Successfully retrieved sensor data",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "count": 10,
+                        "data": [
+                            {
+                                "rig_id": "RIG_01",
+                                "timestamp": "2025-01-15T10:30:00Z",
+                                "depth": 5000.0,
+                                "wob": 1500.0,
+                                "rpm": 80.0,
+                                "torque": 400.0
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        400: {"description": "Invalid request parameters"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_realtime_data(
-    rig_id: Optional[str] = Query(None, description="Filter by rig ID"),
-    limit: int = Query(100, le=10000, ge=1, description="Number of records to return")
+    rig_id: Optional[str] = Query(None, description="Filter by rig ID (e.g., 'RIG_01')", examples=["RIG_01"]),
+    limit: int = Query(100, le=10000, ge=1, description="Number of records to return (max 10000)", examples=[100])
 ):
     """
     Get latest real-time sensor data
