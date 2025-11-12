@@ -18,13 +18,13 @@ logger = logging.getLogger(__name__)
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# Import security utilities
+from utils.security import get_or_generate_secret_key
+
 # JWT Configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production-09876543210")
+SECRET_KEY = get_or_generate_secret_key()
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours
-
-if SECRET_KEY.startswith("your-secret-key"):
-    logger.warning("SECRET_KEY is using the default value. Please set a secure SECRET_KEY in production.")
 
 
 class AuthService:
