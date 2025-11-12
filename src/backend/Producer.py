@@ -2,6 +2,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import random
 import json
+import os
 from time import sleep
 from confluent_kafka import Producer
 import logging
@@ -17,24 +18,34 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- Load Kafka Configuration ---
-kafka_config = config_loader.get_kafka_config()
-producer_config = kafka_config.get('producer', {})
+# Use environment variable if available, otherwise use config_loader
+KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS')
+if not KAFKA_BOOTSTRAP_SERVERS:
+    try:
+        kafka_config = config_loader.get_kafka_config()
+        KAFKA_BOOTSTRAP_SERVERS = kafka_config.get('bootstrap_servers', 'localhost:9092')
+        producer_config = kafka_config.get('producer', {})
+        topic = kafka_config.get('topics', {}).get('sensor_stream', 'rig.sensor.stream')
+    except Exception as e:
+        logger.warning(f"Failed to load Kafka config: {e}. Using defaults...")
+        KAFKA_BOOTSTRAP_SERVERS = 'localhost:9092'
+        producer_config = {}
+        topic = 'rig.sensor.stream'
+else:
+    try:
+        kafka_config = config_loader.get_kafka_config()
+        producer_config = kafka_config.get('producer', {})
+        topic = kafka_config.get('topics', {}).get('sensor_stream', 'rig.sensor.stream')
+    except Exception as e:
+        logger.warning(f"Failed to load Kafka config: {e}. Using defaults...")
+        producer_config = {}
+        topic = 'rig.sensor.stream'
 
-producer = Producer({
-    'bootstrap.servers': kafka_config.get('bootstrap_servers', 'localhost:9092'),
-    'client.id': producer_config.get('client_id', 'rig-stream-generator'),
-    'acks': producer_config.get('acks', 'all'),
-    'retries': producer_config.get('retries', 3),
-    'batch.size': producer_config.get('batch_size', 16384),
-    'linger.ms': producer_config.get('linger_ms', 10)
-})
-
-topic = kafka_config.get('topics', {}).get('sensor_stream', 'rig.sensor.stream')
-
+logger.info(f"Kafka bootstrap servers: {KAFKA_BOOTSTRAP_SERVERS}")
 logger.info(f"Producer initialized with topic: {topic}")
+
 # Kafka configuration
-KAFKA_BROKER = 'localhost:29092'  # Change to your Kafka broker address
-TOPIC_NAME = 'oil_rig_sensor_data'
+TOPIC_NAME = topic
 PRODUCE_FREQUENCY = 1  # seconds between messages
 
 # Data generation configuration
@@ -69,7 +80,14 @@ def delivery_report(err, msg):
 
 def create_producer():
     """Create and return a Confluent Kafka producer"""
-    return Producer({'bootstrap.servers': KAFKA_BROKER})
+    return Producer({
+        'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS,
+        'client.id': producer_config.get('client_id', 'rig-stream-generator'),
+        'acks': producer_config.get('acks', 'all'),
+        'retries': producer_config.get('retries', 3),
+        'batch.size': producer_config.get('batch_size', 16384),
+        'linger.ms': producer_config.get('linger_ms', 10)
+    })
 
 
 def generate_sensor_data(device_id, timestamp):

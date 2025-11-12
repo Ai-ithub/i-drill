@@ -1,9 +1,14 @@
 from confluent_kafka import Consumer, KafkaException
 from src.processing.dvr import insert_message, get_history_for_anomaly, flag_anomaly
 import json
+import os
 import logging
 from config_loader import config_loader
 from processing.dvr_controller import process_data
+from datetime import datetime
+import pandas as pd
+from collections import defaultdict
+import time
 
 # --- Setup logging ---
 logging_config = config_loader.get_logging_config()
@@ -15,44 +20,56 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- Load Kafka Configuration ---
-kafka_config = config_loader.get_kafka_config()
-consumer_config = kafka_config.get('consumer', {})
+# Use environment variable if available, otherwise use config_loader
+KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS')
+if not KAFKA_BOOTSTRAP_SERVERS:
+    try:
+        kafka_config = config_loader.get_kafka_config()
+        KAFKA_BOOTSTRAP_SERVERS = kafka_config.get('bootstrap_servers', 'localhost:9092')
+        consumer_config = kafka_config.get('consumer', {})
+        topic = kafka_config.get('topics', {}).get('sensor_stream', 'rig.sensor.stream')
+    except Exception as e:
+        logger.warning(f"Failed to load Kafka config: {e}. Using defaults...")
+        KAFKA_BOOTSTRAP_SERVERS = 'localhost:9092'
+        consumer_config = {}
+        topic = 'rig.sensor.stream'
+else:
+    try:
+        kafka_config = config_loader.get_kafka_config()
+        consumer_config = kafka_config.get('consumer', {})
+        topic = kafka_config.get('topics', {}).get('sensor_stream', 'rig.sensor.stream')
+    except Exception as e:
+        logger.warning(f"Failed to load Kafka config: {e}. Using defaults...")
+        consumer_config = {}
+        topic = 'rig.sensor.stream'
 
-conf = {
-    'bootstrap.servers': kafka_config.get('bootstrap_servers', 'localhost:9092'),
-    'group.id': consumer_config.get('group_id', 'rig-consumer-group'),
-    'auto.offset.reset': consumer_config.get('auto_offset_reset', 'earliest'),
-    'enable.auto.commit': consumer_config.get('enable_auto_commit', True),
-    'auto.commit.interval.ms': consumer_config.get('auto_commit_interval_ms', 1000)
-}
-
-topic = kafka_config.get('topics', {}).get('sensor_stream', 'rig.sensor.stream')
-from datetime import datetime
-import pandas as pd
-from collections import defaultdict
-import time
+logger.info(f"Kafka bootstrap servers: {KAFKA_BOOTSTRAP_SERVERS}")
+logger.info(f"Consumer initialized with topic: {topic}")
 
 # Kafka configuration
-KAFKA_BROKER = 'localhost:29092'
-TOPIC_NAME = 'oil_rig_sensor_data'
-CONSUMER_GROUP = 'oil_rig_analytics'
+TOPIC_NAME = topic
+CONSUMER_GROUP = consumer_config.get('group_id', 'rig-consumer-group')
 
 def create_consumer():
     """Create and return a Confluent Kafka consumer with JSON deserializer"""
     consumer_conf = {
-        'bootstrap.servers': KAFKA_BROKER,
+        'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS,
         'group.id': CONSUMER_GROUP,
-        'auto.offset.reset': 'latest',   # Start from latest messages
-        'enable.auto.commit': True
+        'auto.offset.reset': consumer_config.get('auto_offset_reset', 'earliest'),
+        'enable.auto.commit': consumer_config.get('enable_auto_commit', True),
+        'auto.commit.interval.ms': consumer_config.get('auto_commit_interval_ms', 1000)
     }
     consumer = Consumer(consumer_conf)
-    consumer.subscribe(["oil_rig_sensor_data"])
+    consumer.subscribe([TOPIC_NAME])
     return consumer
 
 
 logger.info(f"Consumer initialized with topic: {topic}")
 
 print(f"📥 Listening to Kafka topic '{topic}' for RIG sensor data... (Press Ctrl+C to stop)")
+
+# Initialize consumer
+consumer = create_consumer()
 
 try:
     while True:
