@@ -1,101 +1,260 @@
-# .github/workflows/ci.yml
-
-name: CI
+name: CI Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop, master ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop, master ]
+
+env:
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '18'
 
 jobs:
-  backend-tests:
+  backend-lint:
+    name: Backend Linting
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
-
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-
-      - name: Install backend dependencies
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install -r src/backend/requirements_backend.txt
-          pip install -r src/backend/requirements_test.txt
+          python -m pip install --upgrade pip
+          pip install black isort mypy
+          pip install -r requirements/backend.txt
+          pip install -r requirements/ml.txt
+          pip install -r requirements/dev.txt
+      
+      - name: Run Black (code formatter check)
+        run: |
+          black --check --diff src/
+      
+      - name: Run isort (import sorter check)
+        run: |
+          isort --check-only --diff src/
+      
+      - name: Run Ruff (linter)
+        run: |
+          ruff check src/ --output-format=github
 
-      - name: Run backend tests
-        run: pytest tests
-
-  frontend-tests:
+  backend-test:
+    name: Backend Tests
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: drilling_db
+          POSTGRES_USER: drill_user
+          POSTGRES_PASSWORD: drill_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: Install frontend dependencies
-        run: |
-          cd frontend
-          npm ci
-
-      - name: Run frontend smoke tests
-        run: |
-          cd frontend
-          npm run test -- --run
-
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-
-      - name: Run backend lint (ruff)
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install ruff
-          ruff src/backend
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+          python -m pip install --upgrade pip
+          pip install -r requirements/backend.txt
+          pip install -r requirements/ml.txt
+          pip install -r requirements/dev.txt
+      
+      - name: Set environment variables
+        run: |
+          echo "DATABASE_URL=postgresql://drill_user:drill_password@localhost:5432/drilling_db" >> $GITHUB_ENV
+          echo "REDIS_HOST=localhost" >> $GITHUB_ENV
+          echo "REDIS_PORT=6379" >> $GITHUB_ENV
+          echo "KAFKA_BOOTSTRAP_SERVERS=localhost:9092" >> $GITHUB_ENV
+          echo "SECRET_KEY=test-secret-key" >> $GITHUB_ENV
+      
+      - name: Run tests with pytest
+        run: |
+          pytest tests/ -v --cov=src --cov-report=xml --cov-report=html
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
         with:
-          node-version: '18'
+          file: ./coverage.xml
+          flags: backend
+          name: backend-coverage
+          fail_ci_if_error: false
 
-      - name: Run frontend lint
-        run: |
-          cd frontend
-          npm ci
-          npm run lint
-
-  build:
+  frontend-lint:
+    name: Frontend Linting
     runs-on: ubuntu-latest
-    needs: [backend-tests, frontend-tests, lint]
+    defaults:
+      run:
+        working-directory: ./i-drill/frontend
+    
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
-
+      
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ./i-drill/frontend/package-lock.json
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run ESLint
+        run: npm run lint
 
-      - name: Install frontend dependencies
-        run: |
-          cd frontend
-          npm ci
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./i-drill/frontend
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ./i-drill/frontend/package-lock.json
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run tests
+        run: npm test
 
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./i-drill/frontend
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ./i-drill/frontend/package-lock.json
+      
+      - name: Install dependencies
+        run: npm ci
+      
       - name: Build frontend
+        run: npm run build
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: i-drill/frontend/dist
+          retention-days: 7
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-build]
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./i-drill
+          push: false
+          tags: i-drill:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install safety
         run: |
-          cd frontend
-          npm run build
+          pip install safety
+      
+      - name: Run safety check
+        run: |
+          safety check --file requirements/backend.txt || true
+          safety check --file requirements/ml.txt || true
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'

@@ -1,0 +1,63 @@
+name: Docker Compose Integration Tests
+
+on:
+  push:
+    branches: [ main, develop, master ]
+  pull_request:
+    branches: [ main, develop, master ]
+  workflow_dispatch:
+
+jobs:
+  docker-compose-test:
+    name: Docker Compose Integration Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Compose
+        run: |
+          docker compose version
+      
+      - name: Start services
+        run: |
+          docker compose up -d postgres redis kafka zookeeper mlflow
+          sleep 10
+      
+      - name: Wait for services to be ready
+        run: |
+          timeout 60 bash -c 'until docker compose exec -T postgres pg_isready -U drill_user; do sleep 2; done'
+          timeout 60 bash -c 'until docker compose exec -T redis redis-cli ping; do sleep 2; done'
+          timeout 60 bash -c 'until docker compose exec -T kafka kafka-broker-api-versions --bootstrap-server localhost:9092; do sleep 2; done'
+      
+      - name: Run health checks
+        run: |
+          docker compose ps
+          docker compose logs postgres --tail=20
+          docker compose logs redis --tail=20
+          docker compose logs kafka --tail=20
+          docker compose logs mlflow --tail=20
+      
+      - name: Test service connectivity
+        run: |
+          # Test PostgreSQL
+          docker compose exec -T postgres psql -U drill_user -d drilling_db -c "SELECT 1;" || exit 1
+          
+          # Test Redis
+          docker compose exec -T redis redis-cli ping || exit 1
+          
+          # Test Kafka
+          docker compose exec -T kafka kafka-topics --bootstrap-server localhost:9092 --list || exit 1
+          
+          # Test MLflow
+          curl -f http://localhost:5000/health || exit 1
+      
+      - name: Stop services
+        if: always()
+        run: |
+          docker compose down -v
+
