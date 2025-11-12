@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './utils/queryClient'
+import { I18nProvider } from './i18n'
 import NewLayout from './components/Layout/NewLayout'
 import Dashboard from './pages/Dashboard/Dashboard'
 import RealTimeMonitoring from './pages/RealTimeMonitoring/RealTimeMonitoring'
@@ -17,10 +18,11 @@ import Data from './pages/Data/Data'
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <Router>
-        <NewLayout>
-          <Routes>
+    <I18nProvider>
+      <QueryClientProvider client={queryClient}>
+        <Router>
+          <NewLayout>
+            <Routes>
             <Route path="/" element={<RealTimeMonitoring />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/data" element={<Data />} />
@@ -34,10 +36,11 @@ function App() {
             <Route path="/display/rpm" element={<RPMPage />} />
             <Route path="/display/rl" element={<RLControl />} />
             <Route path="/dvr" element={<DVRMonitoring />} />
-          </Routes>
-        </NewLayout>
-      </Router>
-    </QueryClientProvider>
+            </Routes>
+          </NewLayout>
+        </Router>
+      </QueryClientProvider>
+    </I18nProvider>
   )
 }
 
