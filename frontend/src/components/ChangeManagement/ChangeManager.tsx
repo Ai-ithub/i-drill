@@ -35,21 +35,62 @@ export function useChangeManager(rigId: string) {
 
   // Load changes from localStorage on mount
   useEffect(() => {
-    const saved = localStorage.getItem(`changes-${rigId}`)
-    if (saved) {
-      try {
-        setChanges(JSON.parse(saved))
-      } catch (e) {
-        // Ignore parse errors
+    const loadChanges = () => {
+      const saved = localStorage.getItem(`changes-${rigId}`)
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved)
+          setChanges(Array.isArray(parsed) ? parsed : [])
+        } catch (e) {
+          // Ignore parse errors
+          console.error('Error parsing changes from localStorage:', e)
+        }
       }
+    }
+
+    loadChanges()
+
+    // Listen for storage events (when other tabs/components update localStorage)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === `changes-${rigId}` && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue)
+          setChanges(Array.isArray(parsed) ? parsed : [])
+        } catch (error) {
+          console.error('Error parsing changes from storage event:', error)
+        }
+      }
+    }
+
+    window.addEventListener('storage', handleStorageChange)
+
+    // Also listen for custom storage events (for same-tab updates)
+    const handleCustomStorageChange = (e: Event) => {
+      const customEvent = e as CustomEvent
+      if (customEvent.detail?.key === `changes-${rigId}`) {
+        loadChanges()
+      }
+    }
+
+    window.addEventListener('localStorageChange', handleCustomStorageChange as EventListener)
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+      window.removeEventListener('localStorageChange', handleCustomStorageChange as EventListener)
     }
   }, [rigId])
 
   // Save changes to localStorage
   useEffect(() => {
-    if (changes.length > 0) {
-      localStorage.setItem(`changes-${rigId}`, JSON.stringify(changes))
-    }
+    const key = `changes-${rigId}`
+    localStorage.setItem(key, JSON.stringify(changes))
+    
+    // Dispatch custom event for same-tab synchronization
+    window.dispatchEvent(
+      new CustomEvent('localStorageChange', {
+        detail: { key, value: changes }
+      })
+    )
   }, [changes, rigId])
 
   // Apply change mutation
@@ -114,15 +155,19 @@ export function useChangeManager(rigId: string) {
   // Approve change
   const approveChange = useCallback(
     (changeId: string) => {
-      setChanges((prev) =>
-        prev.map((c) => (c.id === changeId ? { ...c, status: 'approved' as const } : c))
-      )
-      const change = changes.find((c) => c.id === changeId)
-      if (change) {
-        applyChangeMutation.mutate(change)
-      }
+      setChanges((prev) => {
+        const updated = prev.map((c) => (c.id === changeId ? { ...c, status: 'approved' as const } : c))
+        const change = prev.find((c) => c.id === changeId)
+        if (change) {
+          // Apply the change after state update
+          setTimeout(() => {
+            applyChangeMutation.mutate({ ...change, status: 'approved' })
+          }, 0)
+        }
+        return updated
+      })
     },
-    [changes, applyChangeMutation]
+    [applyChangeMutation]
   )
 
   // Reject change
@@ -135,12 +180,16 @@ export function useChangeManager(rigId: string) {
   // Manual apply change
   const applyChange = useCallback(
     (changeId: string) => {
-      const change = changes.find((c) => c.id === changeId)
-      if (change) {
-        applyChangeMutation.mutate({ ...change, autoExecute: false })
-      }
+      setChanges((prev) => {
+        const change = prev.find((c) => c.id === changeId)
+        if (change) {
+          // Apply the change
+          applyChangeMutation.mutate({ ...change, autoExecute: false })
+        }
+        return prev
+      })
     },
-    [changes, applyChangeMutation]
+    [applyChangeMutation]
   )
 
   return {
