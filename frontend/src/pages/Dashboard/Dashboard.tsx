@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { sensorDataApi, healthApi } from '@/services/api'
 import { Activity, TrendingUp, Zap, AlertTriangle, WifiOff } from 'lucide-react'
 import SystemStatusBar from '@/components/System/SystemStatusBar'
+import { Loading, ErrorDisplay, Card, EmptyState } from '@/components/UI'
 
 export default function Dashboard() {
   const { data: analyticsData, isLoading, error: analyticsError } = useQuery({
@@ -118,54 +119,73 @@ export default function Dashboard() {
         {stats.map((stat, index) => {
           const Icon = stat.icon
           return (
-            <div
-              key={index}
-              className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-sm"
-            >
+            <Card key={index} variant="default" padding="md">
               <div className="flex items-center justify-between mb-4">
                 <div className={`${stat.color} p-3 rounded-xl`}>
-                  <Icon className="w-6 h-6 text-white" />
+                  <Icon className="w-6 h-6 text-white" aria-hidden="true" />
                 </div>
               </div>
-              <div className="text-slate-500 text-sm mb-1">{stat.label}</div>
+              <div className="text-slate-500 dark:text-slate-400 text-sm mb-1">{stat.label}</div>
               <div className="text-2xl font-bold text-slate-900 dark:text-white">{stat.value}</div>
-            </div>
+            </Card>
           )
         })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-sm space-y-4 lg:col-span-2">
-          <h2 className="text-xl font-semibold">Operations Summary</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 bg-slate-100/60 dark:bg-slate-800/40">
-              <div className="text-slate-500 dark:text-slate-400">Total Drilling Time</div>
-              <div className="text-lg font-semibold text-slate-900 dark:text-white">
-                {analyticsData?.total_drilling_time_hours?.toFixed(1) || 0} hours
+        <Card variant="default" padding="md" className="lg:col-span-2">
+          <Card.Header title="Operations Summary" />
+          <Card.Content>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 bg-slate-100/60 dark:bg-slate-800/40">
+                <div className="text-slate-500 dark:text-slate-400">Total Drilling Time</div>
+                <div className="text-lg font-semibold text-slate-900 dark:text-white">
+                  {analyticsData?.total_drilling_time_hours?.toFixed(1) || 0} hours
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 bg-slate-100/60 dark:bg-slate-800/40">
+                <div className="text-slate-500 dark:text-slate-400">Last Update</div>
+                <div className="text-lg font-semibold text-slate-900 dark:text-white">
+                  {analyticsData?.last_updated
+                    ? new Date(analyticsData.last_updated).toLocaleString('en-US')
+                    : 'unknown'}
+                </div>
               </div>
             </div>
-            <div className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 bg-slate-100/60 dark:bg-slate-800/40">
-              <div className="text-slate-500 dark:text-slate-400">Last Update</div>
-              <div className="text-lg font-semibold text-slate-900 dark:text-white">
-                {analyticsData?.last_updated
-                  ? new Date(analyticsData.last_updated).toLocaleString('en-US')
-                  : 'unknown'}
-              </div>
-            </div>
-          </div>
-        </div>
+          </Card.Content>
+        </Card>
 
-        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-sm space-y-3">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-amber-500" /> Recent Notifications
-          </h2>
-          {uniqueNotifications.map((card, index) => (
-            <div key={index} className="rounded-xl border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
-              <div className="font-semibold mb-1">{card.title}</div>
-              <div>{card.body}</div>
-            </div>
-          ))}
-        </div>
+        <Card variant="default" padding="md">
+          <Card.Header
+            title={
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500" aria-hidden="true" />
+                Recent Notifications
+              </div>
+            }
+          />
+          <Card.Content>
+            {uniqueNotifications.length > 0 ? (
+              <div className="space-y-3">
+                {uniqueNotifications.map((card, index) => (
+                  <div
+                    key={index}
+                    className="rounded-xl border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200"
+                  >
+                    <div className="font-semibold mb-1">{card.title}</div>
+                    <div>{card.body}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                variant="default"
+                title="No notifications"
+                description="You're all caught up! No new notifications at this time."
+              />
+            )}
+          </Card.Content>
+        </Card>
       </div>
     </>
   )
@@ -179,17 +199,28 @@ export default function Dashboard() {
 
       {/* Dashboard Content */}
       <div className="mt-6">
-        {isLoading && (
-          <div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-4 py-3 text-sm text-blue-700 dark:text-blue-300 mb-4">
-            Loading dashboard data...
+        {isLoading ? (
+          <div className="space-y-6">
+            <Loading.SkeletonText lines={3} />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Card key={i} padding="md">
+                  <Loading.Skeleton height={60} />
+                </Card>
+              ))}
+            </div>
           </div>
+        ) : (analyticsError || healthError) ? (
+          <ErrorDisplay
+            title="Failed to load dashboard data"
+            message="Some data may not be available. The dashboard will continue to function with cached or default values."
+            error={analyticsError || healthError}
+            onRetry={() => window.location.reload()}
+            variant="inline"
+          />
+        ) : (
+          <OverviewContent />
         )}
-        {(analyticsError || healthError) && (
-          <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-3 text-sm text-amber-700 dark:text-amber-300 mb-4">
-            ⚠️ Some data may not be available. The dashboard will continue to function with cached or default values.
-          </div>
-        )}
-        <OverviewContent />
       </div>
     </div>
   )
