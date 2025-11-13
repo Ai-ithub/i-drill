@@ -1,4 +1,7 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
+
+# Python 3.12 is the standard version for this project
+# Minimum required: Python 3.12+
 
 WORKDIR /app
 

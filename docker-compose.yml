@@ -35,7 +35,7 @@ services:
       - mlflow_artifacts:/mlflow/artifacts
 
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.5.0
+    image: confluentinc/cp-zookeeper:7.7.0
     container_name: i-drill-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
@@ -44,7 +44,7 @@ services:
       - "2181:2181"
 
   kafka:
-    image: confluentinc/cp-kafka:7.5.0
+    image: confluentinc/cp-kafka:7.7.0
     container_name: i-drill-kafka
     depends_on:
       - zookeeper
@@ -74,7 +74,7 @@ services:
       retries: 10
 
   postgres:
-    image: postgres:15
+    image: postgres:16-alpine
     container_name: i-drill-postgres
     environment:
       POSTGRES_DB: drilling_db
@@ -91,7 +91,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     container_name: i-drill-redis
     ports:
       - "6379:6379"
@@ -105,7 +105,7 @@ services:
       retries: 5
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.14.1
+    image: ghcr.io/mlflow/mlflow:v2.15.0
     container_name: i-drill-mlflow
     ports:
       - "5000:5000"

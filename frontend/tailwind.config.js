@@ -4,6 +4,8 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  // Tailwind CSS 4.0 supports CSS-based configuration
+  // Theme customization can also be done in CSS using @theme directive
   theme: {
     extend: {
       colors: {
@@ -24,4 +26,3 @@ export default {
   },
   plugins: [],
 }
-

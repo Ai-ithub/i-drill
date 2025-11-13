@@ -466,7 +466,7 @@ else:
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Log all requests and add processing time"""
+    """Log all requests, add processing time, and security headers"""
     start_time = time.time()
     
     # Log request
@@ -478,6 +478,30 @@ async def log_requests(request: Request, call_next):
     # Calculate processing time
     process_time = time.time() - start_time
     response.headers["X-Process-Time"] = str(process_time)
+    
+    # Add Security Headers
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    
+    # Add Strict-Transport-Security in production (HTTPS only)
+    if APP_ENV == "production" and os.getenv("FORCE_HTTPS", "false").lower() == "true":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    
+    # Content Security Policy (CSP) - configurable via environment
+    csp_policy = os.getenv(
+        "CSP_POLICY",
+        "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' ws: wss:;"
+    )
+    response.headers["Content-Security-Policy"] = csp_policy
+    
+    # Permissions Policy (formerly Feature Policy)
+    permissions_policy = os.getenv(
+        "PERMISSIONS_POLICY",
+        "geolocation=(), microphone=(), camera=()"
+    )
+    response.headers["Permissions-Policy"] = permissions_policy
     
     # Log response
     logger.info(
