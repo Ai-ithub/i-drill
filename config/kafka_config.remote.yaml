@@ -1,0 +1,67 @@
+# Remote Kafka Configuration
+# This file shows how to configure Kafka for remote connections
+# Copy this to kafka_config.yaml and update with your remote Kafka details
+
+kafka:
+  # Remote Kafka bootstrap servers (comma-separated for multiple brokers)
+  bootstrap_servers: "remote-kafka.example.com:9092,remote-kafka2.example.com:9092"
+  
+  # For SSL/TLS connections:
+  # bootstrap_servers: "remote-kafka.example.com:9093"
+  # security_protocol: "SSL"
+  # ssl_cafile: "/path/to/ca-cert"
+  # ssl_certfile: "/path/to/client-cert"
+  # ssl_keyfile: "/path/to/client-key"
+  
+  # For SASL authentication:
+  # security_protocol: "SASL_SSL"
+  # sasl_mechanism: "PLAIN"
+  # sasl_plain_username: "${KAFKA_USERNAME}"
+  # sasl_plain_password: "${KAFKA_PASSWORD}"
+  
+  consumer:
+    group_id: "rig-consumer-group"
+    auto_offset_reset: "earliest"
+    enable_auto_commit: true
+    auto_commit_interval_ms: 1000
+    # For remote connections, increase timeout values
+    request_timeout_ms: 30000
+    session_timeout_ms: 30000
+    
+  producer:
+    client_id: "rig-stream-generator"
+    acks: "all"
+    retries: 3
+    batch_size: 16384
+    linger_ms: 10
+    # For remote connections, increase timeout values
+    request_timeout_ms: 30000
+    
+  topics:
+    sensor_stream: "rig.sensor.stream"
+    anomaly_alerts: "rig.anomaly.alerts"
+
+# Remote Database Configuration
+database:
+  host: "remote-db.example.com"
+  port: 5432
+  database: "drilling_db"
+  username: "drill_user"
+  password: "${DB_PASSWORD}"
+  pool_size: 10
+  max_overflow: 20
+  # For remote connections, increase timeout
+  connect_timeout: 10
+  # SSL connection (if enabled)
+  # sslmode: "require"
+  # sslcert: "/path/to/client-cert"
+  # sslkey: "/path/to/client-key"
+  # sslrootcert: "/path/to/ca-cert"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "drilling_system.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
