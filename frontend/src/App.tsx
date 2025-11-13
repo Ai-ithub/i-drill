@@ -3,6 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './utils/queryClient'
 import { I18nProvider } from './i18n'
 import NewLayout from './components/Layout/NewLayout'
+import { ToastContainer } from './components/UI/Toast'
 import Dashboard from './pages/Dashboard/Dashboard'
 import RealTimeMonitoring from './pages/RealTimeMonitoring/RealTimeMonitoring'
 import Predictions from './pages/Predictions/Predictions'
@@ -51,6 +52,7 @@ function App() {
             />
           </Routes>
         </Router>
+        <ToastContainer />
       </QueryClientProvider>
     </I18nProvider>
   )
