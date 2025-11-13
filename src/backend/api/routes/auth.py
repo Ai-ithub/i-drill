@@ -21,6 +21,7 @@ from api.models.schemas import (
 )
 from api.models.database_models import UserDB
 from services.auth_service import auth_service, ACCESS_TOKEN_EXPIRE_MINUTES
+from services.email_service import email_service
 from api.dependencies import (
     get_current_active_user,
     get_current_admin_user
@@ -78,6 +79,30 @@ async def register(
             is_active=user.is_active,
             created_at=user.created_at
         )
+        
+        # Email service integration: Send welcome email to newly registered user
+        try:
+            email_result = email_service.send_welcome_email(
+                email=user.email,
+                username=user.username,
+                full_name=user.full_name
+            )
+            
+            if email_result.get("email_logged"):
+                logger.info(
+                    f"Welcome email logged for {mask_sensitive_data(user.email)}. "
+                    f"User: {user.username}"
+                )
+            elif email_result.get("success"):
+                logger.info(f"Welcome email sent to {mask_sensitive_data(user.email)}")
+            else:
+                logger.warning(
+                    f"User registered but welcome email failed to send: "
+                    f"{email_result.get('message', 'Unknown error')}"
+                )
+        except Exception as email_error:
+            # Don't fail registration if email fails, just log it
+            logger.warning(f"Error sending welcome email during registration: {email_error}")
         
         return UserResponse(
             success=True,
@@ -347,11 +372,34 @@ async def request_password_reset(
     try:
         token = auth_service.create_password_reset_token(reset_request.email)
         
-        # In production, send email with reset link
-        # For now, we just log it (in production, use email service)
+        # Send email with reset link if token was generated
         if token:
-            logger.info(f"Password reset token generated for email: {mask_sensitive_data(reset_request.email)}")
-            # TODO: Send email with reset link: /auth/password/reset/confirm?token={token}
+            # Get user for username (optional, for email personalization)
+            user = auth_service.get_user_by_email(reset_request.email)
+            username = user.username if user else None
+            
+            # Send password reset email
+            email_result = email_service.send_password_reset_email(
+                email=reset_request.email,
+                reset_token=token,
+                username=username
+            )
+            
+            if email_result.get("email_logged"):
+                # In development, email is logged instead of sent
+                logger.info(
+                    f"Password reset email logged for {mask_sensitive_data(reset_request.email)}. "
+                    f"Reset link: {email_result.get('reset_link', 'N/A')}"
+                )
+            elif email_result.get("success"):
+                logger.info(f"Password reset email sent to {mask_sensitive_data(reset_request.email)}")
+            else:
+                logger.warning(
+                    f"Password reset token generated but email failed to send: "
+                    f"{email_result.get('message', 'Unknown error')}"
+                )
+        else:
+            logger.debug(f"Password reset token not generated (email may not exist): {mask_sensitive_data(reset_request.email)}")
         
         # Always return success to prevent email enumeration
         return {

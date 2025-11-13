@@ -11,9 +11,14 @@ from api.models.schemas import UserRole
 from api.models.database_models import UserDB, ChangeRequestDB
 from api.dependencies import get_current_active_user, get_current_engineer_user
 from database import db_manager
+from services.data_service import DataService
+from services.control_service import control_service
 import enum
 
 logger = logging.getLogger(__name__)
+
+# Initialize data service for fetching current sensor values
+data_service = DataService()
 
 router = APIRouter(prefix="/control", tags=["control"])
 
@@ -104,9 +109,73 @@ async def apply_change(
                 current_user.role == UserRole.ENGINEER.value
             )
             
-            # Get current value if possible (could be fetched from sensor data or config)
+            # Integration 1: Check control system availability before applying changes
+            if should_auto_execute:
+                if not control_service.is_available():
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Control system is currently unavailable. Cannot apply changes."
+                    )
+                logger.debug(f"Control system availability verified for rig {change_request.rig_id}")
+            
+            # Get current value from sensor data or configuration
             old_value = None
-            # TODO: Fetch current value from sensor data or configuration
+            try:
+                # Integration 2: Try to get current value from control system first (primary source)
+                control_system_value = control_service.get_parameter_value(
+                    rig_id=change_request.rig_id,
+                    component=change_request.component,
+                    parameter=change_request.parameter
+                )
+                
+                if control_system_value is not None:
+                    old_value = str(control_system_value)
+                    logger.debug(
+                        f"Fetched current value for {change_request.parameter}: {old_value} "
+                        f"from control system for rig {change_request.rig_id}"
+                    )
+                else:
+                    # Fallback to sensor data if control system doesn't have the value
+                    latest_data = data_service.get_latest_sensor_data(
+                        rig_id=change_request.rig_id,
+                        limit=1
+                    )
+                    
+                    if latest_data and len(latest_data) > 0:
+                        latest_record = latest_data[0]
+                        # Map parameter names to sensor data fields
+                        parameter_mapping = {
+                            'rpm': 'rpm',
+                            'wob': 'wob',
+                            'torque': 'torque',
+                            'rop': 'rop',
+                            'mud_flow': 'mud_flow',
+                            'mud_pressure': 'mud_pressure',
+                            'depth': 'depth',
+                            'mud_temperature': 'mud_temperature',
+                            'gamma_ray': 'gamma_ray',
+                            'resistivity': 'resistivity',
+                            'density': 'density',
+                            'porosity': 'porosity',
+                            'hook_load': 'hook_load',
+                            'vibration': 'vibration'
+                        }
+                        
+                        # Get current value if parameter exists in mapping
+                        if change_request.parameter.lower() in parameter_mapping:
+                            mapped_key = parameter_mapping[change_request.parameter.lower()]
+                            old_value = latest_record.get(mapped_key)
+                            
+                            if old_value is not None:
+                                old_value = str(old_value)
+                                logger.debug(
+                                    f"Fetched current value for {change_request.parameter}: {old_value} "
+                                    f"from sensor data for rig {change_request.rig_id}"
+                                )
+                    
+            except Exception as e:
+                logger.warning(f"Failed to fetch current value from control system or sensor data: {e}")
+                # Continue with old_value = None if fetch fails
             
             # Determine status
             initial_status = "applied" if should_auto_execute else "pending"
@@ -136,18 +205,90 @@ async def apply_change(
             # If auto-execute, actually apply the change
             if should_auto_execute:
                 try:
-                    # Here you would integrate with actual control system
-                    # For now, we just log it
-                    logger.info(
-                        f"Auto-executing change: {change_request.component}.{change_request.parameter} = {change_request.value} "
-                        f"for rig {change_request.rig_id}"
+                    # Integrate with actual drilling control system
+                    apply_result = control_service.apply_parameter_change(
+                        rig_id=change_request.rig_id,
+                        component=change_request.component,
+                        parameter=change_request.parameter,
+                        new_value=change_request.value,
+                        metadata={
+                            "user": current_user.username,
+                            "user_id": current_user.id,
+                            "change_id": change.id,
+                            "change_type": change_request.change_type.value,
+                            "auto_execute": True
+                        }
                     )
-                    # TODO: Integrate with actual drilling control system
-                    # Example: control_system.set_parameter(rig_id, component, parameter, value)
+                    
+                    if not apply_result["success"]:
+                        change.status = ChangeStatus.FAILED.value
+                        change.error_message = apply_result.get("error", apply_result.get("message", "Unknown error"))
+                        session.commit()
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Failed to apply change: {apply_result.get('message', 'Unknown error')}"
+                        )
+                    
+                    # Integration 3: Verify change was actually applied by querying control system
+                    try:
+                        import time
+                        time.sleep(0.5)  # Brief delay to allow control system to process
+                        verified_value = control_service.get_parameter_value(
+                            rig_id=change_request.rig_id,
+                            component=change_request.component,
+                            parameter=change_request.parameter
+                        )
+                        
+                        if verified_value is not None:
+                            # Compare with expected value (allowing for small floating point differences)
+                            try:
+                                expected = float(change_request.value)
+                                actual = float(verified_value)
+                                if abs(expected - actual) > 0.01:  # Allow 0.01 tolerance
+                                    logger.warning(
+                                        f"Change verification mismatch: expected {change_request.value}, "
+                                        f"control system reports {verified_value} for {change_request.parameter}"
+                                    )
+                                else:
+                                    logger.info(
+                                        f"Change verified in control system: {change_request.parameter} = {verified_value}"
+                                    )
+                            except (ValueError, TypeError):
+                                # Non-numeric comparison
+                                if str(verified_value) != str(change_request.value):
+                                    logger.warning(
+                                        f"Change verification mismatch: expected {change_request.value}, "
+                                        f"control system reports {verified_value}"
+                                    )
+                                else:
+                                    logger.info(
+                                        f"Change verified in control system: {change_request.parameter} = {verified_value}"
+                                    )
+                        else:
+                            logger.debug(
+                                f"Could not verify change in control system (value not available for {change_request.parameter})"
+                            )
+                    except Exception as verify_error:
+                        logger.warning(f"Error verifying change in control system: {verify_error}")
+                        # Don't fail the change if verification fails, just log it
+                    
+                    # Update change record with successful application
+                    change.applied_at = datetime.now() if apply_result.get("applied_at") else datetime.now()
+                    change.status = ChangeStatus.APPLIED.value
+                    session.commit()
+                    
+                    logger.info(
+                        f"Auto-executed change successfully: {change_request.component}.{change_request.parameter} = {change_request.value} "
+                        f"for rig {change_request.rig_id} (change_id={change.id})"
+                    )
+                    
+                except HTTPException:
+                    raise
                 except Exception as e:
                     change.status = ChangeStatus.FAILED.value
                     change.error_message = str(e)
                     session.commit()
+                    logger.error(f"Error auto-executing change {change.id}: {e}")
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         detail=f"Failed to apply change: {str(e)}"
@@ -283,20 +424,99 @@ async def approve_change(
             
             # If auto_execute is enabled, apply it
             if change.auto_execute:
-                try:
-                    # Apply the change
-                    logger.info(
-                        f"Applying approved change: {change.component}.{change.parameter} = {change.new_value} "
-                        f"for rig {change.rig_id}"
+                # Integration 1: Check control system availability before applying changes
+                if not control_service.is_available():
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Control system is currently unavailable. Cannot apply changes."
                     )
-                    # TODO: Integrate with actual control system
+                
+                try:
+                    # Integrate with actual control system
+                    apply_result = control_service.apply_parameter_change(
+                        rig_id=change.rig_id,
+                        component=change.component,
+                        parameter=change.parameter,
+                        new_value=change.new_value,
+                        metadata={
+                            "user": current_user.username,
+                            "user_id": current_user.id,
+                            "change_id": change.id,
+                            "change_type": change.change_type,
+                            "approved_by": current_user.username,
+                            "auto_execute": True
+                        }
+                    )
+                    
+                    if not apply_result["success"]:
+                        change.status = "failed"
+                        change.error_message = apply_result.get("error", apply_result.get("message", "Unknown error"))
+                        session.commit()
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Failed to apply change: {apply_result.get('message', 'Unknown error')}"
+                        )
+                    
+                    # Integration 3: Verify change was actually applied by querying control system
+                    try:
+                        import time
+                        time.sleep(0.5)  # Brief delay to allow control system to process
+                        verified_value = control_service.get_parameter_value(
+                            rig_id=change.rig_id,
+                            component=change.component,
+                            parameter=change.parameter
+                        )
+                        
+                        if verified_value is not None:
+                            # Compare with expected value (allowing for small floating point differences)
+                            try:
+                                expected = float(change.new_value)
+                                actual = float(verified_value)
+                                if abs(expected - actual) > 0.01:  # Allow 0.01 tolerance
+                                    logger.warning(
+                                        f"Change verification mismatch: expected {change.new_value}, "
+                                        f"control system reports {verified_value} for {change.parameter}"
+                                    )
+                                else:
+                                    logger.info(
+                                        f"Change verified in control system: {change.parameter} = {verified_value}"
+                                    )
+                            except (ValueError, TypeError):
+                                # Non-numeric comparison
+                                if str(verified_value) != str(change.new_value):
+                                    logger.warning(
+                                        f"Change verification mismatch: expected {change.new_value}, "
+                                        f"control system reports {verified_value}"
+                                    )
+                                else:
+                                    logger.info(
+                                        f"Change verified in control system: {change.parameter} = {verified_value}"
+                                    )
+                        else:
+                            logger.debug(
+                                f"Could not verify change in control system (value not available for {change.parameter})"
+                            )
+                    except Exception as verify_error:
+                        logger.warning(f"Error verifying change in control system: {verify_error}")
+                        # Don't fail the change if verification fails, just log it
+                    
+                    # Update change record with successful application
                     change.status = "applied"
                     change.applied_by = current_user.id
-                    change.applied_at = datetime.now()
+                    change.applied_at = datetime.now() if apply_result.get("applied_at") else datetime.now()
+                    
+                    logger.info(
+                        f"Applied approved change successfully: {change.component}.{change.parameter} = {change.new_value} "
+                        f"for rig {change.rig_id} (change_id={change.id})"
+                    )
+                    
+                except HTTPException:
+                    raise
                 except Exception as e:
                     change.status = "failed"
                     change.error_message = str(e)
                     session.commit()
+                    logger.error(f"Error applying approved change {change.id}: {e}")
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         detail=f"Failed to apply change: {str(e)}"

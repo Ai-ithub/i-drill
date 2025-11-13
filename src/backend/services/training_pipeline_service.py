@@ -149,5 +149,67 @@ class TrainingPipelineService:
             logger.error(f"Failed to list model versions for {model_name}: {exc}")
             return []
 
+    def trigger_training(
+        self,
+        model_name: str,
+        experiment_name: str = "i-drill-training",
+        params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Trigger a training job for a specific model.
+        
+        This method starts a training run tracked in MLflow. In a production
+        environment, this could trigger a GitHub Actions workflow, submit a
+        job to a training cluster, or queue a training job.
+        
+        Args:
+            model_name: Name of the model to train
+            experiment_name: MLflow experiment name
+            params: Optional training parameters
+            
+        Returns:
+            Dictionary containing:
+            - success: Boolean indicating if training was triggered successfully
+            - run_id: MLflow run ID if successful
+            - message: Status message
+        """
+        if not self._mlflow_available():
+            return {
+                "success": False,
+                "message": "MLflow is not configured on this environment"
+            }
+        
+        try:
+            # Start a training run in MLflow
+            result = self.start_training_job(
+                model_name=model_name,
+                parameters=params or {},
+                experiment_name=experiment_name
+            )
+            
+            if result.get("success"):
+                logger.info(
+                    f"Training triggered for {model_name}: "
+                    f"run_id={result.get('run_id')}"
+                )
+                return {
+                    "success": True,
+                    "run_id": result.get("run_id"),
+                    "experiment_name": experiment_name,
+                    "message": f"Training triggered for {model_name}"
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": result.get("message", "Training failed")
+                }
+        
+        except Exception as exc:
+            logger.error(f"Error triggering training for {model_name}: {exc}")
+            return {
+                "success": False,
+                "message": str(exc)
+            }
+
 
 training_pipeline_service = TrainingPipelineService()

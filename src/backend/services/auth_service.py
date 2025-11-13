@@ -270,6 +270,26 @@ class AuthService:
             logger.error(f"Error getting user: {e}")
             return None
     
+    def get_user_by_email(self, email: str) -> Optional[UserDB]:
+        """
+        Get user by email address
+        
+        Args:
+            email: User email address
+            
+        Returns:
+            User object if found, None otherwise
+        """
+        try:
+            with db_manager.session_scope() as session:
+                user = session.query(UserDB).filter(
+                    UserDB.email == email
+                ).first()
+                return user
+        except Exception as e:
+            logger.error(f"Error getting user by email: {e}")
+            return None
+    
     def create_user(
         self,
         username: str,
