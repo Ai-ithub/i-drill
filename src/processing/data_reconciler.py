@@ -1,7 +1,12 @@
+"""
+Data Reconciliation Module
+Handles missing value imputation and data smoothing for sensor data.
+"""
 import pandas as pd
 import numpy as np
 import logging
 from sklearn.impute import SimpleImputer
+from typing import Optional
 
 # تنظیم لاگ‌گیری
 logging.basicConfig(
@@ -10,16 +15,46 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
+
 class DataReconciler:
-    """کلاسی برای تصحیح داده‌های گمشده و صاف کردن داده‌های پرنویز."""
+    """
+    Class for correcting missing data and smoothing noisy data.
     
-    def __init__(self, id_column='id', timestamp_column='timestamp'):
+    Provides methods for imputing missing values using linear interpolation
+    and mean imputation, and smoothing data using exponential moving averages.
+    
+    Attributes:
+        id_column: Name of the ID column in the DataFrame
+        timestamp_column: Name of the timestamp column in the DataFrame
+        logger: Logger instance for logging operations
+    """
+    
+    def __init__(self, id_column: str = 'id', timestamp_column: str = 'timestamp'):
+        """
+        Initialize DataReconciler.
+        
+        Args:
+            id_column: Name of the ID column in DataFrames (default: 'id')
+            timestamp_column: Name of the timestamp column in DataFrames (default: 'timestamp')
+        """
         self.id_column = id_column
         self.timestamp_column = timestamp_column
         self.logger = logging.getLogger(__name__)
 
-    def impute_missing_values(self, df):
-        """پر کردن داده‌های گمشده با استفاده از Linear Interpolation."""
+    def impute_missing_values(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Fill missing values using Linear Interpolation.
+        
+        First attempts to fill missing values using linear interpolation.
+        If any values remain missing after interpolation, fills them with
+        the column mean using SimpleImputer.
+        
+        Args:
+            df: DataFrame containing sensor data with potential missing values
+            
+        Returns:
+            DataFrame with missing values imputed
+        """
         df = df.copy()
         numeric_columns = df.select_dtypes(include=[np.number]).columns
         for col in numeric_columns:
@@ -47,8 +82,20 @@ class DataReconciler:
                                 )
         return df
 
-    def smooth_data(self, df, span=3):
-        """صاف کردن داده‌ها با Exponential Moving Average."""
+    def smooth_data(self, df: pd.DataFrame, span: int = 3) -> pd.DataFrame:
+        """
+        Smooth data using Exponential Moving Average (EMA).
+        
+        Applies exponential moving average smoothing to all numeric columns
+        to reduce noise in sensor readings.
+        
+        Args:
+            df: DataFrame containing sensor data to smooth
+            span: Span parameter for EMA (default: 3). Larger values result in more smoothing.
+            
+        Returns:
+            DataFrame with smoothed values
+        """
         df = df.copy()
         numeric_columns = df.select_dtypes(include=[np.number]).columns
         for col in numeric_columns:
@@ -63,8 +110,22 @@ class DataReconciler:
                         )
         return df
 
-    def reconcile(self, df):
-        """اجرای فرآیند تصحیح داده‌ها (پر کردن گمشده‌ها و صاف کردن)."""
+    def reconcile(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Execute the complete data reconciliation process.
+        
+        Performs both missing value imputation and data smoothing in sequence.
+        Validates that required columns (id_column and timestamp_column) exist.
+        
+        Args:
+            df: DataFrame containing sensor data to reconcile
+            
+        Returns:
+            DataFrame with reconciled data (missing values imputed and data smoothed)
+            
+        Raises:
+            ValueError: If required columns (id_column or timestamp_column) are missing
+        """
         if self.id_column not in df.columns:
             raise ValueError(f"Column {self.id_column} not found in DataFrame")
         if self.timestamp_column not in df.columns:

@@ -24,14 +24,44 @@ logger = logging.getLogger(__name__)
 
 
 class DataService:
-    """Service for sensor data operations"""
+    """
+    Service for sensor data operations.
+    
+    Provides CRUD operations and analytics queries for sensor data.
+    Handles database interactions, data validation, and error handling.
+    
+    Attributes:
+        db_manager: Database manager instance for database operations
+        
+    Example:
+        ```python
+        service = DataService()
+        latest_data = service.get_latest_sensor_data(rig_id="RIG_01", limit=10)
+        historical = service.get_historical_data(
+            rig_id="RIG_01",
+            start_time=datetime.now() - timedelta(days=1),
+            end_time=datetime.now()
+        )
+        ```
+    """
     
     def __init__(self):
+        """
+        Initialize DataService.
+        
+        Sets up the database manager for data operations.
+        """
         self.db_manager = db_manager
     
     # ==================== Sensor Data Operations ====================
     
     def _db_ready(self) -> bool:
+        """
+        Check if database is ready for operations.
+        
+        Returns:
+            True if database is initialized and ready, False otherwise
+        """
         if not getattr(self.db_manager, "_initialized", False):
             logger.debug("Database not initialized; skipping data service operation")
             return False
@@ -315,7 +345,19 @@ class DataService:
         limit: int = 100,
         hours: Optional[int] = None
     ) -> List[Dict[str, Any]]:
-        """Get maintenance alerts"""
+        """
+        Get maintenance alerts with optional filtering.
+        
+        Args:
+            rig_id: Filter by rig ID
+            severity: Filter by severity level
+            resolved: Filter by resolved status
+            limit: Maximum number of alerts to return
+            hours: Filter alerts created within last N hours
+            
+        Returns:
+            List of maintenance alert dictionaries
+        """
         if not self._db_ready():
             return []
         try:
@@ -341,7 +383,15 @@ class DataService:
             return []
     
     def get_maintenance_alert_by_id(self, alert_id: int) -> Optional[Dict[str, Any]]:
-        """Get single maintenance alert by id"""
+        """
+        Get a single maintenance alert by ID.
+        
+        Args:
+            alert_id: Alert ID to retrieve
+            
+        Returns:
+            Maintenance alert dictionary if found, None otherwise
+        """
         if not self._db_ready():
             return None
         try:
@@ -359,7 +409,15 @@ class DataService:
             return None
     
     def create_maintenance_alert(self, data: Dict[str, Any]) -> Optional[int]:
-        """Create a maintenance alert"""
+        """
+        Create a new maintenance alert.
+        
+        Args:
+            data: Dictionary containing alert data (rig_id, component, severity, etc.)
+            
+        Returns:
+            Created alert ID if successful, None otherwise
+        """
         if not self._db_ready():
             return None
         try:
@@ -380,6 +438,23 @@ class DataService:
         notes: Optional[str] = None,
         dvr_history_id: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
+        """
+        Acknowledge a maintenance alert.
+        
+        Marks an alert as acknowledged and optionally links it to a DVR history entry.
+        
+        Args:
+            alert_id: ID of the alert to acknowledge
+            acknowledged_by: Username of person acknowledging the alert
+            notes: Optional acknowledgement notes
+            dvr_history_id: Optional DVR process history ID to link
+            
+        Returns:
+            Updated alert dictionary if successful, None otherwise
+            
+        Raises:
+            ValueError: If DVR history entry is specified but not found
+        """
         if not self._db_ready():
             return None
         try:
@@ -414,6 +489,24 @@ class DataService:
         notes: Optional[str] = None,
         dvr_history_id: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
+        """
+        Resolve a maintenance alert.
+        
+        Marks an alert as resolved and optionally links it to a DVR history entry.
+        Automatically acknowledges the alert if not already acknowledged.
+        
+        Args:
+            alert_id: ID of the alert to resolve
+            resolved_by: Username of person resolving the alert
+            notes: Optional resolution notes
+            dvr_history_id: Optional DVR process history ID to link
+            
+        Returns:
+            Updated alert dictionary if successful, None otherwise
+            
+        Raises:
+            ValueError: If DVR history entry is specified but not found
+        """
         if not self._db_ready():
             return None
         try:
@@ -446,7 +539,15 @@ class DataService:
             return None
     
     def create_maintenance_schedule(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Create a maintenance schedule"""
+        """
+        Create a new maintenance schedule entry.
+        
+        Args:
+            data: Dictionary containing schedule data (rig_id, component, scheduled_date, etc.)
+            
+        Returns:
+            Created schedule dictionary if successful, None otherwise
+        """
         if not self._db_ready():
             return None
         try:
@@ -467,7 +568,18 @@ class DataService:
         limit: int = 100,
         until_date: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
-        """Get maintenance schedules"""
+        """
+        Get maintenance schedules with optional filtering.
+        
+        Args:
+            rig_id: Filter by rig ID
+            status: Filter by schedule status
+            limit: Maximum number of schedules to return
+            until_date: Filter schedules scheduled before this date
+            
+        Returns:
+            List of maintenance schedule dictionaries
+        """
         if not self._db_ready():
             return []
         try:
@@ -494,7 +606,16 @@ class DataService:
         schedule_id: int, 
         data: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
-        """Update maintenance schedule"""
+        """
+        Update an existing maintenance schedule.
+        
+        Args:
+            schedule_id: ID of the schedule to update
+            data: Dictionary containing fields to update
+            
+        Returns:
+            Updated schedule dictionary if successful, None otherwise
+        """
         if not self._db_ready():
             return None
         try:
@@ -520,7 +641,15 @@ class DataService:
             return None
     
     def get_maintenance_schedule_by_id(self, schedule_id: int) -> Optional[Dict[str, Any]]:
-        """Get maintenance schedule by id"""
+        """
+        Get a single maintenance schedule by ID.
+        
+        Args:
+            schedule_id: Schedule ID to retrieve
+            
+        Returns:
+            Maintenance schedule dictionary if found, None otherwise
+        """
         if not self._db_ready():
             return None
         try:
@@ -538,7 +667,15 @@ class DataService:
             return None
     
     def delete_maintenance_schedule(self, schedule_id: int) -> bool:
-        """Delete a maintenance schedule"""
+        """
+        Delete a maintenance schedule.
+        
+        Args:
+            schedule_id: ID of the schedule to delete
+            
+        Returns:
+            True if deletion was successful, False otherwise
+        """
         if not self._db_ready():
             return False
         try:
@@ -559,7 +696,15 @@ class DataService:
     # ==================== RUL Predictions Operations ====================
     
     def save_rul_prediction(self, data: Dict[str, Any]) -> Optional[int]:
-        """Save RUL prediction"""
+        """
+        Save a RUL (Remaining Useful Life) prediction to the database.
+        
+        Args:
+            data: Dictionary containing prediction data (rig_id, component, predicted_rul, etc.)
+            
+        Returns:
+            Created prediction ID if successful, None otherwise
+        """
         if not self._db_ready():
             return None
         try:
@@ -579,7 +724,17 @@ class DataService:
         component: Optional[str] = None,
         limit: int = 100
     ) -> List[Dict[str, Any]]:
-        """Get RUL predictions history"""
+        """
+        Get RUL prediction history for a rig.
+        
+        Args:
+            rig_id: Rig identifier
+            component: Optional component filter
+            limit: Maximum number of predictions to return
+            
+        Returns:
+            List of RUL prediction dictionaries
+        """
         if not self._db_ready():
             return []
         try:
@@ -603,7 +758,15 @@ class DataService:
     
     @staticmethod
     def _sensor_data_to_dict(record: SensorData) -> Dict[str, Any]:
-        """Convert SensorData ORM object to dictionary"""
+        """
+        Convert SensorData ORM object to dictionary.
+        
+        Args:
+            record: SensorData database model instance
+            
+        Returns:
+            Dictionary representation of sensor data
+        """
         return {
             'id': record.id,
             'rig_id': record.rig_id,
@@ -627,7 +790,15 @@ class DataService:
     
     @staticmethod
     def _alert_to_dict(alert: MaintenanceAlertDB) -> Dict[str, Any]:
-        """Convert MaintenanceAlertDB to dictionary"""
+        """
+        Convert MaintenanceAlertDB ORM object to dictionary.
+        
+        Args:
+            alert: MaintenanceAlertDB database model instance
+            
+        Returns:
+            Dictionary representation of maintenance alert
+        """
         return {
             'id': alert.id,
             'rig_id': alert.rig_id,
@@ -650,7 +821,15 @@ class DataService:
     
     @staticmethod
     def _schedule_to_dict(schedule: MaintenanceScheduleDB) -> Dict[str, Any]:
-        """Convert MaintenanceScheduleDB to dictionary"""
+        """
+        Convert MaintenanceScheduleDB ORM object to dictionary.
+        
+        Args:
+            schedule: MaintenanceScheduleDB database model instance
+            
+        Returns:
+            Dictionary representation of maintenance schedule
+        """
         return {
             'id': schedule.id,
             'rig_id': schedule.rig_id,
@@ -668,7 +847,15 @@ class DataService:
     
     @staticmethod
     def _rul_prediction_to_dict(prediction: RULPredictionDB) -> Dict[str, Any]:
-        """Convert RULPredictionDB to dictionary"""
+        """
+        Convert RULPredictionDB ORM object to dictionary.
+        
+        Args:
+            prediction: RULPredictionDB database model instance
+            
+        Returns:
+            Dictionary representation of RUL prediction
+        """
         return {
             'id': prediction.id,
             'rig_id': prediction.rig_id,

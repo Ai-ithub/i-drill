@@ -4,14 +4,23 @@ import App from './App.tsx'
 import './index.css'
 import { ThemeProvider } from './context/ThemeContext'
 import { RoleProvider } from './context/RoleContext'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+const rootElement = document.getElementById('root')
+
+if (!rootElement) {
+  throw new Error('Root element not found')
+}
+
+ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <ThemeProvider>
-      <RoleProvider>
-        <App />
-      </RoleProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <RoleProvider>
+          <App />
+        </RoleProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   </React.StrictMode>,
 )
 

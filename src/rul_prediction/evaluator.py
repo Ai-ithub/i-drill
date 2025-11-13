@@ -21,7 +21,21 @@ from scipy import stats
 
 class RULEvaluator:
     """
-    Comprehensive evaluator for RUL prediction models
+    Comprehensive evaluator for RUL (Remaining Useful Life) prediction models.
+    
+    Provides extensive evaluation capabilities including:
+    - Multiple regression metrics (RMSE, MAE, MAPE, R²)
+    - RUL-specific scoring function
+    - Error distribution analysis
+    - Range-based performance analysis
+    - Confidence interval calculation
+    - Comprehensive visualizations
+    - Model comparison functionality
+    
+    Attributes:
+        model: Trained PyTorch model for evaluation
+        device: Computing device (CPU or CUDA)
+        save_dir: Directory for saving evaluation results
     """
     
     def __init__(self, model: nn.Module, device: str = 'auto',
@@ -537,7 +551,15 @@ class RULEvaluator:
 
 class BaselineEvaluator:
     """
-    Evaluator for baseline models (scikit-learn models)
+    Evaluator for baseline models (scikit-learn models).
+    
+    Provides evaluation functionality for traditional machine learning
+    models used as baselines. Includes metrics calculation and visualization
+    capabilities similar to RULEvaluator but adapted for scikit-learn models.
+    
+    Attributes:
+        model: Trained scikit-learn model
+        save_dir: Directory for saving evaluation results
     """
     
     def __init__(self, model, save_dir: str = './evaluation_results'):

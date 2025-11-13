@@ -496,6 +496,7 @@ class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int = 3600
+    refresh_token: Optional[str] = None
 
 
 class TokenData(BaseModel):
@@ -503,6 +504,28 @@ class TokenData(BaseModel):
     username: Optional[str] = None
     user_id: Optional[int] = None
     scopes: List[str] = []
+
+
+class TokenRefreshRequest(BaseModel):
+    """Token refresh request"""
+    refresh_token: str
+
+
+class PasswordResetRequest(BaseModel):
+    """Password reset request"""
+    email: str = Field(..., description="User email address")
+
+
+class PasswordResetConfirm(BaseModel):
+    """Password reset confirmation"""
+    token: str = Field(..., description="Password reset token")
+    new_password: str = Field(..., min_length=8, description="New password")
+
+
+class PasswordChangeRequest(BaseModel):
+    """Password change request"""
+    current_password: str = Field(..., description="Current password")
+    new_password: str = Field(..., min_length=8, description="New password")
 
 
 class UserRole(str, Enum):

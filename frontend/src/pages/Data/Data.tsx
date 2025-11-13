@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import RealTimeDataTab from './tabs/RealTimeDataTab'
 import HistoricalDataTab from './tabs/HistoricalDataTab'
 import SyntheticDataTab from './tabs/SyntheticDataTab'
@@ -7,13 +8,22 @@ import { Activity, Clock, Sparkles } from 'lucide-react'
 type TabType = 'realtime' | 'historical' | 'synthetic'
 
 const tabs = [
-  { id: 'realtime' as TabType, label: 'Real Time Data', icon: Activity },
-  { id: 'historical' as TabType, label: 'Historical Data', icon: Clock },
-  { id: 'synthetic' as TabType, label: 'Synthetic Data', icon: Sparkles },
+  { id: 'realtime' as TabType, label: 'Real-Time', icon: Activity },
+  { id: 'historical' as TabType, label: 'Historical', icon: Clock },
+  { id: 'synthetic' as TabType, label: 'Synthetic', icon: Sparkles },
 ]
 
 export default function Data() {
-  const [activeTab, setActiveTab] = useState<TabType>('realtime')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabFromUrl = searchParams.get('tab') as TabType | null
+  const [activeTab, setActiveTab] = useState<TabType>(tabFromUrl && tabs.some(t => t.id === tabFromUrl) ? tabFromUrl : 'realtime')
+
+  // Update URL when tab changes
+  useEffect(() => {
+    if (activeTab) {
+      setSearchParams({ tab: activeTab }, { replace: true })
+    }
+  }, [activeTab, setSearchParams])
 
   return (
     <div className="space-y-6 text-slate-900 dark:text-slate-100">
@@ -60,5 +70,7 @@ export default function Data() {
     </div>
   )
 }
+
+
 
 

@@ -37,7 +37,15 @@ BIT_WEAR_THRESHOLD = 0.8  # High bit wear threshold
 EFFECTIVE_WOB_ANGLE_FACTOR = 0.1  # Angle impact on effective WOB
 
 class FormationType(Enum):
-    """انواع مختلف سازند"""
+    """
+    Different types of geological formations.
+    
+    Each formation type has different properties affecting drilling:
+    - Strength: Resistance to drilling
+    - Abrasiveness: Impact on bit wear
+    - Porosity: Pore space percentage
+    - Permeability: Fluid flow capability
+    """
     SOFT_SAND = 'soft_sand'           # ماسه نرم
     HARD_SAND = 'hard_sand'           # ماسه سخت
     SOFT_SHALE = 'soft_shale'         # شیل نرم
@@ -46,7 +54,12 @@ class FormationType(Enum):
     DOLOMITE = 'dolomite'             # دولومیت
 
 class AbnormalCondition(Enum):
-    """شرایط غیرعادی حفاری"""
+    """
+    Abnormal drilling conditions.
+    
+    Represents various problematic conditions that can occur during drilling
+    operations, affecting drilling efficiency and equipment safety.
+    """
     NORMAL = 'normal'                  # شرایط عادی
     BIT_BALLING = 'bit_balling'        # گلوله شدن مته
     STICK_SLIP = 'stick_slip'          # گیر و رها شدن مته
@@ -54,15 +67,42 @@ class AbnormalCondition(Enum):
     FORMATION_CHANGE = 'formation_change'  # تغییر ناگهانی سازند
 
 class DrillCollar:
-    """کلاس مشخصات گیره حفاری"""
+    """
+    Drill collar specifications and calculations.
+    
+    Represents the drill collar component used in drilling operations.
+    Provides methods for calculating weight and moment of inertia.
+    
+    Attributes:
+        length: Length of drill collar in meters
+        outer_diameter: Outer diameter in meters
+        inner_diameter: Inner diameter in meters
+        density: Steel density in kg/m³
+    """
+    
     def __init__(self, length: float, outer_diameter: float, inner_diameter: float):
+        """
+        Initialize drill collar with physical dimensions.
+        
+        Args:
+            length: Length of drill collar (meters)
+            outer_diameter: Outer diameter (meters)
+            inner_diameter: Inner diameter (meters)
+        """
         self.length = length                  # طول (متر)
         self.outer_diameter = outer_diameter  # قطر خارجی (متر)
         self.inner_diameter = inner_diameter  # قطر داخلی (متر)
         self.density = 7850                   # چگالی فولاد (کیلوگرم بر متر مکعب)
         
     def calculate_weight(self) -> float:
-        """محاسبه وزن گیره حفاری"""
+        """
+        Calculate the weight of the drill collar.
+        
+        Calculates weight based on volume and steel density.
+        
+        Returns:
+            Weight in Newtons
+        """
         # محاسبه حجم فولاد
         outer_area = np.pi * (self.outer_diameter/2)**2
         inner_area = np.pi * (self.inner_diameter/2)**2
@@ -73,11 +113,44 @@ class DrillCollar:
         return volume * self.density * gravity
     
     def calculate_moment_of_inertia(self) -> float:
-        """محاسبه ممان اینرسی گیره حفاری"""
+        """
+        Calculate the moment of inertia of the drill collar.
+        
+        Used for rotational dynamics calculations.
+        
+        Returns:
+            Moment of inertia in kg·m²
+        """
         return (np.pi/32) * (self.outer_diameter**4 - self.inner_diameter**4)
 
 class DrillingPhysics:
+    """
+    Core physics and dynamics simulation for drilling operations.
+    
+    Implements physical equations and relationships for drilling processes,
+    including formation types, abnormal conditions, and parameter interactions.
+    Handles calculations for rate of penetration, bit wear, torque, pressure,
+    vibrations, and temperature.
+    
+    Attributes:
+        bit_diameter: Bit diameter in meters
+        max_wob: Maximum weight on bit in Newtons
+        max_rpm: Maximum rotation speed
+        drill_collar: DrillCollar instance for drill string calculations
+        mud_density: Drilling mud density in kg/m³
+        mud_viscosity: Drilling mud viscosity in Pa·s
+        formation_properties: Dictionary of formation type properties
+        current_formation: Current formation type being drilled
+        current_condition: Current abnormal condition status
+        current_temp: Current temperature in Celsius
+    """
+    
     def __init__(self):
+        """
+        Initialize DrillingPhysics with default parameters.
+        
+        Sets up physical constants, formation properties, and initial conditions.
+        """
         # پارامترهای ثابت فیزیکی
         self.bit_diameter = 0.2159     # قطر مته (متر) - معادل 8.5 اینچ
         self.max_wob = MAX_WOB         # حداکثر وزن روی مته (نیوتن)
@@ -148,7 +221,18 @@ class DrillingPhysics:
         self.current_temp = BASE_TEMPERATURE
     
     def update_temperature(self, depth: float) -> float:
-        """محاسبه دما براساس عمق"""
+        """
+        Calculate temperature based on depth.
+        
+        Uses a temperature gradient to estimate downhole temperature.
+        Temperature increases with depth according to geothermal gradient.
+        
+        Args:
+            depth: Current drilling depth in meters
+            
+        Returns:
+            Calculated temperature in Celsius (capped at maximum)
+        """
         # گرادیان دمایی: 2.5 درجه per 100 متر
         temp_gradient = TEMP_GRADIENT  # درجه سانتیگراد بر متر
         self.current_temp = self.min_mud_temp + (depth * temp_gradient)
@@ -160,7 +244,22 @@ class DrillingPhysics:
                                 flow_rate: float,
                                 bit_wear: float,
                                 vibrations: Dict[str, float]) -> AbnormalCondition:
-        """بررسی و تشخیص شرایط غیرعادی"""
+        """
+        Check and detect abnormal drilling conditions.
+        
+        Evaluates current drilling parameters to identify problematic conditions
+        such as excessive vibrations, bit balling, stick-slip, or formation changes.
+        
+        Args:
+            wob: Weight on bit in Newtons
+            rpm: Rotation speed in RPM
+            flow_rate: Mud flow rate in m³/s
+            bit_wear: Current bit wear (0-1)
+            vibrations: Dictionary with 'axial', 'lateral', 'torsional' vibration levels
+            
+        Returns:
+            AbnormalCondition enum indicating detected condition
+        """
         # بررسی ارتعاشات بیش از حد
         if (vibrations['axial'] > VIBRATION_THRESHOLD_AXIAL or 
             vibrations['lateral'] > VIBRATION_THRESHOLD_LATERAL or 
@@ -186,7 +285,19 @@ class DrillingPhysics:
             return AbnormalCondition.NORMAL
     
     def calculate_effective_wob(self, wob: float, angle: float = 0) -> float:
-        """محاسبه وزن مؤثر روی مته با در نظر گرفتن وزن گیره حفاری و زاویه انحراف"""
+        """
+        Calculate effective weight on bit considering drill collar weight and deviation angle.
+        
+        Accounts for drill collar weight and the reduction in effective WOB
+        due to drilling angle deviation from vertical.
+        
+        Args:
+            wob: Applied weight on bit in Newtons
+            angle: Drilling angle deviation from vertical in degrees (default: 0)
+            
+        Returns:
+            Effective weight on bit in Newtons (capped at maximum)
+        """
         # محاسبه وزن گیره حفاری
         collar_weight = self.drill_collar.calculate_weight()
         
@@ -202,7 +313,20 @@ class DrillingPhysics:
         return min(total_wob, self.max_wob)
     
     def calculate_torque(self, wob: float, bit_wear: float, rpm: float) -> float:
-        """محاسبه گشتاور کل با در نظر گرفتن گیره حفاری و اثر ژیروسکوپی"""
+        """
+        Calculate total torque considering drill collar and gyroscopic effects.
+        
+        Includes bit torque, gyroscopic torque from drill collar rotation,
+        and frictional torque from drill collar contact.
+        
+        Args:
+            wob: Weight on bit in Newtons
+            bit_wear: Current bit wear (0-1)
+            rpm: Rotation speed in RPM
+            
+        Returns:
+            Total torque in Newton-meters
+        """
         # گشتاور ناشی از مته
         bit_torque = self.friction_base * (1 + bit_wear) * wob * self.bit_diameter / 2
         
@@ -221,7 +345,20 @@ class DrillingPhysics:
         return bit_torque + gyroscopic_torque + collar_friction_torque
     
     def calculate_rop(self, wob: float, rpm: float, angle: float = 0) -> float:
-        """محاسبه نرخ نفوذ با در نظر گرفتن وزن مؤثر و زاویه انحراف"""
+        """
+        Calculate rate of penetration considering effective weight and deviation angle.
+        
+        ROP depends on WOB, RPM, formation properties, temperature, drilling angle,
+        and current abnormal conditions. Different formations have different maximum ROP limits.
+        
+        Args:
+            wob: Weight on bit in Newtons
+            rpm: Rotation speed in RPM
+            angle: Drilling angle deviation from vertical in degrees (default: 0)
+            
+        Returns:
+            Rate of penetration in meters per hour
+        """
         # محاسبه وزن مؤثر روی مته
         effective_wob = self.calculate_effective_wob(wob, angle)
         
@@ -276,7 +413,21 @@ class DrillingPhysics:
                           wob: float,
                           rpm: float,
                           current_wear: float) -> float:
-        """محاسبه فرسایش مته با در نظر گرفتن نوع سازند و دما"""
+        """
+        Calculate bit wear considering formation type and temperature.
+        
+        Bit wear increases with time, WOB, RPM, formation abrasiveness, and temperature.
+        Higher wear rates occur in more abrasive formations and at higher temperatures.
+        
+        Args:
+            time_hours: Time elapsed in hours
+            wob: Weight on bit in Newtons
+            rpm: Rotation speed in RPM
+            current_wear: Current bit wear level (0-1)
+            
+        Returns:
+            Updated bit wear level (0-1)
+        """
         formation_props = self.formation_properties[self.current_formation]
         abrasiveness = formation_props['abrasiveness']
         
@@ -302,7 +453,20 @@ class DrillingPhysics:
                               flow_rate: float,
                               depth: float,
                               formation_type: Optional[FormationType] = None) -> float:
-        """محاسبه افت فشار با در نظر گرفتن نوع سازند و دما"""
+        """
+        Calculate pressure loss considering formation type and temperature.
+        
+        Includes hydrostatic pressure, atmospheric pressure, flow-induced pressure loss,
+        and formation permeability effects. Temperature affects mud viscosity.
+        
+        Args:
+            flow_rate: Mud flow rate in m³/s
+            depth: Current drilling depth in meters
+            formation_type: Optional formation type (uses current if None)
+            
+        Returns:
+            Total pressure in Pascals
+        """
         if formation_type is None:
             formation_type = self.current_formation
             
@@ -336,7 +500,20 @@ class DrillingPhysics:
         return total_pressure
     
     def calculate_vibrations(self, wob: float, rpm: float, bit_wear: float) -> Dict[str, float]:
-        """محاسبه ارتعاشات سیستم حفاری"""
+        """
+        Calculate drilling system vibrations.
+        
+        Computes axial, lateral, and torsional vibration levels based on WOB, RPM,
+        and bit wear. Higher WOB and RPM increase vibrations, as does bit wear.
+        
+        Args:
+            wob: Weight on bit in Newtons
+            rpm: Rotation speed in RPM
+            bit_wear: Current bit wear level (0-1)
+            
+        Returns:
+            Dictionary with 'axial', 'lateral', and 'torsional' vibration levels (0-1)
+        """
         normalized_wob = wob / self.max_wob
         normalized_rpm = rpm / self.max_rpm
         
@@ -359,7 +536,24 @@ class DrillingPhysics:
                      action: Dict[str, float],
                      timestep: float,
                      angle: float = 0) -> Tuple[Dict[str, float], Dict[str, float]]:
-        """شبیه‌سازی یک گام زمانی با در نظر گرفتن تمام شرایط"""
+        """
+        Simulate one time step considering all conditions.
+        
+        Performs a complete physics simulation step, updating all drilling parameters
+        including depth, bit wear, torque, pressure, vibrations, and temperature.
+        Also checks for abnormal conditions.
+        
+        Args:
+            current_state: Current drilling state dictionary
+            action: Action dictionary with 'wob', 'rpm', 'flow_rate'
+            timestep: Time step duration in seconds
+            angle: Drilling angle deviation from vertical in degrees (default: 0)
+            
+        Returns:
+            Tuple of (new_state, info):
+            - new_state: Updated state dictionary
+            - info: Additional information dictionary
+        """
         # بروزرسانی دما
         self.update_temperature(current_state['depth'])
         

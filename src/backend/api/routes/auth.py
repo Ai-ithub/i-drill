@@ -2,7 +2,7 @@
 Authentication API Routes
 Handles user login, registration, and profile management
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
 import logging
@@ -13,7 +13,11 @@ from api.models.schemas import (
     UserCreate,
     UserLogin,
     UserResponse,
-    UserRole
+    UserRole,
+    PasswordResetRequest,
+    PasswordResetConfirm,
+    PasswordChangeRequest,
+    TokenRefreshRequest
 )
 from api.models.database_models import UserDB
 from services.auth_service import auth_service, ACCESS_TOKEN_EXPIRE_MINUTES
@@ -21,23 +25,34 @@ from api.dependencies import (
     get_current_active_user,
     get_current_admin_user
 )
+from api.dependencies import oauth2_scheme
+from utils.security import validate_password_strength, mask_sensitive_data
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
+# Rate limiting helper for auth endpoints
+# Note: Rate limiting is configured in app.py with specific limits per endpoint type
+# Auth endpoints use RATE_LIMIT_AUTH (default: 5/minute)
+# The middleware applies these limits automatically
+
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
-    user_create: UserCreate
+    user_create: UserCreate,
+    request: Request
 ):
     """
     Register a new user
     
     Creates a new user account with the provided information.
     Default role is 'viewer' unless specified.
+    
+    Rate limited: 5 requests per minute
     """
     try:
+        # Rate limiting is handled by middleware with RATE_LIMIT_AUTH (default: 5/minute)
         # Create user
         user = auth_service.create_user(
             username=user_create.username,
@@ -82,19 +97,21 @@ async def register(
 
 @router.post("/login", response_model=Token)
 async def login(
-    form_data: OAuth2PasswordRequestForm = Depends()
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    request: Request = None
 ):
     """
     Login with username and password
     
-    Returns a JWT access token for authentication.
+    Returns a JWT access token and refresh token for authentication.
     Token expires in 24 hours by default.
     """
     try:
-        # Authenticate user
+        # Authenticate user (with request for IP tracking)
         user = auth_service.authenticate_user(
             form_data.username,
-            form_data.password
+            form_data.password,
+            request=request
         )
         
         if user is None:
@@ -115,12 +132,16 @@ async def login(
             expires_delta=access_token_expires
         )
         
+        # Create refresh token
+        refresh_token = auth_service.create_refresh_token(user.id)
+        
         logger.info(f"User logged in: {user.username}")
         
         return Token(
             access_token=access_token,
             token_type="bearer",
-            expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60  # in seconds
+            expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # in seconds
+            refresh_token=refresh_token
         )
         
     except HTTPException:
@@ -135,19 +156,21 @@ async def login(
 
 @router.post("/login/json", response_model=Token)
 async def login_json(
-    user_login: UserLogin
+    user_login: UserLogin,
+    request: Request
 ):
     """
     Login with JSON payload (alternative to form data)
     
-    Returns a JWT access token for authentication.
+    Returns a JWT access token and refresh token for authentication.
     Useful for programmatic access.
     """
     try:
         # Authenticate user
         user = auth_service.authenticate_user(
             user_login.username,
-            user_login.password
+            user_login.password,
+            request=request
         )
         
         if user is None:
@@ -168,12 +191,16 @@ async def login_json(
             expires_delta=access_token_expires
         )
         
+        # Create refresh token
+        refresh_token = auth_service.create_refresh_token(user.id)
+        
         logger.info(f"User logged in (JSON): {user.username}")
         
         return Token(
             access_token=access_token,
             token_type="bearer",
-            expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60
+            expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            refresh_token=refresh_token
         )
         
     except HTTPException:
@@ -207,21 +234,212 @@ async def get_current_user_profile(
     )
 
 
-@router.put("/me/password")
-async def update_password(
-    current_password: str,
-    new_password: str,
+@router.post("/logout")
+async def logout(
+    token: str = Depends(oauth2_scheme),
     current_user: UserDB = Depends(get_current_active_user)
+):
+    """
+    Logout current user
+    
+    Blacklists the current access token.
+    """
+    try:
+        auth_service.blacklist_token(token, current_user.id, reason="logout")
+        
+        logger.info(f"User logged out: {current_user.username}")
+        
+        return {
+            "success": True,
+            "message": "Logged out successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error during logout: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Logout failed"
+        )
+
+
+@router.post("/refresh", response_model=Token)
+async def refresh_token(
+    refresh_request: TokenRefreshRequest
+):
+    """
+    Refresh access token using refresh token
+    
+    Returns a new access token and refresh token.
+    """
+    try:
+        from jose import jwt
+        from services.auth_service import SECRET_KEY, ALGORITHM
+        
+        # Decode refresh token
+        try:
+            payload = jwt.decode(refresh_request.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+            token_type = payload.get("type")
+            user_id = payload.get("user_id")
+            
+            if token_type != "refresh" or not user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid refresh token"
+                )
+        except:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired refresh token"
+            )
+        
+        # Get user
+        user = auth_service.get_user_by_id(user_id)
+        if not user or not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found or inactive"
+            )
+        
+        # Create new access token
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = auth_service.create_access_token(
+            data={
+                "sub": user.username,
+                "user_id": user.id,
+                "scopes": [user.role]
+            },
+            expires_delta=access_token_expires
+        )
+        
+        # Create new refresh token
+        refresh_token = auth_service.create_refresh_token(user.id)
+        
+        # Blacklist old refresh token
+        auth_service.blacklist_token(refresh_request.refresh_token, user.id, reason="refresh")
+        
+        return Token(
+            access_token=access_token,
+            token_type="bearer",
+            expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            refresh_token=refresh_token
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error refreshing token: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Token refresh failed"
+        )
+
+
+@router.post("/password/reset/request")
+async def request_password_reset(
+    reset_request: PasswordResetRequest
+):
+    """
+    Request password reset
+    
+    Sends a password reset token to the user's email (if configured).
+    Always returns success to prevent email enumeration.
+    """
+    try:
+        token = auth_service.create_password_reset_token(reset_request.email)
+        
+        # In production, send email with reset link
+        # For now, we just log it (in production, use email service)
+        if token:
+            logger.info(f"Password reset token generated for email: {mask_sensitive_data(reset_request.email)}")
+            # TODO: Send email with reset link: /auth/password/reset/confirm?token={token}
+        
+        # Always return success to prevent email enumeration
+        return {
+            "success": True,
+            "message": "If the email exists, a password reset link has been sent."
+        }
+        
+    except Exception as e:
+        logger.error(f"Error requesting password reset: {e}")
+        # Still return success to prevent enumeration
+        return {
+            "success": True,
+            "message": "If the email exists, a password reset link has been sent."
+        }
+
+
+@router.post("/password/reset/confirm")
+async def confirm_password_reset(
+    reset_confirm: PasswordResetConfirm
+):
+    """
+    Confirm password reset with token
+    
+    Resets the user's password using the reset token.
+    """
+    try:
+        # Verify token and get user
+        user = auth_service.verify_password_reset_token(reset_confirm.token)
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired reset token"
+            )
+        
+        # Validate password strength
+        is_valid, issues = validate_password_strength(reset_confirm.new_password)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Password does not meet requirements: {', '.join(issues)}"
+            )
+        
+        # Update password
+        success = auth_service.update_user_password(user.id, reset_confirm.new_password)
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to reset password"
+            )
+        
+        # Mark token as used
+        auth_service.use_password_reset_token(reset_confirm.token)
+        
+        logger.info(f"Password reset completed for user: {user.username}")
+        
+        return {
+            "success": True,
+            "message": "Password reset successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error confirming password reset: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Password reset failed"
+        )
+
+
+@router.put("/me/password", response_model=dict)
+async def update_password(
+    password_change: PasswordChangeRequest,
+    current_user: UserDB = Depends(get_current_active_user),
+    token: str = Depends(oauth2_scheme)
 ):
     """
     Update current user's password
     
     Requires the current password for verification.
+    Blacklists the current token after password change.
     """
     try:
         # Verify current password
         if not auth_service.verify_password(
-            current_password,
+            password_change.current_password,
             current_user.hashed_password
         ):
             raise HTTPException(
@@ -229,17 +447,18 @@ async def update_password(
                 detail="Current password is incorrect"
             )
         
-        # Validate new password
-        if len(new_password) < 8:
+        # Validate new password strength
+        is_valid, issues = validate_password_strength(password_change.new_password)
+        if not is_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="New password must be at least 8 characters"
+                detail=f"Password does not meet requirements: {', '.join(issues)}"
             )
         
         # Update password
         success = auth_service.update_user_password(
             current_user.id,
-            new_password
+            password_change.new_password
         )
         
         if not success:
@@ -248,11 +467,14 @@ async def update_password(
                 detail="Failed to update password"
             )
         
+        # Blacklist current token (force re-login)
+        auth_service.blacklist_token(token, current_user.id, reason="password_change")
+        
         logger.info(f"Password updated for user: {current_user.username}")
         
         return {
             "success": True,
-            "message": "Password updated successfully"
+            "message": "Password updated successfully. Please login again."
         }
         
     except HTTPException:

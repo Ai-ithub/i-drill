@@ -102,6 +102,69 @@ class UserDB(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
     last_login = Column(DateTime, nullable=True)
+    failed_login_attempts = Column(Integer, default=0)
+    locked_until = Column(DateTime, nullable=True)
+    password_changed_at = Column(DateTime, nullable=True)
+
+
+class PasswordResetTokenDB(Base):
+    """Password reset tokens table"""
+    __tablename__ = "password_reset_tokens"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    token = Column(String(255), unique=True, index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    used = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class BlacklistedTokenDB(Base):
+    """Blacklisted JWT tokens table"""
+    __tablename__ = "blacklisted_tokens"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String(500), unique=True, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.now)
+    reason = Column(String(100), nullable=True)  # 'logout', 'password_change', etc.
+
+
+class LoginAttemptDB(Base):
+    """Login attempt tracking table"""
+    __tablename__ = "login_attempts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), index=True, nullable=False)
+    ip_address = Column(String(45), nullable=True)  # IPv6 support
+    success = Column(Boolean, default=False)
+    attempted_at = Column(DateTime, default=datetime.now, index=True)
+    user_agent = Column(String(255), nullable=True)
+
+
+class ChangeRequestDB(Base):
+    """Change request tracking table"""
+    __tablename__ = "change_requests"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    rig_id = Column(String(50), index=True, nullable=False)
+    change_type = Column(String(20), nullable=False, index=True)
+    component = Column(String(100), nullable=False)
+    parameter = Column(String(100), nullable=False)
+    old_value = Column(Text, nullable=True)
+    new_value = Column(Text, nullable=False)
+    status = Column(String(20), default="pending", index=True)
+    auto_execute = Column(Boolean, default=False)
+    requested_by = Column(Integer, ForeignKey('users.id'), nullable=True)
+    approved_by = Column(Integer, ForeignKey('users.id'), nullable=True)
+    applied_by = Column(Integer, ForeignKey('users.id'), nullable=True)
+    requested_at = Column(DateTime, default=datetime.now, index=True)
+    approved_at = Column(DateTime, nullable=True)
+    applied_at = Column(DateTime, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    metadata = Column(JSON, nullable=True)  # Additional data about the change
 
 
 class RULPredictionDB(Base):

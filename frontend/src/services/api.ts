@@ -9,6 +9,61 @@ export const api = axios.create({
   },
 })
 
+// Request interceptor to add auth token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('i_drill_access_token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => {
+    return Promise.reject(error)
+  }
+)
+
+// Response interceptor to handle token refresh
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config
+
+    // If error is 401 and we haven't tried to refresh yet
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true
+
+      const refreshToken = localStorage.getItem('i_drill_refresh_token')
+      if (refreshToken) {
+        try {
+          const response = await axios.post(
+            `${API_BASE_URL}/auth/refresh`,
+            { refresh_token: refreshToken }
+          )
+
+          const { access_token, refresh_token: newRefreshToken } = response.data
+          localStorage.setItem('i_drill_access_token', access_token)
+          if (newRefreshToken) {
+            localStorage.setItem('i_drill_refresh_token', newRefreshToken)
+          }
+
+          // Retry original request with new token
+          originalRequest.headers.Authorization = `Bearer ${access_token}`
+          return api(originalRequest)
+        } catch (refreshError) {
+          // Refresh failed, clear auth
+          localStorage.removeItem('i_drill_access_token')
+          localStorage.removeItem('i_drill_refresh_token')
+          localStorage.removeItem('i_drill_user')
+          return Promise.reject(refreshError)
+        }
+      }
+    }
+
+    return Promise.reject(error)
+  }
+)
+
 // Sensor Data API
 export const sensorDataApi = {
   getRealtime: (rigId?: string, limit = 100) =>
@@ -114,8 +169,69 @@ export const healthApi = {
   detailed: () => api.get('/health/services'),
 }
 
-// Auth API (UI role helpers)
+// Auth API
 export const authApi = {
+  login: (username: string, password: string) => {
+    const formData = new FormData()
+    formData.append('username', username)
+    formData.append('password', password)
+    return api.post('/auth/login', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
+
+  loginJson: (username: string, password: string) =>
+    api.post('/auth/login/json', { username, password }),
+
+  logout: () => api.post('/auth/logout'),
+
+  refresh: (refreshToken: string) =>
+    api.post('/auth/refresh', { refresh_token: refreshToken }),
+
   me: () => api.get('/auth/me'),
+
+  register: (data: {
+    username: string
+    email: string
+    password: string
+    full_name?: string
+    role?: string
+  }) => api.post('/auth/register', data),
+
+  updatePassword: (currentPassword: string, newPassword: string) =>
+    api.put('/auth/me/password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+
+  requestPasswordReset: (email: string) =>
+    api.post('/auth/password/reset/request', { email }),
+
+  confirmPasswordReset: (token: string, newPassword: string) =>
+    api.post('/auth/password/reset/confirm', {
+      token,
+      new_password: newPassword,
+    }),
+}
+
+// Control API - Apply changes to drilling parameters
+export const controlApi = {
+  applyChange: (data: {
+    rig_id: string
+    change_type: 'optimization' | 'maintenance' | 'validation'
+    component: string
+    parameter: string
+    value: number | string
+    auto_execute?: boolean
+  }) => api.post('/control/apply-change', data),
+
+  getChangeHistory: (rigId?: string, limit = 50) =>
+    api.get('/control/change-history', { params: { rig_id: rigId, limit } }),
+
+  approveChange: (changeId: string) => api.post(`/control/change/${changeId}/approve`),
+
+  rejectChange: (changeId: string) => api.post(`/control/change/${changeId}/reject`),
 }
 

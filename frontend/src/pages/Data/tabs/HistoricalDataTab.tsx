@@ -2,17 +2,46 @@ import { useState, useMemo, FormEvent } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { useQuery } from '@tanstack/react-query'
 import { sensorDataApi } from '@/services/api'
-import { Calendar, Filter, Download, Loader2 } from 'lucide-react'
+import { Calendar, Filter, Download, Loader2, Radio, Database, Gauge, Thermometer } from 'lucide-react'
 
-const METRICS = [
-  { key: 'depth', label: 'Depth', unit: 'm', color: '#3b82f6' },
-  { key: 'wob', label: 'Weight on Bit', unit: 'kN', color: '#10b981' },
-  { key: 'rpm', label: 'Rotary Speed', unit: 'RPM', color: '#eab308' },
-  { key: 'torque', label: 'Torque', unit: 'N·m', color: '#f97316' },
-  { key: 'rop', label: 'Rate of Penetration', unit: 'm/h', color: '#a855f7' },
-  { key: 'mud_pressure', label: 'Mud Pressure', unit: 'bar', color: '#ef4444' },
-  { key: 'mud_flow', label: 'Mud Flow', unit: 'L/min', color: '#06b6d4' },
+// PLC/SCADA Parameters
+const PLC_METRICS = [
+  { key: 'depth', label: 'Depth', unit: 'ft', color: '#3b82f6', icon: 'TrendingUp' },
+  { key: 'wob', label: 'WOB', unit: 'lbs', color: '#10b981', icon: 'Activity' },
+  { key: 'rpm', label: 'RPM', unit: 'rpm', color: '#eab308', icon: 'Zap' },
+  { key: 'torque', label: 'Torque', unit: 'ft-lbs', color: '#f97316', icon: 'Gauge' },
+  { key: 'rop', label: 'ROP', unit: 'ft/hr', color: '#a855f7', icon: 'Activity' },
+  { key: 'mud_pressure', label: 'Mud Pressure', unit: 'psi', color: '#ef4444', icon: 'Gauge' },
+  { key: 'mud_flow', label: 'Mud Flow', unit: 'gpm', color: '#06b6d4', icon: 'Activity' },
+  { key: 'mud_temperature', label: 'Mud Temperature', unit: '°C', color: '#ec4899', icon: 'Thermometer' },
+  { key: 'mud_density', label: 'Mud Density', unit: 'ppg', color: '#8b5cf6', icon: 'Database' },
+  { key: 'mud_viscosity', label: 'Mud Viscosity', unit: 'cP', color: '#6366f1', icon: 'Gauge' },
+  { key: 'hook_load', label: 'Hook Load', unit: 'lbs', color: '#3b82f6', icon: 'Activity' },
+  { key: 'standpipe_pressure', label: 'Standpipe Pressure', unit: 'psi', color: '#0ea5e9', icon: 'Gauge' },
+  { key: 'casing_pressure', label: 'Casing Pressure', unit: 'psi', color: '#14b8a6', icon: 'Gauge' },
+  { key: 'annulus_pressure', label: 'Annulus Pressure', unit: 'psi', color: '#10b981', icon: 'Gauge' },
+  { key: 'pump_pressure', label: 'Pump Pressure', unit: 'psi', color: '#8b5cf6', icon: 'Gauge' },
+  { key: 'bit_temperature', label: 'Bit Temperature', unit: '°C', color: '#ef4444', icon: 'Thermometer' },
+  { key: 'motor_temperature', label: 'Motor Temperature', unit: '°C', color: '#f59e0b', icon: 'Thermometer' },
+  { key: 'vibration_level', label: 'Vibration', unit: 'g', color: '#f43f5e', icon: 'Activity' },
+  { key: 'power_consumption', label: 'Power Consumption', unit: 'kW', color: '#eab308', icon: 'Zap' },
+  { key: 'pump_status', label: 'Pump Status', unit: '', color: '#6366f1', icon: 'Activity' },
+  { key: 'compressor_status', label: 'Compressor Status', unit: '', color: '#8b5cf6', icon: 'Activity' },
 ]
+
+// LWD/MWD Parameters
+const LWD_METRICS = [
+  { key: 'gamma_ray', label: 'Gamma Ray', unit: 'API', color: '#fbbf24', icon: 'Radio' },
+  { key: 'resistivity', label: 'Resistivity', unit: 'ohm-m', color: '#34d399', icon: 'Radio' },
+  { key: 'density', label: 'Density', unit: 'g/cc', color: '#60a5fa', icon: 'Database' },
+  { key: 'porosity', label: 'Porosity', unit: '%', color: '#a78bfa', icon: 'Database' },
+  { key: 'neutron_porosity', label: 'Neutron Porosity', unit: '%', color: '#f472b6', icon: 'Radio' },
+  { key: 'sonic', label: 'Sonic', unit: 'μs/ft', color: '#22d3ee', icon: 'Radio' },
+  { key: 'caliper', label: 'Caliper', unit: 'in', color: '#fb923c', icon: 'Gauge' },
+  { key: 'temperature_lwd', label: 'LWD Temperature', unit: '°C', color: '#f87171', icon: 'Thermometer' },
+]
+
+const ALL_METRICS = [...PLC_METRICS, ...LWD_METRICS]
 
 export default function HistoricalDataTab() {
   const now = useMemo(() => new Date(), [])
@@ -22,12 +51,13 @@ export default function HistoricalDataTab() {
   const [rigId, setRigId] = useState('RIG_01')
   const [startTime, setStartTime] = useState(defaultStart.toISOString().slice(0, 16))
   const [endTime, setEndTime] = useState(defaultEnd.toISOString().slice(0, 16))
-  const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['depth', 'wob', 'rpm', 'rop'])
+  const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['depth', 'wob', 'rpm', 'rop', 'gamma_ray', 'resistivity'])
+  const [selectedCategory, setSelectedCategory] = useState<'all' | 'plc' | 'lwd'>('all')
   const [queryParams, setQueryParams] = useState({
     rig_id: rigId,
     start_time: defaultStart.toISOString(),
     end_time: defaultEnd.toISOString(),
-    limit: 500,
+    limit: 1000,
   })
 
   const handleSubmit = (e: FormEvent) => {
@@ -36,7 +66,7 @@ export default function HistoricalDataTab() {
       rig_id: rigId,
       start_time: new Date(startTime).toISOString(),
       end_time: new Date(endTime).toISOString(),
-      limit: 500,
+      limit: 1000,
     })
   }
 
@@ -59,15 +89,45 @@ export default function HistoricalDataTab() {
     if (!data?.data || !Array.isArray(data.data)) return []
     return data.data.map((item: any) => ({
       timestamp: item.timestamp,
+      // PLC/SCADA
       depth: item.depth || 0,
       wob: item.wob || 0,
       rpm: item.rpm || 0,
       torque: item.torque || 0,
       rop: item.rop || 0,
       mud_pressure: item.mud_pressure || 0,
-      mud_flow: item.mud_flow || 0,
+      mud_flow: item.mud_flow || item.mud_flow_rate || 0,
+      mud_temperature: item.mud_temperature || item.temperature || 0,
+      mud_density: item.mud_density || 0,
+      mud_viscosity: item.mud_viscosity || 0,
+      hook_load: item.hook_load || 0,
+      standpipe_pressure: item.standpipe_pressure || 0,
+      casing_pressure: item.casing_pressure || 0,
+      annulus_pressure: item.annulus_pressure || 0,
+      pump_pressure: item.pump_pressure || 0,
+      bit_temperature: item.bit_temperature || 0,
+      motor_temperature: item.motor_temperature || 0,
+      vibration_level: item.vibration_level || item.vibration || 0,
+      power_consumption: item.power_consumption || 0,
+      pump_status: item.pump_status || 0,
+      compressor_status: item.compressor_status || 0,
+      // LWD/MWD
+      gamma_ray: item.gamma_ray || 0,
+      resistivity: item.resistivity || 0,
+      density: item.density || 0,
+      porosity: item.porosity || 0,
+      neutron_porosity: item.neutron_porosity || 0,
+      sonic: item.sonic || 0,
+      caliper: item.caliper || 0,
+      temperature_lwd: item.temperature_lwd || 0,
     }))
   }, [data])
+
+  const displayedMetrics = useMemo(() => {
+    if (selectedCategory === 'all') return ALL_METRICS
+    if (selectedCategory === 'plc') return PLC_METRICS
+    return LWD_METRICS
+  }, [selectedCategory])
 
   const handleMetricToggle = (metric: string) => {
     setSelectedMetrics((prev) =>
@@ -82,11 +142,11 @@ export default function HistoricalDataTab() {
     }
 
     const csv = [
-      ['Timestamp', ...METRICS.map((m) => m.label)].join(','),
+      ['Timestamp', ...ALL_METRICS.map((m) => m.label)].join(','),
       ...chartData.map((item) =>
         [
           item.timestamp,
-          ...METRICS.map((m) => item[m.key as keyof typeof item] || ''),
+          ...ALL_METRICS.map((m) => item[m.key as keyof typeof item] || ''),
         ].join(',')
       ),
     ].join('\n')
@@ -106,7 +166,7 @@ export default function HistoricalDataTab() {
       <div>
         <h2 className="text-2xl font-semibold">Historical Data Analysis</h2>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Analyze historical drilling data and trends over time
+          Analyze historical data from all LWD/MWD sensors and PLC/SCADA systems
         </p>
       </div>
 
@@ -174,13 +234,55 @@ export default function HistoricalDataTab() {
           </div>
         </div>
 
+        {/* Category Filter */}
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+            Sensor Category
+          </label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('all')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                selectedCategory === 'all'
+                  ? 'bg-cyan-500 text-white'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              All Sensors
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('plc')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                selectedCategory === 'plc'
+                  ? 'bg-cyan-500 text-white'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              PLC/SCADA
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('lwd')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                selectedCategory === 'lwd'
+                  ? 'bg-cyan-500 text-white'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              LWD/MWD
+            </button>
+          </div>
+        </div>
+
         {/* Metric Selection */}
         <div className="space-y-2">
           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
             Select Metrics
           </label>
-          <div className="flex flex-wrap gap-2">
-            {METRICS.map((metric) => (
+          <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
+            {displayedMetrics.map((metric) => (
               <button
                 key={metric.key}
                 type="button"
@@ -253,13 +355,13 @@ export default function HistoricalDataTab() {
                   }}
                   labelFormatter={(value) => new Date(value).toLocaleString()}
                   formatter={(value: number, name: string) => {
-                    const metric = METRICS.find((m) => m.key === name)
+                    const metric = ALL_METRICS.find((m) => m.key === name)
                     return [`${value?.toFixed(2) || 0} ${metric?.unit || ''}`, metric?.label || name]
                   }}
                 />
                 <Legend />
                 {selectedMetrics.map((metricKey) => {
-                  const metric = METRICS.find((m) => m.key === metricKey)
+                  const metric = ALL_METRICS.find((m) => m.key === metricKey)
                   if (!metric) return null
                   return (
                     <Line
@@ -280,9 +382,9 @@ export default function HistoricalDataTab() {
 
         {/* Data Summary */}
         {chartData.length > 0 && (
-          <div className="mt-6 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-            {METRICS.map((metric) => {
-              const values = chartData.map((item) => item[metric.key as keyof typeof item] as number).filter((v) => v !== undefined && v !== null)
+          <div className="mt-6 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+            {displayedMetrics.filter(m => selectedMetrics.includes(m.key)).map((metric) => {
+              const values = chartData.map((item) => item[metric.key as keyof typeof item] as number).filter((v) => v !== undefined && v !== null && v !== 0)
               const avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0
               const max = values.length > 0 ? Math.max(...values) : 0
               const min = values.length > 0 ? Math.min(...values) : 0
@@ -308,4 +410,3 @@ export default function HistoricalDataTab() {
     </div>
   )
 }
-

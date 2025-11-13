@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, SecurityScopes
 from typing import Optional
 import logging
+from datetime import datetime
 
 from api.models.schemas import User, TokenData, UserRole
 from api.models.database_models import UserDB
@@ -56,6 +57,14 @@ async def get_current_user(
         headers={"WWW-Authenticate": authenticate_value},
     )
     
+    # Check if token is blacklisted
+    if auth_service.is_token_blacklisted(token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked",
+            headers={"WWW-Authenticate": authenticate_value},
+        )
+    
     # Decode token
     token_data = auth_service.decode_access_token(token)
     
@@ -72,6 +81,13 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User is inactive"
+        )
+    
+    # Check if account is locked
+    if user.locked_until and user.locked_until > datetime.now():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is temporarily locked"
         )
     
     # Check scopes/roles

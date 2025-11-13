@@ -217,6 +217,7 @@ def get_db() -> Generator[Session, None, None]:
 def init_database(
     database_url: str = None,
     create_tables: bool = True,
+    use_migrations: bool = True,
     **kwargs
 ):
     """
@@ -225,13 +226,32 @@ def init_database(
     Args:
         database_url: Database connection URL
         create_tables: Whether to create tables
+        use_migrations: If True, use Alembic migrations instead of create_all()
         **kwargs: Additional arguments for DatabaseManager.initialize()
+    
+    Note:
+        In production, always use migrations (use_migrations=True).
+        create_all() should only be used for development/testing.
     """
     try:
         db_manager.initialize(database_url=database_url, **kwargs)
         
         if create_tables:
-            db_manager.create_tables()
+            if use_migrations:
+                # Use Alembic migrations for production
+                logger.info("Using Alembic migrations for table creation")
+                logger.warning(
+                    "To apply migrations, run: alembic upgrade head\n"
+                    "Or use: python scripts/manage_migrations.py upgrade"
+                )
+                # Don't create tables here - let Alembic handle it
+            else:
+                # Use create_all() for development/testing only
+                logger.warning(
+                    "Using create_all() - not recommended for production. "
+                    "Use Alembic migrations instead."
+                )
+                db_manager.create_tables()
         
         logger.info("Database initialization completed")
         return True
@@ -269,6 +289,10 @@ def execute_raw_sql(sql: str, params: dict = None) -> list:
     
     Returns:
         Query results
+    
+    Warning:
+        Use with caution. Prefer ORM methods when possible.
+        For schema changes, use Alembic migrations instead.
     """
     with db_manager.session_scope() as session:
         result = session.execute(sql, params or {})

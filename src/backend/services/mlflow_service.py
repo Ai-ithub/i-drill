@@ -70,7 +70,21 @@ class MLflowService:
         tags: Optional[Dict[str, str]] = None
     ) -> Optional[str]:
         """
-        Log a model to MLflow
+        Log a model to MLflow tracking and registry.
+        
+        Logs model artifacts, metrics, parameters, and tags to MLflow.
+        Registers the model in the MLflow model registry.
+        
+        Args:
+            model: Model object to log (PyTorch, scikit-learn, or ONNX)
+            model_name: Name for model registration
+            framework: Framework type ("pytorch", "sklearn", "onnx")
+            metrics: Optional dictionary of metrics to log
+            params: Optional dictionary of parameters to log
+            tags: Optional dictionary of tags to set
+            
+        Returns:
+            MLflow run ID if successful, None otherwise
         """
         if not MLFLOW_AVAILABLE or self.client is None:
             logger.debug("MLflow unavailable; skipping model logging")
@@ -108,7 +122,21 @@ class MLflowService:
         version: Optional[str] = None,
         stage: Optional[str] = "Production"
     ):
-        """Load a model from MLflow registry"""
+        """
+        Load a model from MLflow model registry.
+        
+        Loads a model using MLflow's pyfunc interface, which supports
+        multiple frameworks.
+        
+        Args:
+            model_name: Name of the registered model
+            version: Specific version to load (optional)
+            stage: Model stage to load from (default: "Production")
+                   Ignored if version is specified
+            
+        Returns:
+            Loaded model object, or None if loading fails
+        """
         if not MLFLOW_AVAILABLE or self.client is None:
             logger.debug("MLflow unavailable; cannot load model")
             return None
@@ -127,7 +155,19 @@ class MLflowService:
         model_name: str,
         stage: str = "Production"
     ):
-        """Load a PyTorch model from the MLflow registry"""
+        """
+        Load a PyTorch model from the MLflow registry.
+        
+        Loads a PyTorch model specifically, preserving PyTorch-specific
+        functionality and methods.
+        
+        Args:
+            model_name: Name of the registered model
+            stage: Model stage to load from (default: "Production")
+            
+        Returns:
+            Loaded PyTorch model, or None if loading fails
+        """
         if not MLFLOW_AVAILABLE or self.client is None:
             logger.debug("MLflow unavailable; cannot load PyTorch model")
             return None
@@ -142,7 +182,21 @@ class MLflowService:
             return None
 
     def get_model_versions(self, model_name: str) -> List[Dict[str, Any]]:
-        """Get all versions of a registered model"""
+        """
+        Get all versions of a registered model.
+        
+        Args:
+            model_name: Name of the registered model
+            
+        Returns:
+            List of dictionaries containing version information:
+            - version: Version number
+            - stage: Current stage
+            - run_id: MLflow run ID
+            - status: Version status
+            - creation_timestamp: When version was created
+            - last_updated_timestamp: When version was last updated
+        """
         if not MLFLOW_AVAILABLE or self.client is None:
             logger.debug("MLflow unavailable; cannot query model versions")
             return []
@@ -165,7 +219,19 @@ class MLflowService:
             return []
 
     def transition_model_stage(self, model_name: str, version: str, stage: str) -> bool:
-        """Transition a model version to a different stage"""
+        """
+        Transition a model version to a different stage.
+        
+        Moves a model version between stages (e.g., Staging -> Production).
+        
+        Args:
+            model_name: Name of the registered model
+            version: Version number to transition
+            stage: Target stage (e.g., "Staging", "Production", "Archived")
+            
+        Returns:
+            True if transition succeeded, False otherwise
+        """
         if not MLFLOW_AVAILABLE or self.client is None:
             logger.debug("MLflow unavailable; cannot transition model stage")
             return False
@@ -179,7 +245,17 @@ class MLflowService:
             return False
 
     def get_registered_models(self) -> List[Dict[str, Any]]:
-        """Get all registered models"""
+        """
+        Get all registered models in the MLflow registry.
+        
+        Returns:
+            List of dictionaries containing model information:
+            - name: Model name
+            - creation_timestamp: When model was created
+            - last_updated_timestamp: When model was last updated
+            - description: Model description
+            - latest_versions: List of latest versions per stage
+        """
         if not MLFLOW_AVAILABLE or self.client is None:
             logger.debug("MLflow unavailable; cannot list registered models")
             return []
@@ -203,8 +279,14 @@ class MLflowService:
             logger.error(f"Error getting registered models: {models_error}")
             return []
 
-    def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None):
-        """Log metrics to the active MLflow run"""
+    def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None) -> None:
+        """
+        Log metrics to the active MLflow run.
+        
+        Args:
+            metrics: Dictionary of metric names to values
+            step: Optional step number for time-series metrics
+        """
         if not MLFLOW_AVAILABLE:
             logger.debug("MLflow unavailable; skipping metric logging")
             return
@@ -218,8 +300,14 @@ class MLflowService:
         except Exception as metrics_error:
             logger.error(f"Error logging metrics: {metrics_error}")
 
-    def log_artifact(self, local_path: str, artifact_path: Optional[str] = None):
-        """Log an artifact (file) to MLflow"""
+    def log_artifact(self, local_path: str, artifact_path: Optional[str] = None) -> None:
+        """
+        Log an artifact (file) to MLflow.
+        
+        Args:
+            local_path: Path to the local file to log
+            artifact_path: Optional path within the artifact directory
+        """
         if not MLFLOW_AVAILABLE:
             logger.debug("MLflow unavailable; skipping artifact logging")
             return
@@ -235,8 +323,17 @@ class MLflowService:
         model_name: str,
         metrics: Dict[str, float],
         params: Optional[Dict[str, Any]] = None
-    ):
-        """Log an inference event to MLflow"""
+    ) -> None:
+        """
+        Log an inference event to MLflow.
+        
+        Creates a nested run for tracking inference metrics and parameters.
+        
+        Args:
+            model_name: Name of the model used for inference
+            metrics: Dictionary of inference metrics (e.g., latency, accuracy)
+            params: Optional dictionary of inference parameters
+        """
         if not MLFLOW_AVAILABLE or self.client is None:
             logger.debug("MLflow unavailable; skipping inference logging")
             return
@@ -254,7 +351,17 @@ class MLflowService:
             logger.debug(f"Failed to log inference to MLflow: {inference_error}")
 
     def delete_model(self, model_name: str) -> bool:
-        """Delete a registered model"""
+        """
+        Delete a registered model from MLflow registry.
+        
+        Permanently deletes the model and all its versions.
+        
+        Args:
+            model_name: Name of the registered model to delete
+            
+        Returns:
+            True if deletion succeeded, False otherwise
+        """
         if not MLFLOW_AVAILABLE or self.client is None:
             logger.debug("MLflow unavailable; cannot delete model")
             return False

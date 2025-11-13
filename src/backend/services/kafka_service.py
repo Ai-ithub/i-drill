@@ -14,15 +14,36 @@ except ImportError:
 from config_loader import config_loader
 import json
 import threading
+import os
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 
 class KafkaService:
-    """Service for Kafka streaming operations"""
+    """
+    Service for Kafka streaming operations.
+    
+    Handles Kafka producer and consumer operations for real-time data streaming.
+    Provides methods for producing sensor data to Kafka topics and consuming messages
+    with automatic reconnection and error handling.
+    
+    Attributes:
+        available: Boolean indicating if Kafka is available and initialized
+        kafka_config: Dictionary containing Kafka configuration
+        producer: Kafka Producer instance
+        consumer: Kafka Consumer instance (deprecated, use consumers dict)
+        consumers: Dictionary of consumer instances keyed by consumer_id
+    """
     
     def __init__(self):
+        """
+        Initialize KafkaService.
+        
+        Attempts to load Kafka configuration and initialize the producer.
+        If Kafka is not available or initialization fails, the service will
+        operate in a degraded mode.
+        """
         self.available = KAFKA_AVAILABLE
         if not KAFKA_AVAILABLE:
             logger.warning("confluent_kafka is not installed; Kafka streaming is disabled.")
@@ -44,31 +65,65 @@ class KafkaService:
         self.consumers = {}  # Track multiple consumer instances
         self._initialize_producer()
     
-    def _initialize_producer(self):
-        """Initialize Kafka producer"""
+    def _initialize_producer(self, retry_count: int = 0, max_retries: int = 3) -> None:
+        """
+        Initialize Kafka producer with retry logic.
+        
+        Attempts to create a Kafka producer with exponential backoff retry.
+        Configures producer with appropriate settings for reliability and performance.
+        
+        Args:
+            retry_count: Current retry attempt number
+            max_retries: Maximum number of retry attempts
+        """
         if not KAFKA_AVAILABLE:
             return
+        
         try:
-            self.producer = Producer({
+            # Get Kafka authentication if configured
+            producer_config = {
                 'bootstrap.servers': self.kafka_config.get('bootstrap_servers', 'localhost:9092'),
                 'client.id': 'api-producer',
                 'acks': 'all',
                 'retries': 3,
-            })
+                'retry.backoff.ms': 100,
+                'request.timeout.ms': 30000,
+                'delivery.timeout.ms': 120000,
+            }
+            
+            # Add authentication if configured
+            kafka_username = os.getenv('KAFKA_USERNAME')
+            kafka_password = os.getenv('KAFKA_PASSWORD')
+            if kafka_username and kafka_password:
+                producer_config.update({
+                    'security.protocol': 'SASL_PLAINTEXT',
+                    'sasl.mechanism': 'PLAIN',
+                    'sasl.username': kafka_username,
+                    'sasl.password': kafka_password,
+                })
+            
+            self.producer = Producer(producer_config)
             logger.info("Kafka producer initialized")
             self.available = True
         except Exception as e:
-            logger.error(f"Error initializing Kafka producer: {e}")
-            self.producer = None
-            self.available = False
+            logger.error(f"Error initializing Kafka producer (attempt {retry_count + 1}/{max_retries}): {e}")
+            if retry_count < max_retries:
+                import time
+                time.sleep(2 ** retry_count)  # Exponential backoff
+                return self._initialize_producer(retry_count + 1, max_retries)
+            else:
+                self.producer = None
+                self.available = False
     
-    def produce_sensor_data(self, topic: str, data: Dict[str, Any]) -> bool:
+    def produce_sensor_data(self, topic: str, data: Dict[str, Any], retry_count: int = 0, max_retries: int = 3) -> bool:
         """
-        Produce sensor data to Kafka topic
+        Produce sensor data to Kafka topic with retry logic
         
         Args:
             topic: Kafka topic name
             data: Sensor data dictionary
+            retry_count: Current retry attempt
+            max_retries: Maximum number of retries
             
         Returns:
             True if successful, False otherwise
@@ -78,8 +133,12 @@ class KafkaService:
             return False
         
         if not self.producer:
-            logger.error("Kafka producer not initialized")
-            return False
+            # Try to reinitialize producer
+            logger.warning("Kafka producer not initialized, attempting to reinitialize...")
+            self._initialize_producer()
+            if not self.producer:
+                logger.error("Failed to reinitialize Kafka producer")
+                return False
         
         try:
             # Serialize data
@@ -99,11 +158,30 @@ class KafkaService:
             return True
             
         except Exception as e:
-            logger.error(f"Error producing message to Kafka: {e}")
+            logger.error(f"Error producing message to Kafka (attempt {retry_count + 1}/{max_retries}): {e}")
+            
+            # Retry with exponential backoff
+            if retry_count < max_retries:
+                import time
+                time.sleep(2 ** retry_count)
+                # Try to reinitialize producer if connection lost
+                if "Connection" in str(e) or "Broker" in str(e):
+                    self._initialize_producer()
+                return self.produce_sensor_data(topic, data, retry_count + 1, max_retries)
+            
             return False
     
-    def _delivery_callback(self, err, msg):
-        """Callback for Kafka delivery reports"""
+    def _delivery_callback(self, err: Optional[Exception], msg: Any) -> None:
+        """
+        Callback function for Kafka message delivery reports.
+        
+        Logs delivery status for each message produced to Kafka.
+        Called asynchronously by the Kafka producer library.
+        
+        Args:
+            err: Error object if delivery failed, None if successful
+            msg: Message object containing delivery metadata
+        """
         if err is not None:
             logger.error(f"Message delivery failed: {err}")
         else:
@@ -209,15 +287,25 @@ class KafkaService:
         
         return messages
     
-    def close_consumer(self, consumer_id: str):
-        """Close a consumer"""
+    def close_consumer(self, consumer_id: str) -> None:
+        """
+        Close a specific Kafka consumer.
+        
+        Args:
+            consumer_id: Unique identifier of the consumer to close
+        """
         if consumer_id in self.consumers:
             self.consumers[consumer_id].close()
             del self.consumers[consumer_id]
             logger.info(f"Consumer {consumer_id} closed")
     
-    def close(self):
-        """Close all consumers and producer"""
+    def close(self) -> None:
+        """
+        Close all consumers and the producer.
+        
+        Flushes any pending messages before closing the producer.
+        Closes all active consumer instances.
+        """
         if not KAFKA_AVAILABLE:
             return
         for consumer_id in list(self.consumers.keys()):
@@ -252,6 +340,12 @@ class KafkaService:
             return False
 
     def is_available(self) -> bool:
+        """
+        Check if Kafka service is available and ready.
+        
+        Returns:
+            True if Kafka is available and producer is initialized, False otherwise
+        """
         return bool(self.available and self.producer is not None)
 
 # Global instance

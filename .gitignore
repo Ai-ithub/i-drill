@@ -69,6 +69,10 @@ tensorboard_logs/
 # Environment variables
 .env
 .env.local
+.env.*
+*.env
+config.env
+!config.env.example
 
 # Docker
 .dockerignore

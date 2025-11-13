@@ -16,7 +16,7 @@ export default function Header() {
     <header className="bg-slate-800 border-b border-slate-700 px-6 py-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <h2 className="text-xl font-semibold text-white">i-Drill Dashboard</h2>
+          <h2 className="text-xl font-semibold text-white">i drill Dashboard</h2>
           <div className="flex items-center gap-2">
             {isLoading ? (
               <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />

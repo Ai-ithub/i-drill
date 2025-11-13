@@ -38,12 +38,17 @@ from api.routes import (
     auth,
     rl,
     dvr,
-    backup
+    backup,
+    control,
+    integration,
 )
 
 # Import services
 from services.data_bridge import DataBridge
-from services.auth_service import ensure_default_admin_account, SECRET_KEY
+from services.auth_service import ensure_default_admin_account
+
+# Import security utilities
+from utils.security import get_or_generate_secret_key, validate_cors_origins
 
 # Import error handlers
 from api.exceptions import IDrillException
@@ -78,21 +83,66 @@ logger = logging.getLogger(__name__)
 APP_ENV = os.getenv("APP_ENV", "development").lower()
 DEFAULT_ALLOWED_ORIGINS = (
     "http://localhost:3000",
+    "http://localhost:3001",
     "http://localhost:5173",
     "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
     "http://127.0.0.1:5173",
 )
 
 
 def _validate_security_settings(allowed_origins: List[str]) -> None:
+    """Validate security settings for production environment"""
     if APP_ENV != "production":
         return
 
-    if SECRET_KEY.startswith("your-secret-key"):
-        raise RuntimeError("SECRET_KEY must be configured for production deployments.")
+    # Validate SECRET_KEY
+    try:
+        secret_key = get_or_generate_secret_key()
+        insecure_patterns = [
+            "your-secret-key",
+            "change-in-production",
+            "change_this",
+            "change_this_to_a_secure",
+            "CHANGE_THIS_TO_A_SECURE_RANDOM_KEY_MIN_32_CHARS"
+        ]
+        secret_key_lower = secret_key.lower()
+        for pattern in insecure_patterns:
+            if pattern.lower() in secret_key_lower:
+                raise RuntimeError(
+                    f"SECRET_KEY contains insecure pattern '{pattern}'. "
+                    "Please use a secure random key in production."
+                )
+        
+        if len(secret_key) < 32:
+            raise RuntimeError(
+                f"SECRET_KEY is too short ({len(secret_key)} chars). "
+                "Minimum 32 characters required for production."
+            )
+    except RuntimeError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"SECRET_KEY validation failed: {e}")
 
+    # Validate CORS origins
     if set(allowed_origins) == set(DEFAULT_ALLOWED_ORIGINS):
-        raise RuntimeError("ALLOWED_ORIGINS must be explicitly set in production.")
+        raise RuntimeError(
+            "ALLOWED_ORIGINS must be explicitly set in production. "
+            "Cannot use default localhost origins."
+        )
+    
+    # Check for wildcards in production
+    for origin in allowed_origins:
+        if "*" in origin:
+            raise RuntimeError(
+                f"CORS origin contains wildcard: {origin}. "
+                "Wildcards are not allowed in production."
+            )
+        if not (origin.startswith("http://") or origin.startswith("https://")):
+            raise RuntimeError(
+                f"Invalid CORS origin format: {origin}. "
+                "Must start with http:// or https://"
+            )
 
 
 # Lifespan context manager for startup/shutdown events
@@ -274,28 +324,70 @@ app = FastAPI(
 # ==================== Middleware Configuration ====================
 
 # CORS Middleware - Allow frontend to access API
-allowed_origins = [
-    origin.strip()
-    for origin in os.getenv(
-        "ALLOWED_ORIGINS",
-        ",".join(DEFAULT_ALLOWED_ORIGINS),
-    ).split(",")
-    if origin.strip()
-]
+# Support both ALLOWED_ORIGINS and CORS_ORIGINS for backward compatibility
+cors_origins_env = os.getenv("ALLOWED_ORIGINS") or os.getenv("CORS_ORIGINS", "")
+if cors_origins_env:
+    allowed_origins_raw = [
+        origin.strip()
+        for origin in cors_origins_env.split(",")
+        if origin.strip()
+    ]
+else:
+    allowed_origins_raw = list(DEFAULT_ALLOWED_ORIGINS)
 
+# Validate and sanitize CORS origins
+allowed_origins = validate_cors_origins(allowed_origins_raw)
+
+# Validate security settings (only in production)
 _validate_security_settings(allowed_origins)
+
+# Define allowed methods (restrict for security)
+allowed_methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+if APP_ENV == "production":
+    # In production, be more restrictive
+    allowed_methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+else:
+    # In development, allow all methods for flexibility
+    allowed_methods = ["*"]
+
+# Define allowed headers (restrict for security)
+allowed_headers = [
+    "Content-Type",
+    "Authorization",
+    "Accept",
+    "Accept-Language",
+    "Content-Language",
+    "X-Requested-With",
+]
+if APP_ENV == "production":
+    # In production, use explicit headers only
+    pass  # Use the list above
+else:
+    # In development, allow all headers for flexibility
+    allowed_headers = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=allowed_methods,
+    allow_headers=allowed_headers,
+    expose_headers=["X-Process-Time", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
 )
 
-# Support proxied deployments (when dependency در دسترس باشد)
+# Support proxied deployments
 if PROXY_MIDDLEWARE_AVAILABLE and ProxyHeadersMiddleware is not None:
-    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+    # In production, use specific trusted hosts; in development, allow all
+    if APP_ENV == "production":
+        # In production, get trusted hosts from environment or use specific hosts
+        trusted_hosts = os.getenv("TRUSTED_HOSTS", "").split(",")
+        trusted_hosts = [h.strip() for h in trusted_hosts if h.strip()]
+        if not trusted_hosts:
+            logger.warning("No TRUSTED_HOSTS set in production. Using '*' as fallback.")
+            trusted_hosts = "*"
+        app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=trusted_hosts)
+    else:
+        app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 # Optional HTTPS redirect
 if os.getenv("FORCE_HTTPS", "false").lower() == "true":
@@ -309,6 +401,14 @@ from utils.security import get_rate_limit_config
 
 # Rate Limiting Configuration
 rate_limit_config = get_rate_limit_config()
+
+# In production, rate limiting MUST be enabled
+if APP_ENV == "production" and not rate_limit_config["enabled"]:
+    raise RuntimeError(
+        "Rate limiting is mandatory in production. "
+        "Set ENABLE_RATE_LIMIT=true in your environment variables."
+    )
+
 limiter = None
 
 if RATE_LIMITING_AVAILABLE and rate_limit_config["enabled"]:
@@ -318,12 +418,20 @@ if RATE_LIMITING_AVAILABLE and rate_limit_config["enabled"]:
     
     # Use Redis for rate limiting in production if available
     storage_url = rate_limit_config["storage_url"]
-    if storage_url == "memory://" and os.getenv("APP_ENV", "development").lower() == "production":
+    if storage_url == "memory://" and APP_ENV == "production":
         # Try to use Redis for rate limiting in production
         redis_host = os.getenv("REDIS_HOST", "localhost")
         redis_port = os.getenv("REDIS_PORT", "6379")
-        storage_url = f"redis://{redis_host}:{redis_port}"
-        logger.info(f"Using Redis for rate limiting: {storage_url}")
+        redis_password = os.getenv("REDIS_PASSWORD")
+        
+        if redis_password:
+            storage_url = f"redis://:{redis_password}@{redis_host}:{redis_port}"
+        else:
+            storage_url = f"redis://{redis_host}:{redis_port}"
+        
+        logger.info(f"Using Redis for rate limiting: {redis_host}:{redis_port}")
+    elif storage_url == "memory://" and APP_ENV != "production":
+        logger.warning("⚠️ Using in-memory rate limiting. For production, use Redis.")
     
     default_limit = rate_limit_config["limits"]["default"]
     limiter = Limiter(
@@ -335,7 +443,22 @@ if RATE_LIMITING_AVAILABLE and rate_limit_config["enabled"]:
     app.state.rate_limit_config = rate_limit_config
     app.add_middleware(SlowAPIMiddleware)  # type: ignore[arg-type]
     logger.info(f"✅ Rate limiting enabled with default limit: {default_limit}")
+    logger.info(f"   Auth limit: {rate_limit_config['limits']['auth']}")
+    logger.info(f"   Predictions limit: {rate_limit_config['limits']['predictions']}")
+    logger.info(f"   Sensor data limit: {rate_limit_config['limits']['sensor_data']}")
+elif not RATE_LIMITING_AVAILABLE:
+    if APP_ENV == "production":
+        raise RuntimeError(
+            "Rate limiting library (slowapi) is not installed. "
+            "Install it with: pip install slowapi"
+        )
+    logger.warning("⚠️ Rate limiting library not available. Install slowapi to enable.")
 else:
+    if APP_ENV == "production":
+        raise RuntimeError(
+            "Rate limiting is disabled but required in production. "
+            "Set ENABLE_RATE_LIMIT=true in your environment variables."
+        )
     logger.warning("⚠️ Rate limiting is disabled")
 
 
@@ -450,9 +573,21 @@ app.include_router(
 )
 
 app.include_router(
+    control.router,
+    prefix="/api/v1",
+    tags=["Control"]
+)
+
+app.include_router(
     backup.router,
     prefix="/api/v1",
     tags=["Backup"]
+)
+
+app.include_router(
+    integration.router,
+    prefix="/api/v1",
+    tags=["Integration"]
 )
 
 

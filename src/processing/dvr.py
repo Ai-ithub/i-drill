@@ -33,7 +33,18 @@ DB_CONFIG = {
 
 @contextmanager
 def db_conn(**overrides):
-    """Yields a psycopg2 connection with commit/rollback/close handled."""
+    """
+    Context manager for database connections.
+    
+    Yields a psycopg2 connection with automatic commit/rollback/close handling.
+    On success, commits the transaction. On exception, rolls back.
+    
+    Args:
+        **overrides: Optional database configuration overrides
+        
+    Yields:
+        psycopg2 connection object
+    """
     cfg = {**DB_CONFIG, **overrides}
     conn = psycopg2.connect(**cfg)
     try:
@@ -45,13 +56,34 @@ def db_conn(**overrides):
     finally:
         conn.close()
 
-def insert_message(message: dict):
+def insert_message(message: dict) -> None:
+    """
+    Insert a message into the drilling_data table.
+    
+    Inserts sensor data into the database using the predefined INSERT_QUERY.
+    Handles conflicts by updating existing records.
+    
+    Args:
+        message: Dictionary containing sensor data with keys matching COLUMNS
+    """
     data = tuple(message.get(col) for col in COLUMNS)
     with db_conn() as conn, conn.cursor() as cur:
         cur.execute(INSERT_QUERY, data)
         conn.commit()
 
-def get_last_n_rows(n, **overrides):
+def get_last_n_rows(n: int, **overrides) -> pd.DataFrame:
+    """
+    Get the last N rows from drilling_data table.
+    
+    Retrieves the most recent N records ordered by timestamp descending.
+    
+    Args:
+        n: Number of rows to retrieve
+        **overrides: Optional database configuration overrides
+        
+    Returns:
+        DataFrame containing the last N rows with all columns
+    """
     with db_conn(**overrides) as conn, conn.cursor() as cur:
         cur.execute("""
             SELECT *
@@ -64,7 +96,21 @@ def get_last_n_rows(n, **overrides):
     return pd.DataFrame(rows, columns=cols)
 
 
-def zscore_outlier(value, history, threshold=3.0):
+def zscore_outlier(value: float, history: list, threshold: float = 3.0) -> bool:
+    """
+    Detect outlier using z-score method.
+    
+    Calculates z-score of value against historical data and checks if it
+    exceeds the threshold (default: 3 standard deviations).
+    
+    Args:
+        value: Current value to check
+        history: List of historical values
+        threshold: Z-score threshold (default: 3.0)
+        
+    Returns:
+        True if value is an outlier, False otherwise
+    """
     arr = np.array(history)
     mean = arr.mean()
     std = arr.std()
@@ -73,7 +119,22 @@ def zscore_outlier(value, history, threshold=3.0):
     z = (value - mean) / std
     return abs(z) > threshold
 
-def rolling_anomaly(value, history, window=50, threshold=3.0):
+def rolling_anomaly(value: float, history: list, window: int = 50, threshold: float = 3.0) -> bool:
+    """
+    Detect anomaly using rolling window method.
+    
+    Uses a rolling window of recent historical data to calculate mean and
+    standard deviation, then checks if value exceeds threshold standard deviations.
+    
+    Args:
+        value: Current value to check
+        history: List of historical values
+        window: Size of rolling window (default: 50)
+        threshold: Standard deviation threshold (default: 3.0)
+        
+    Returns:
+        True if value is an anomaly, False otherwise
+    """
     if len(history) < window:
         window_data = history
     else:
@@ -85,7 +146,21 @@ def rolling_anomaly(value, history, window=50, threshold=3.0):
         return False
     return abs(value - mean) > threshold * std
 
-def pca_outlier(current_values, history, threshold=3.0):
+def pca_outlier(current_values: list, history: list, threshold: float = 3.0) -> bool:
+    """
+    Detect outlier using Principal Component Analysis (PCA).
+    
+    Performs PCA on historical multi-dimensional data and checks if
+    the current values represent an outlier in the principal component space.
+    
+    Args:
+        current_values: List of current feature values
+        history: List of historical multi-dimensional data points
+        threshold: Outlier threshold in PCA space (default: 3.0)
+        
+    Returns:
+        True if current values are an outlier, False otherwise
+    """
     try:
         from sklearn.decomposition import PCA
     except ImportError:
@@ -107,7 +182,22 @@ def pca_outlier(current_values, history, threshold=3.0):
     z = np.sqrt(np.sum(((current_pc - mean) / std) ** 2))
     return z > threshold
 
-def get_history_for_anomaly(n=50):
+def get_history_for_anomaly(n: int = 50) -> tuple:
+    """
+    Get historical data for anomaly detection.
+    
+    Retrieves the last N rows and extracts numeric columns for use in
+    anomaly detection algorithms.
+    
+    Args:
+        n: Number of historical rows to retrieve (default: 50)
+        
+    Returns:
+        Tuple of (history_dict, numeric_cols) where:
+        - history_dict: Dictionary mapping column names to value lists,
+          plus "multi" key for multi-dimensional data
+        - numeric_cols: List of numeric column names
+    """
     df = get_last_n_rows(n)
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     history_dict = {}
@@ -119,10 +209,23 @@ def get_history_for_anomaly(n=50):
         history_dict["multi"] = []
     return history_dict, numeric_cols
 
-def flag_anomaly(message, history_dict, numeric_cols, window=50, threshold=3.0):
+def flag_anomaly(message: dict, history_dict: dict, numeric_cols: list, 
+                 window: int = 50, threshold: float = 3.0) -> dict:
     """
-    Sets message["Anomaly"] = True if any feature is anomalous by z-score, rolling, or PCA.
-    Otherwise sets message["Anomaly"] = False.
+    Flag anomalies in a message using multiple detection methods.
+    
+    Checks for anomalies using z-score, rolling window, and PCA methods.
+    Sets message["Anomaly"] = True if any method detects an anomaly.
+    
+    Args:
+        message: Dictionary containing sensor data to check
+        history_dict: Dictionary of historical data by column name
+        numeric_cols: List of numeric column names to check
+        window: Rolling window size for rolling_anomaly (default: 50)
+        threshold: Threshold for all detection methods (default: 3.0)
+        
+    Returns:
+        Message dictionary with "Anomaly" flag set
     """
     anomaly_found = False
 

@@ -1,4 +1,4 @@
-import { useQuery } from 'react-query'
+import { useQuery } from '@tanstack/react-query'
 import { maintenanceApi } from '@/services/api'
 import { BellRing } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
@@ -7,14 +7,12 @@ export default function NotificationBadge() {
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  const { data: alerts, isLoading } = useQuery(
-    'maintenance-alerts-header',
-    () => maintenanceApi.getAlerts().then((res) => res.data),
-    {
-      refetchInterval: 30000,
-      staleTime: 15000,
-    },
-  )
+  const { data: alerts, isLoading } = useQuery({
+    queryKey: ['maintenance-alerts-header'],
+    queryFn: () => maintenanceApi.getAlerts().then((res) => res.data),
+    refetchInterval: 30000,
+    staleTime: 15000,
+  })
 
   const alertCount = Array.isArray(alerts) ? alerts.filter((alert: any) => !alert.resolved).length : 0
 

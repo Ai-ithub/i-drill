@@ -1,5 +1,5 @@
 import { FormEvent, useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from 'react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { maintenanceApi } from '@/services/api'
 
 const toInputValue = (date: Date) => {
@@ -34,56 +34,46 @@ export default function Maintenance() {
     notes: '',
   })
 
-  const alertsQuery = useQuery(
-    ['maintenance-alerts', rigFilter],
-    () => maintenanceApi.getAlerts(rigFilter || undefined).then((res) => res.data),
-    {
-      keepPreviousData: true,
-    }
-  )
+  const alertsQuery = useQuery({
+    queryKey: ['maintenance-alerts', rigFilter],
+    queryFn: () => maintenanceApi.getAlerts(rigFilter || undefined).then((res) => res.data),
+    placeholderData: (previousData) => previousData,
+  })
 
-  const scheduleQuery = useQuery(
-    ['maintenance-schedule', rigFilter],
-    () => maintenanceApi.getSchedule(rigFilter || undefined).then((res) => res.data),
-    {
-      keepPreviousData: true,
-    }
-  )
+  const scheduleQuery = useQuery({
+    queryKey: ['maintenance-schedule', rigFilter],
+    queryFn: () => maintenanceApi.getSchedule(rigFilter || undefined).then((res) => res.data),
+    placeholderData: (previousData) => previousData,
+  })
 
-  const createAlertMutation = useMutation(
-    (payload: typeof alertForm) => maintenanceApi.createAlert(payload).then((res) => res.data),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries(['maintenance-alerts', rigFilter])
-        setAlertForm((prev) => ({ ...prev, message: '' }))
-      },
-    }
-  )
+  const createAlertMutation = useMutation({
+    mutationFn: (payload: typeof alertForm) => maintenanceApi.createAlert(payload).then((res) => res.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['maintenance-alerts', rigFilter] })
+      setAlertForm((prev) => ({ ...prev, message: '' }))
+    },
+  })
 
-  const createScheduleMutation = useMutation(
-    (payload: typeof scheduleForm) =>
+  const createScheduleMutation = useMutation({
+    mutationFn: (payload: typeof scheduleForm) =>
       maintenanceApi.createSchedule({
         ...payload,
         scheduled_date: new Date(payload.scheduled_date).toISOString(),
       }),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries(['maintenance-schedule', rigFilter])
-        setScheduleForm((prev) => ({
-          ...prev,
-          notes: '',
-          assigned_to: '',
-        }))
-      },
-    }
-  )
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['maintenance-schedule', rigFilter] })
+      setScheduleForm((prev) => ({
+        ...prev,
+        notes: '',
+        assigned_to: '',
+      }))
+    },
+  })
 
-  const deleteScheduleMutation = useMutation(
-    (scheduleId: string) => maintenanceApi.deleteSchedule(scheduleId),
-    {
-      onSuccess: () => queryClient.invalidateQueries(['maintenance-schedule', rigFilter]),
-    }
-  )
+  const deleteScheduleMutation = useMutation({
+    mutationFn: (scheduleId: string) => maintenanceApi.deleteSchedule(scheduleId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['maintenance-schedule', rigFilter] }),
+  })
 
   const handleCreateAlert = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()

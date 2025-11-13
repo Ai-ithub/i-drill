@@ -39,7 +39,26 @@ except ImportError:
 
 class RULTrainer:
     """
-    Trainer class for RUL prediction models
+    Trainer class for RUL (Remaining Useful Life) prediction models.
+    
+    Provides comprehensive training functionality including:
+    - Training and validation loops
+    - Learning rate scheduling
+    - Early stopping
+    - Model checkpointing
+    - TensorBoard logging (optional)
+    - ONNX model export
+    
+    Attributes:
+        model: PyTorch model to train
+        device: Computing device (CPU or CUDA)
+        optimizer: Optimizer for training
+        criterion: Loss function
+        scheduler: Learning rate scheduler
+        patience: Early stopping patience
+        save_dir: Directory for saving checkpoints
+        train_losses: Training loss history
+        val_losses: Validation loss history
     """
     
     def __init__(self, model: nn.Module, device: str = 'auto',
@@ -395,9 +414,17 @@ class RULTrainer:
         
         self.logger.info(f"Checkpoint loaded from {checkpoint_path}")
     
-    def plot_training_history(self):
+    def plot_training_history(self) -> None:
         """
-        Plot training history
+        Plot comprehensive training history visualizations.
+        
+        Creates a 2x2 subplot figure showing:
+        - Training and validation loss curves
+        - Mean Absolute Error (MAE) curves
+        - RUL score progression
+        - Predictions vs targets scatter plot from last epoch
+        
+        Saves the plot to the save directory.
         """
         fig, axes = plt.subplots(2, 2, figsize=(15, 10))
         

@@ -5,26 +5,22 @@ import { Activity, TrendingUp, Zap, AlertTriangle, WifiOff } from 'lucide-react'
 import SystemStatusBar from '@/components/System/SystemStatusBar'
 
 export default function Dashboard() {
-  const { data: analyticsData, isLoading } = useQuery({
+  const { data: analyticsData, isLoading, error: analyticsError } = useQuery({
     queryKey: ['analytics'],
     queryFn: () => sensorDataApi.getAnalytics('RIG_01').then((res) => res.data.summary),
     refetchInterval: 60000, // Refresh every minute
+    retry: 1,
+    retryDelay: 1000,
   })
 
-  const { data: serviceStatus } = useQuery({
+  const { data: serviceStatus, error: healthError } = useQuery({
     queryKey: ['system-status'],
     queryFn: () => healthApi.detailed().then((res) => res.data),
     refetchInterval: 20000,
     staleTime: 15000,
+    retry: 1,
+    retryDelay: 1000,
   })
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-slate-400">Loading...</div>
-      </div>
-    )
-  }
 
   const serviceDetails = serviceStatus?.details ?? serviceStatus ?? {}
   const connectionChips = useMemo(() => {
@@ -96,13 +92,9 @@ export default function Dashboard() {
     },
   ]
 
-  return (
-    <div className="space-y-6 text-slate-900 dark:text-slate-100">
-      <div className="space-y-2">
-        <h1 className="text-3xl font-bold">Operations Dashboard</h1>
-        <p className="text-slate-500 dark:text-slate-300">Overview of drilling operations status and service health</p>
-      </div>
-
+  // Overview tab content component
+  const OverviewContent = () => (
+    <>
       <SystemStatusBar />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -174,6 +166,30 @@ export default function Dashboard() {
             </div>
           ))}
         </div>
+      </div>
+    </>
+  )
+
+  return (
+    <div className="space-y-6 text-slate-900 dark:text-slate-100">
+      <div className="space-y-2">
+        <h1 className="text-3xl font-bold">Operations Dashboard</h1>
+        <p className="text-slate-500 dark:text-slate-300">Overview of drilling operations status and service health</p>
+      </div>
+
+      {/* Dashboard Content */}
+      <div className="mt-6">
+        {isLoading && (
+          <div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-4 py-3 text-sm text-blue-700 dark:text-blue-300 mb-4">
+            Loading dashboard data...
+          </div>
+        )}
+        {(analyticsError || healthError) && (
+          <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-3 text-sm text-amber-700 dark:text-amber-300 mb-4">
+            ⚠️ Some data may not be available. The dashboard will continue to function with cached or default values.
+          </div>
+        )}
+        <OverviewContent />
       </div>
     </div>
   )

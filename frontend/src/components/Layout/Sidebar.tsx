@@ -15,7 +15,7 @@ export default function Sidebar() {
   return (
     <aside className="w-64 bg-slate-800 border-l border-slate-700 flex flex-col">
       <div className="p-6 border-b border-slate-700">
-        <h1 className="text-2xl font-bold text-white">i-Drill</h1>
+        <h1 className="text-2xl font-bold text-white">i drill</h1>
         <p className="text-sm text-slate-400 mt-1">Drilling Data Dashboard</p>
       </div>
       <nav className="flex-1 p-4 space-y-2">

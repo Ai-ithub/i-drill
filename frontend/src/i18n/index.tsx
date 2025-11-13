@@ -2,7 +2,7 @@
  * Internationalization (i18n) Configuration
  * Supports Persian (Farsi) and English
  */
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 export type Language = 'fa' | 'en';
 
@@ -141,12 +141,18 @@ const I18nContext = createContext<I18nContextType | undefined>(undefined);
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [language, setLanguage] = useState<Language>(() => {
     // Get from localStorage or default to browser language
+    if (typeof window === 'undefined') {
+      return 'en';
+    }
     const saved = localStorage.getItem('i18n-language') as Language;
     if (saved && (saved === 'fa' || saved === 'en')) {
       return saved;
     }
-    const browserLang = navigator.language.split('-')[0];
-    return browserLang === 'fa' ? 'fa' : 'en';
+    if (typeof navigator !== 'undefined') {
+      const browserLang = navigator.language.split('-')[0];
+      return browserLang === 'fa' ? 'fa' : 'en';
+    }
+    return 'en';
   });
 
   const t = (key: string): string => {
@@ -166,16 +172,22 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const handleSetLanguage = (lang: Language) => {
     setLanguage(lang);
-    localStorage.setItem('i18n-language', lang);
-    document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
-    document.documentElement.lang = lang;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('i18n-language', lang);
+      if (typeof document !== 'undefined') {
+        document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
+        document.documentElement.lang = lang;
+      }
+    }
   };
 
   // Set initial direction
-  if (typeof document !== 'undefined') {
-    document.documentElement.dir = language === 'fa' ? 'rtl' : 'ltr';
-    document.documentElement.lang = language;
-  }
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.dir = language === 'fa' ? 'rtl' : 'ltr';
+      document.documentElement.lang = language;
+    }
+  }, [language]);
 
   return (
     <I18nContext.Provider

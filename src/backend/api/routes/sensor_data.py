@@ -1,5 +1,37 @@
 """
 Sensor Data API Routes
+
+This module provides REST API endpoints and WebSocket support for sensor data operations.
+
+Endpoints:
+- GET /realtime: Retrieve real-time sensor data
+- GET /historical: Retrieve historical sensor data with filtering
+- GET /aggregated: Get aggregated sensor data
+- GET /analytics/{rig_id}: Get analytics summary for a rig
+- POST /: Create new sensor data record
+- WebSocket /ws/{rig_id}: Real-time sensor data streaming
+
+All endpoints support:
+- Pagination (limit, offset)
+- Filtering by rig_id
+- Time range filtering (for historical data)
+- Error handling and validation
+
+Example:
+    >>> # Get real-time data
+    >>> GET /api/v1/sensor-data/realtime?rig_id=RIG_01&limit=10
+    >>> 
+    >>> # Get historical data
+    >>> GET /api/v1/sensor-data/historical?start_time=2024-01-01&end_time=2024-01-02
+    >>> 
+    >>> # Create sensor data
+    >>> POST /api/v1/sensor-data/
+    >>> {
+    ...     "rig_id": "RIG_01",
+    ...     "timestamp": "2024-01-01T00:00:00",
+    ...     "depth": 5000.0,
+    ...     "wob": 15000.0
+    ... }
 """
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, HTTPException
 from typing import Optional, List
@@ -38,6 +70,28 @@ data_service = DataService()
     - Quick status checks
     
     **Rate Limits:** 100 requests per minute
+    
+    **Example Request:**
+    ```bash
+    GET /api/v1/sensor-data/realtime?rig_id=RIG_01&limit=10
+    ```
+    
+    **Example Response:**
+    ```json
+    {
+      "success": true,
+      "count": 10,
+      "data": [
+        {
+          "rig_id": "RIG_01",
+          "timestamp": "2024-01-01T12:00:00",
+          "depth": 5000.0,
+          "wob": 15000.0,
+          "rpm": 100.0
+        }
+      ]
+    }
+    ```
     """,
     responses={
         200: {

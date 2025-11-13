@@ -33,14 +33,48 @@ AUTO_STEP_MIN_INTERVAL = 0.5  # seconds
 
 
 class _PolicyWrapper:
-    """Wraps loaded policy models to provide a unified action interface."""
+    """
+    Wraps loaded policy models to provide a unified action interface.
+    
+    Handles different policy model types (Stable-Baselines3, PyTorch models)
+    and provides a consistent interface for action prediction with bounds clipping.
+    
+    Attributes:
+        model: Loaded policy model (Stable-Baselines3 or PyTorch)
+        action_size: Number of action dimensions
+        action_bounds: Dictionary mapping action names to min/max bounds
+    """
 
     def __init__(self, model, action_size: int, action_bounds: Dict[str, Dict[str, float]]):
+        """
+        Initialize policy wrapper.
+        
+        Args:
+            model: Policy model to wrap (Stable-Baselines3 or PyTorch model)
+            action_size: Number of action dimensions
+            action_bounds: Dictionary with action bounds, e.g. {"wob": {"min": 0, "max": 50000}}
+        """
         self.model = model
         self.action_size = action_size
         self.action_bounds = action_bounds
 
     def act(self, observation: np.ndarray) -> np.ndarray:
+        """
+        Get action from policy model given observation.
+        
+        Handles both Stable-Baselines3 models (with predict method) and
+        raw PyTorch models. Clips actions to specified bounds.
+        
+        Args:
+            observation: Current environment observation array
+            
+        Returns:
+            Action array clipped to bounds
+            
+        Raises:
+            RuntimeError: If PyTorch is not available
+            ValueError: If action size doesn't match expected size
+        """
         if not TORCH_AVAILABLE or torch is None:
             raise RuntimeError("PyTorch not available for policy inference")
 
@@ -72,9 +106,37 @@ class _PolicyWrapper:
 
 
 class RLService:
-    """Service wrapper around the drilling reinforcement learning environment."""
+    """
+    Service wrapper around the drilling reinforcement learning environment.
+    
+    Provides a service interface for interacting with the DrillingEnv RL environment,
+    including manual control, automatic policy-based control, episode management,
+    and history tracking.
+    
+    Attributes:
+        _lock: Thread lock for thread-safe operations
+        _history: List of episode history dictionaries
+        _episode_index: Current episode index
+        _step_index: Current step index within episode
+        _last_reward: Last reward received
+        _last_done: Last done flag
+        _last_info: Last info dictionary from environment
+        _policy_mode: Current policy mode ("manual" or "auto")
+        _policy_wrapper: Wrapped policy model for automatic control
+        _policy_metadata: Metadata about loaded policy
+        _auto_interval_seconds: Interval between auto steps in seconds
+        _last_auto_step: Timestamp of last auto step
+        _env: DrillingEnv instance (if available)
+        _current_observation: Current environment observation
+    """
 
     def __init__(self):
+        """
+        Initialize RLService.
+        
+        Sets up the service with default state and initializes the drilling
+        environment if available. Starts in manual control mode.
+        """
         self._lock = threading.Lock()
         self._history: List[Dict[str, Any]] = []
         self._episode_index = 0
@@ -107,6 +169,19 @@ class RLService:
     # Environment control
     # ------------------------------------------------------------------ #
     def reset(self, random_init: bool = False) -> Dict[str, Any]:
+        """
+        Reset the RL environment to initial state.
+        
+        Resets the drilling environment, clears episode history, increments
+        episode index, and resets step counter. Optionally randomizes initial
+        formation and angle.
+        
+        Args:
+            random_init: If True, randomizes initial formation type and drilling angle
+            
+        Returns:
+            Dictionary containing current environment state after reset
+        """
         with self._lock:
             if not RL_AVAILABLE or self._env is None:
                 return self._build_state()
@@ -122,6 +197,25 @@ class RLService:
             return self._build_state()
 
     def step(self, action: Dict[str, float]) -> Dict[str, Any]:
+        """
+        Execute one step in the RL environment with given action.
+        
+        Applies the action to the environment, updates state, and records
+        the step in history. Returns updated state with reward and done flag.
+        
+        Args:
+            action: Dictionary with 'wob', 'rpm', and 'flow_rate' values
+            
+        Returns:
+            Dictionary containing:
+            - observation: Current environment observation
+            - reward: Reward received for this step
+            - done: Boolean indicating if episode is finished
+            - info: Additional information dictionary
+            - action: Action that was applied
+            - step_index: Current step number
+            - episode_index: Current episode number
+        """
         with self._lock:
             if not RL_AVAILABLE or self._env is None:
                 state = self._build_state()
@@ -160,6 +254,17 @@ class RLService:
             return snapshot
 
     def auto_step(self) -> Dict[str, Any]:
+        """
+        Automatically execute a step using the loaded policy.
+        
+        Uses the loaded policy model to select an action and execute it.
+        Respects auto_interval_seconds to prevent too frequent steps.
+        Only works when policy mode is set to "auto" and a policy is loaded.
+        
+        Returns:
+            Dictionary containing step result with success flag and state,
+            or error message if conditions are not met
+        """
         with self._lock:
             if self._policy_mode != "auto":
                 return {
@@ -223,16 +328,43 @@ class RLService:
             }
 
     def get_state(self) -> Dict[str, Any]:
+        """
+        Get current environment state.
+        
+        Returns:
+            Dictionary containing current observation, reward, done flag,
+            info, step index, and episode index
+        """
         with self._lock:
             return self._build_state()
 
     def get_history(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Get episode history.
+        
+        Args:
+            limit: Maximum number of history entries to return (default: 100)
+            
+        Returns:
+            List of state dictionaries from current episode history
+        """
         with self._lock:
             if limit <= 0:
                 return []
             return self._history[-limit:]
 
     def get_config(self) -> Dict[str, Any]:
+        """
+        Get RL environment configuration.
+        
+        Returns:
+            Dictionary containing:
+            - available: Boolean indicating if RL environment is available
+            - action_space: Action space bounds for wob, rpm, flow_rate
+            - observation_labels: List of observation dimension names
+            - max_episode_steps: Maximum steps per episode
+            - policy_mode: Current policy mode ("manual" or "auto")
+        """
         base_config = {
             "available": bool(RL_AVAILABLE and self._env is not None),
             "action_space": {
@@ -262,6 +394,16 @@ class RLService:
     # Policy management
     # ------------------------------------------------------------------ #
     def load_policy_from_mlflow(self, model_name: str, stage: str = "Production") -> Dict[str, Any]:
+        """
+        Load policy model from MLflow model registry.
+        
+        Args:
+            model_name: Name of the model in MLflow registry
+            stage: Model stage to load (default: "Production")
+            
+        Returns:
+            Dictionary with success flag and status message
+        """
         with self._lock:
             if mlflow_service is None:
                 return {
@@ -279,6 +421,17 @@ class RLService:
             return self._attach_policy(model, source="mlflow", identifier=model_name, stage=stage)
 
     def load_policy_from_file(self, file_path: str) -> Dict[str, Any]:
+        """
+        Load policy model from local file.
+        
+        Supports both .pt/.pth (TorchScript) and regular PyTorch model files.
+        
+        Args:
+            file_path: Path to the policy model file
+            
+        Returns:
+            Dictionary with success flag and status message
+        """
         with self._lock:
             if not TORCH_AVAILABLE or torch is None:
                 return {
@@ -306,6 +459,21 @@ class RLService:
             return self._attach_policy(model, source="file", identifier=file_path, stage=None)
 
     def _attach_policy(self, model, source: str, identifier: Optional[str], stage: Optional[str]) -> Dict[str, Any]:
+        """
+        Attach a policy model to the service.
+        
+        Wraps the model in a PolicyWrapper and updates policy metadata.
+        This is an internal method called by load_policy_from_mlflow and load_policy_from_file.
+        
+        Args:
+            model: Policy model to attach (PyTorch or Stable-Baselines3)
+            source: Source identifier ("mlflow" or "file")
+            identifier: Model identifier (name or file path)
+            stage: Model stage (for MLflow models)
+            
+        Returns:
+            Dictionary with success flag and policy status
+        """
         if not RL_AVAILABLE or self._env is None:
             return {
                 "success": False,
@@ -342,6 +510,20 @@ class RLService:
         }
 
     def set_policy_mode(self, mode: Literal["manual", "auto"], auto_interval_seconds: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Set policy control mode.
+        
+        Switches between manual control (actions provided by user) and
+        automatic control (actions selected by loaded policy).
+        
+        Args:
+            mode: Control mode ("manual" or "auto")
+            auto_interval_seconds: Minimum interval between auto steps in seconds
+                                  (only used when mode is "auto")
+            
+        Returns:
+            Dictionary with success flag and updated policy status
+        """
         with self._lock:
             if mode == "auto":
                 if self._policy_wrapper is None or not self._policy_metadata.get("loaded"):
@@ -365,6 +547,20 @@ class RLService:
             }
 
     def get_policy_status(self) -> Dict[str, Any]:
+        """
+        Get current policy status and metadata.
+        
+        Returns:
+            Dictionary containing:
+            - loaded: Boolean indicating if policy is loaded
+            - source: Policy source ("mlflow" or "file")
+            - identifier: Model identifier
+            - stage: Model stage (for MLflow)
+            - loaded_at: ISO timestamp when policy was loaded
+            - mode: Current policy mode
+            - auto_interval_seconds: Auto step interval
+            - policy_loaded: Boolean indicating if policy wrapper exists
+        """
         metadata = dict(self._policy_metadata)
         metadata.update(
             {
@@ -385,6 +581,16 @@ class RLService:
     # Helpers
     # ------------------------------------------------------------------ #
     def _build_state(self) -> Dict[str, Any]:
+        """
+        Build current state dictionary from internal state.
+        
+        This is an internal helper method that constructs a state dictionary
+        from the service's internal state variables.
+        
+        Returns:
+            Dictionary containing observation, reward, done, info, step_index,
+            and episode_index
+        """
         observation = (
             self._current_observation.tolist()
             if isinstance(self._current_observation, np.ndarray)

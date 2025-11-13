@@ -4,7 +4,8 @@ Security utilities for i-Drill API
 import os
 import secrets
 import hashlib
-from typing import Optional
+import re
+from typing import Optional, Tuple, List
 import logging
 
 logger = logging.getLogger(__name__)
@@ -60,10 +61,16 @@ def get_or_generate_secret_key() -> str:
     insecure_patterns = [
         "your-secret-key",
         "change-in-production",
+        "change_this",
+        "change_this_to_a_secure",
         "secret",
         "password",
         "12345",
-        "admin"
+        "admin",
+        "default",
+        "test",
+        "demo",
+        "example"
     ]
     
     secret_key_lower = secret_key.lower()
@@ -146,4 +153,66 @@ def get_rate_limit_config() -> dict:
         "limits": limits,
         "storage_url": os.getenv("RATE_LIMIT_STORAGE_URL", "memory://"),  # Use Redis in production
     }
+
+
+def mask_sensitive_data(data: str, mask_char: str = "*") -> str:
+    """
+    Mask sensitive data in strings (passwords, tokens, etc.)
+    
+    Args:
+        data: String containing potentially sensitive data
+        mask_char: Character to use for masking
+        
+    Returns:
+        Masked string
+    """
+    if not data or len(data) < 4:
+        return mask_char * 4
+    
+    # Show first 2 and last 2 characters, mask the rest
+    if len(data) <= 6:
+        return mask_char * len(data)
+    
+    return data[:2] + mask_char * (len(data) - 4) + data[-2:]
+
+
+def validate_password_strength(password: str) -> Tuple[bool, List[str]]:
+    """
+    Validate password strength
+    
+    Args:
+        password: Password to validate
+        
+    Returns:
+        (is_valid, list of issues)
+    """
+    issues = []
+    
+    if len(password) < 8:
+        issues.append("Password must be at least 8 characters long")
+    
+    if len(password) < 12:
+        issues.append("Password should be at least 12 characters for production")
+    
+    if not re.search(r'[A-Z]', password):
+        issues.append("Password should contain at least one uppercase letter")
+    
+    if not re.search(r'[a-z]', password):
+        issues.append("Password should contain at least one lowercase letter")
+    
+    if not re.search(r'\d', password):
+        issues.append("Password should contain at least one number")
+    
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+        issues.append("Password should contain at least one special character")
+    
+    # Check for common weak passwords
+    common_passwords = [
+        "password", "12345678", "admin123", "qwerty",
+        "password123", "admin", "letmein", "welcome"
+    ]
+    if password.lower() in common_passwords:
+        issues.append("Password is too common and easily guessable")
+    
+    return len(issues) == 0, issues
 

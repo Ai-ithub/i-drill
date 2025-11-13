@@ -14,12 +14,31 @@ logger = logging.getLogger(__name__)
 
 
 class TrainingPipelineService:
-    """Service for orchestrating predictive model training and deployment."""
+    """
+    Service for orchestrating predictive model training and deployment.
+    
+    Provides high-level interface for training ML models with MLflow tracking,
+    model promotion, and version management.
+    
+    Attributes:
+        mlflow_service: MLflowService instance for model lifecycle management
+    """
 
     def __init__(self) -> None:
+        """
+        Initialize TrainingPipelineService.
+        
+        Sets up the service with MLflow integration.
+        """
         self.mlflow_service = mlflow_service
 
     def _mlflow_available(self) -> bool:
+        """
+        Check if MLflow is available.
+        
+        Returns:
+            True if MLflow is installed and service is initialized, False otherwise
+        """
         return mlflow is not None and self.mlflow_service is not None
 
     def start_training_job(
@@ -28,7 +47,25 @@ class TrainingPipelineService:
         parameters: Optional[Dict[str, Any]] = None,
         experiment_name: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Trigger a lightweight training run tracked in MLflow."""
+        """
+        Trigger a lightweight training run tracked in MLflow.
+        
+        Creates an MLflow run to track training parameters and metrics.
+        This is a placeholder implementation that logs placeholder metrics.
+        
+        Args:
+            model_name: Name of the model being trained
+            parameters: Optional dictionary of training parameters
+            experiment_name: Optional MLflow experiment name (default: "i-drill-training")
+            
+        Returns:
+            Dictionary containing:
+            - success: Boolean indicating if job started successfully
+            - run_id: MLflow run ID if successful
+            - experiment_name: Experiment name used
+            - metrics: Dictionary of logged metrics
+            - message: Error message if failed
+        """
         if not self._mlflow_available():
             return {"success": False, "message": "MLflow is not configured on this environment"}
 
@@ -54,6 +91,19 @@ class TrainingPipelineService:
             return {"success": False, "message": str(exc)}
 
     def promote_model(self, model_name: str, version: str, stage: str) -> Dict[str, Any]:
+        """
+        Promote a model version to a different stage.
+        
+        Transitions a model version between stages (e.g., Staging -> Production).
+        
+        Args:
+            model_name: Name of the registered model
+            version: Version number to promote
+            stage: Target stage (e.g., "Staging", "Production", "Archived")
+            
+        Returns:
+            Dictionary with success flag and optional error message
+        """
         if not self._mlflow_available():
             return {"success": False, "message": "MLflow is not configured on this environment"}
 
@@ -65,6 +115,13 @@ class TrainingPipelineService:
             return {"success": False, "message": str(exc)}
 
     def list_registered_models(self) -> List[Dict[str, Any]]:
+        """
+        List all registered models in MLflow.
+        
+        Returns:
+            List of dictionaries containing model information from MLflow registry.
+            Empty list if MLflow is unavailable or operation fails.
+        """
         if not self._mlflow_available():
             return []
         try:
@@ -74,6 +131,16 @@ class TrainingPipelineService:
             return []
 
     def list_model_versions(self, model_name: str) -> List[Dict[str, Any]]:
+        """
+        List all versions of a registered model.
+        
+        Args:
+            model_name: Name of the registered model
+            
+        Returns:
+            List of dictionaries containing version information.
+            Empty list if MLflow is unavailable or operation fails.
+        """
         if not self._mlflow_available():
             return []
         try:

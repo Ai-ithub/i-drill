@@ -27,18 +27,20 @@ Write-Host ""
 
 # اجرای بک‌اند در پنجره جدید
 Write-Host "🚀 در حال راه‌اندازی بک‌اند..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$backendPath'; Write-Host '=== Backend Server (پورت 8001) ===' -ForegroundColor Cyan; python start_server.py" -WindowStyle Normal
+$backendCommand = "Write-Host '=== Backend Server (Port 8001) ===' -ForegroundColor Cyan; python start_server.py; pause"
+Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $backendCommand -WorkingDirectory $backendPath -WindowStyle Normal
 
 Start-Sleep -Seconds 3
 
 # اجرای فرانت‌اند در پنجره جدید
 Write-Host "🚀 در حال راه‌اندازی فرانت‌اند..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$frontendPath'; Write-Host '=== Frontend Dashboard (پورت 3000) ===' -ForegroundColor Cyan; npm run dev" -WindowStyle Normal
+$frontendCommand = "Write-Host '=== Frontend Dashboard (Port 3001) ===' -ForegroundColor Cyan; npm run dev; pause"
+Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $frontendCommand -WorkingDirectory $frontendPath -WindowStyle Normal
 
 Write-Host ""
 Write-Host "✅ هر دو سرور راه‌اندازی شدند!" -ForegroundColor Green
 Write-Host ""
-Write-Host "📊 داشبورد: http://localhost:3000" -ForegroundColor Cyan
+Write-Host "📊 داشبورد: http://localhost:3001" -ForegroundColor Cyan
 Write-Host "📚 API Docs: http://localhost:8001/docs" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "⚠️  توجه: پنجره‌های PowerShell را باز نگه دارید!" -ForegroundColor Yellow

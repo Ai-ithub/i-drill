@@ -20,7 +20,16 @@ from sklearn.base import BaseEstimator, RegressorMixin
 
 class LSTMRULModel(nn.Module):
     """
-    LSTM-based model for RUL prediction
+    LSTM-based model for RUL (Remaining Useful Life) prediction.
+    
+    Uses bidirectional LSTM layers with multi-head attention mechanism
+    to capture temporal patterns in sensor data sequences. Suitable for
+    time-series prediction tasks where long-term dependencies are important.
+    
+    Architecture:
+        - Bidirectional LSTM layers for sequence processing
+        - Multi-head attention mechanism for feature importance
+        - Fully connected layers for final prediction
     """
     
     def __init__(self, input_dim: int, hidden_dim: int = 128, 
@@ -78,8 +87,14 @@ class LSTMRULModel(nn.Module):
         # Initialize weights
         self._init_weights()
         
-    def _init_weights(self):
-        """Initialize model weights"""
+    def _init_weights(self) -> None:
+        """
+        Initialize model weights using appropriate initialization strategies.
+        
+        Uses Xavier uniform initialization for input-to-hidden weights,
+        orthogonal initialization for hidden-to-hidden weights, and
+        zero initialization for biases.
+        """
         for name, param in self.named_parameters():
             if 'weight_ih' in name:
                 nn.init.xavier_uniform_(param.data)
@@ -116,10 +131,24 @@ class LSTMRULModel(nn.Module):
 
 class PositionalEncoding(nn.Module):
     """
-    Positional encoding for Transformer model
+    Positional encoding for Transformer model.
+    
+    Adds positional information to input embeddings using sinusoidal functions.
+    This allows the Transformer to understand the order of elements in sequences
+    since Transformers don't have inherent sequential processing.
+    
+    Attributes:
+        pe: Buffer containing pre-computed positional encodings
     """
     
     def __init__(self, d_model: int, max_len: int = 5000):
+        """
+        Initialize positional encoding.
+        
+        Args:
+            d_model: Model dimension (embedding size)
+            max_len: Maximum sequence length to support
+        """
         super(PositionalEncoding, self).__init__()
         
         pe = torch.zeros(max_len, d_model)
@@ -135,11 +164,31 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Add positional encoding to input tensor.
+        
+        Args:
+            x: Input tensor of shape (sequence_length, batch_size, d_model)
+            
+        Returns:
+            Tensor with positional encoding added
+        """
         return x + self.pe[:x.size(0), :]
 
 class TransformerRULModel(nn.Module):
     """
-    Transformer-based model for RUL prediction
+    Transformer-based model for RUL (Remaining Useful Life) prediction.
+    
+    Uses Transformer encoder architecture with self-attention mechanisms
+    to capture complex temporal dependencies in sensor data. Well-suited
+    for parallel processing and capturing long-range dependencies.
+    
+    Architecture:
+        - Input projection layer
+        - Positional encoding
+        - Transformer encoder layers
+        - Global average pooling
+        - Fully connected output layers
     """
     
     def __init__(self, input_dim: int, d_model: int = 128, 
@@ -198,8 +247,14 @@ class TransformerRULModel(nn.Module):
         # Initialize weights
         self._init_weights()
         
-    def _init_weights(self):
-        """Initialize model weights"""
+    def _init_weights(self) -> None:
+        """
+        Initialize model weights using appropriate initialization strategies.
+        
+        Uses Xavier uniform initialization for input-to-hidden weights,
+        orthogonal initialization for hidden-to-hidden weights, and
+        zero initialization for biases.
+        """
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
@@ -235,7 +290,17 @@ class TransformerRULModel(nn.Module):
 
 class CNNLSTMRULModel(nn.Module):
     """
-    CNN-LSTM hybrid model for RUL prediction
+    CNN-LSTM hybrid model for RUL (Remaining Useful Life) prediction.
+    
+    Combines convolutional neural networks for local feature extraction
+    with LSTM layers for temporal sequence modeling. The CNN layers extract
+    local patterns while LSTM layers capture long-term dependencies.
+    
+    Architecture:
+        - 1D CNN layers for feature extraction
+        - Batch normalization and pooling
+        - Bidirectional LSTM for sequence modeling
+        - Fully connected output layers
     """
     
     def __init__(self, input_dim: int, cnn_channels: list = [64, 128, 256],
@@ -330,7 +395,16 @@ class CNNLSTMRULModel(nn.Module):
 
 class BaselineRULModel(BaseEstimator, RegressorMixin):
     """
-    Wrapper class for scikit-learn baseline models to work with sequence data
+    Wrapper class for scikit-learn baseline models to work with sequence data.
+    
+    Provides a scikit-learn compatible interface for traditional machine learning
+    models (Linear Regression, Random Forest, SVR) to work with sequence data
+    by flattening sequences into feature vectors.
+    
+    Supports model types:
+        - 'linear': Linear Regression
+        - 'random_forest': Random Forest Regressor
+        - 'svr': Support Vector Regression
     """
     
     def __init__(self, model_type: str = 'linear', **kwargs):
@@ -421,9 +495,19 @@ class BaselineRULModel(BaseEstimator, RegressorMixin):
         
         return predictions
     
-    def score(self, X, y):
+    def score(self, X, y) -> float:
         """
-        Return the coefficient of determination R^2 of the prediction
+        Return the coefficient of determination R² of the prediction.
+        
+        Args:
+            X: Input sequences
+            y: True target values
+            
+        Returns:
+            R² score (coefficient of determination)
+            
+        Raises:
+            ValueError: If model is not fitted
         """
         if not self.is_fitted:
             raise ValueError("Model must be fitted before scoring")

@@ -7,10 +7,32 @@ import math
 from typing import List, Optional, Tuple
 
 class EqualizedLinear(nn.Module):
-    """Equalized learning rate linear layer"""
+    """
+    Equalized learning rate linear layer.
+    
+    Implements a linear layer with equalized learning rate scaling for StyleGAN2.
+    This helps stabilize training by normalizing weight initialization and learning rates.
+    
+    Attributes:
+        in_features: Number of input features
+        out_features: Number of output features
+        lr_multiplier: Learning rate multiplier for equalized learning rate
+        weight: Learnable weight parameter
+        bias: Learnable bias parameter (optional)
+        weight_scale: Scaling factor for weights
+    """
     
     def __init__(self, in_features: int, out_features: int, bias: bool = True, 
                  lr_multiplier: float = 1.0):
+        """
+        Initialize EqualizedLinear layer.
+        
+        Args:
+            in_features: Number of input features
+            out_features: Number of output features
+            bias: Whether to include bias term
+            lr_multiplier: Learning rate multiplier for equalized learning rate
+        """
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -26,14 +48,51 @@ class EqualizedLinear(nn.Module):
         self.weight_scale = lr_multiplier / math.sqrt(in_features)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass through the equalized linear layer.
+        
+        Args:
+            x: Input tensor of shape (batch_size, in_features)
+            
+        Returns:
+            Output tensor of shape (batch_size, out_features)
+        """
         weight = self.weight * self.weight_scale
         return F.linear(x, weight, self.bias * self.lr_multiplier if self.bias is not None else None)
 
 class EqualizedConv2d(nn.Module):
-    """Equalized learning rate 2D convolution layer"""
+    """
+    Equalized learning rate 2D convolution layer.
+    
+    Implements a 2D convolution layer with equalized learning rate scaling for StyleGAN2.
+    This helps stabilize training by normalizing weight initialization and learning rates.
+    
+    Attributes:
+        in_channels: Number of input channels
+        out_channels: Number of output channels
+        kernel_size: Size of the convolution kernel
+        stride: Stride of the convolution
+        padding: Padding applied to input
+        lr_multiplier: Learning rate multiplier for equalized learning rate
+        weight: Learnable weight parameter
+        bias: Learnable bias parameter (optional)
+        weight_scale: Scaling factor for weights
+    """
     
     def __init__(self, in_channels: int, out_channels: int, kernel_size: int,
                  stride: int = 1, padding: int = 0, bias: bool = True, lr_multiplier: float = 1.0):
+        """
+        Initialize EqualizedConv2d layer.
+        
+        Args:
+            in_channels: Number of input channels
+            out_channels: Number of output channels
+            kernel_size: Size of the convolution kernel
+            stride: Stride of the convolution
+            padding: Padding applied to input
+            bias: Whether to include bias term
+            lr_multiplier: Learning rate multiplier for equalized learning rate
+        """
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -53,14 +112,42 @@ class EqualizedConv2d(nn.Module):
         self.weight_scale = lr_multiplier / math.sqrt(fan_in)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass through the equalized convolution layer.
+        
+        Args:
+            x: Input tensor of shape (batch_size, in_channels, height, width)
+            
+        Returns:
+            Output tensor of shape (batch_size, out_channels, height', width')
+        """
         weight = self.weight * self.weight_scale
         return F.conv2d(x, weight, self.bias * self.lr_multiplier if self.bias is not None else None,
                        self.stride, self.padding)
 
 class AdaIN(nn.Module):
-    """Adaptive Instance Normalization"""
+    """
+    Adaptive Instance Normalization (AdaIN) layer.
+    
+    Applies adaptive instance normalization to feature maps using style vectors.
+    This allows the generator to control the style of generated images through
+    style codes.
+    
+    Attributes:
+        num_features: Number of feature channels
+        style_dim: Dimension of style vector
+        style_scale: Linear layer for style scale transformation
+        style_bias: Linear layer for style bias transformation
+    """
     
     def __init__(self, num_features: int, style_dim: int):
+        """
+        Initialize AdaIN layer.
+        
+        Args:
+            num_features: Number of feature channels
+            style_dim: Dimension of style vector
+        """
         super().__init__()
         self.num_features = num_features
         self.style_dim = style_dim
@@ -69,6 +156,18 @@ class AdaIN(nn.Module):
         self.style_bias = EqualizedLinear(style_dim, num_features, bias=True)
     
     def forward(self, x: torch.Tensor, style: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass through AdaIN layer.
+        
+        Normalizes input features and applies style-dependent scaling and bias.
+        
+        Args:
+            x: Input feature tensor of shape (batch_size, num_features, height, width)
+            style: Style vector of shape (batch_size, style_dim)
+            
+        Returns:
+            Styled feature tensor of shape (batch_size, num_features, height, width)
+        """
         # Normalize input
         mean = x.mean(dim=[2, 3], keepdim=True)
         std = x.std(dim=[2, 3], keepdim=True) + 1e-8
@@ -81,13 +180,40 @@ class AdaIN(nn.Module):
         return normalized * (1 + scale) + bias
 
 class NoiseInjection(nn.Module):
-    """Noise injection layer"""
+    """
+    Noise injection layer for StyleGAN2.
+    
+    Injects learnable noise into feature maps to add stochastic variation
+    to generated images. The noise weight is learned during training.
+    
+    Attributes:
+        weight: Learnable noise weight parameter
+    """
     
     def __init__(self, channels: int):
+        """
+        Initialize NoiseInjection layer.
+        
+        Args:
+            channels: Number of feature channels
+        """
         super().__init__()
         self.weight = nn.Parameter(torch.zeros(1, channels, 1, 1))
     
     def forward(self, x: torch.Tensor, noise: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+        Forward pass with noise injection.
+        
+        Injects noise into the input feature map. If noise is not provided,
+        generates random noise automatically.
+        
+        Args:
+            x: Input feature tensor of shape (batch_size, channels, height, width)
+            noise: Optional noise tensor. If None, random noise is generated.
+            
+        Returns:
+            Feature tensor with injected noise
+        """
         if noise is None:
             batch_size, _, height, width = x.shape
             noise = torch.randn(batch_size, 1, height, width, device=x.device)
@@ -95,7 +221,22 @@ class NoiseInjection(nn.Module):
         return x + self.weight * noise
 
 class StyleBlock(nn.Module):
-    """StyleGAN2 synthesis block"""
+    """
+    StyleGAN2 synthesis block.
+    
+    A single synthesis block that generates features at a specific resolution.
+    Combines upsampling, convolution, AdaIN, and noise injection.
+    
+    Attributes:
+        in_channels: Number of input channels
+        out_channels: Number of output channels
+        style_dim: Dimension of style vector
+        upsampling: Upsampling layer
+        conv: Convolution layer
+        adain: Adaptive instance normalization layer
+        noise: Noise injection layer
+        activation: Activation function
+    """
     
     def __init__(self, in_channels: int, out_channels: int, style_dim: int, 
                  upsample: bool = False, kernel_size: int = 3):

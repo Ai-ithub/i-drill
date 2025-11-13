@@ -298,51 +298,51 @@ export default function HistoricalData() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 text-slate-900 dark:text-slate-100">
       <div>
-        <h1 className="text-3xl font-bold text-white mb-2">Historical Data</h1>
-        <p className="text-slate-400">
+        <h1 className="text-3xl font-bold mb-2">Historical Data</h1>
+        <p className="text-slate-500 dark:text-slate-300">
           Search and analyze historical sensor data for trend analysis and reporting
         </p>
       </div>
 
       <form
         onSubmit={handleSubmit}
-        className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 space-y-4 shadow-sm"
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 space-y-4 shadow-sm"
       >
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           <div className="space-y-2">
-            <label className="block text-sm text-slate-400">Rig ID</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Rig ID</label>
             <input
               value={formState.rigId}
               onChange={(e) => setFormState((prev) => ({ ...prev, rigId: e.target.value }))}
-              className="w-full rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:border-cyan-500 focus:outline-none"
+              className="w-full rounded-md bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
               placeholder="RIG_01"
             />
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm text-slate-400">From Time</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">From Time</label>
             <input
               type="datetime-local"
               value={formState.start}
               onChange={(e) => setFormState((prev) => ({ ...prev, start: e.target.value }))}
-              className="w-full rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:border-cyan-500 focus:outline-none"
+              className="w-full rounded-md bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
             />
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm text-slate-400">To Time</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">To Time</label>
             <input
               type="datetime-local"
               value={formState.end}
               onChange={(e) => setFormState((prev) => ({ ...prev, end: e.target.value }))}
-              className="w-full rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:border-cyan-500 focus:outline-none"
+              className="w-full rounded-md bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
             />
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm text-slate-400">Max Records</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Max Records</label>
             <input
               type="number"
               min={1}
@@ -351,24 +351,24 @@ export default function HistoricalData() {
               onChange={(e) =>
                 setFormState((prev) => ({ ...prev, limit: Number(e.target.value) }))
               }
-              className="w-full rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-white focus:border-cyan-500 focus:outline-none"
+              className="w-full rounded-md bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
             />
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="space-y-2 lg:col-span-2">
-            <label className="block text-sm text-slate-500 dark:text-slate-300">Parameters</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Parameters</label>
             <div className="flex flex-wrap gap-2">
               {AVAILABLE_METRICS.map((metric) => (
                 <button
                   key={metric.key}
                   type="button"
                   onClick={() => handleMetricToggle(metric.key)}
-                  className={`px-3 py-2 text-xs rounded-full border transition ${
+                  className={`px-4 py-2 text-sm rounded-lg border transition font-medium ${
                     selectedMetrics.includes(metric.key)
-                      ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-200 border-cyan-500/40'
-                      : 'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:border-cyan-400/60'
+                      ? 'bg-cyan-500 text-white border-cyan-500'
+                      : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-cyan-400/60 hover:bg-slate-50 dark:hover:bg-slate-700'
                   }`}
                 >
                   {metric.label}
@@ -380,28 +380,38 @@ export default function HistoricalData() {
           <div className="flex items-end">
             <button
               type="submit"
-              className="w-full h-10 rounded-md bg-cyan-500 hover:bg-cyan-400 text-slate-900 font-semibold transition"
+              className="w-full h-10 rounded-md bg-cyan-500 hover:bg-cyan-600 text-white font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               disabled={historicalQuery.isFetching}
             >
-              {historicalQuery.isFetching ? 'Fetching...' : 'Fetch Data'}
+              {historicalQuery.isFetching ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Fetching...
+                </>
+              ) : (
+                <>
+                  <Filter className="w-4 h-4" />
+                  Fetch Data
+                </>
+              )}
             </button>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
           <button
             type="button"
             onClick={() => setShowAdvanced((prev) => !prev)}
-            className="inline-flex items-center gap-2 rounded-full border border-slate-300 dark:border-slate-700 px-3 py-1.5"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
           >
-            <Filter className="w-3.5 h-3.5" /> Advanced Settings
+            <Filter className="w-4 h-4" /> Advanced Settings
           </button>
           <div className="flex items-center gap-2">
-            <label>Record Status:</label>
+            <label className="text-slate-700 dark:text-slate-300">Record Status:</label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-              className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs"
+              className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
             >
               <option value="all">All</option>
               <option value="normal">Normal</option>
@@ -413,24 +423,24 @@ export default function HistoricalData() {
             <button
               type="button"
               onClick={() => handleExport('csv')}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 px-3 py-1.5"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
             >
-              <Download className="w-3.5 h-3.5" /> Export CSV
+              <Download className="w-4 h-4" /> Export CSV
             </button>
             <button
               type="button"
               onClick={() => handleExport('json')}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 px-3 py-1.5"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
             >
-              JSON
+              <Download className="w-4 h-4" /> Export JSON
             </button>
             {showAdvanced && (
               <button
                 type="button"
                 onClick={handleAggregatedExport}
-                className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 px-3 py-1.5"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
               >
-                Export Aggregated
+                <Download className="w-4 h-4" /> Export Aggregated
               </button>
             )}
           </div>
@@ -503,64 +513,83 @@ export default function HistoricalData() {
         )}
       </form>
 
-      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 space-y-6 shadow-sm">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 space-y-6 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-xl font-semibold text-white">Results</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-300">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Results</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
               {historicalQuery.isFetching ? 'Loading...' : `Record Count: ${displayRecords.length}`}
             </p>
           </div>
-          {historicalQuery.isFetching && <Loader2 className="w-5 h-5 animate-spin text-cyan-400" />}
+          {historicalQuery.isFetching && <Loader2 className="w-5 h-5 animate-spin text-cyan-500" />}
         </div>
 
         {summary && (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
-            <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400 mb-1">Record Count</div>
-              <div className="text-2xl font-mono text-white">{summary.count}</div>
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-4">
+              <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Record Count</div>
+              <div className="text-2xl font-bold text-slate-900 dark:text-white">{summary.count}</div>
             </div>
-            <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400 mb-1">Average Depth</div>
-              <div className="text-2xl font-mono text-cyan-400">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-4">
+              <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Average Depth</div>
+              <div className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">
                 {summary.avgDepth.toFixed(1)} ft
               </div>
             </div>
-            <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400 mb-1">Average WOB</div>
-              <div className="text-2xl font-mono text-cyan-400">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-4">
+              <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Average WOB</div>
+              <div className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">
                 {summary.avgWob.toFixed(0)} lbs
               </div>
             </div>
-            <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400 mb-1">Average RPM</div>
-              <div className="text-2xl font-mono text-cyan-400">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-4">
+              <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Average RPM</div>
+              <div className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">
                 {summary.avgRpm.toFixed(0)}
               </div>
             </div>
-            <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400 mb-1">Average ROP</div>
-              <div className="text-2xl font-mono text-cyan-400">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-4">
+              <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Average ROP</div>
+              <div className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">
                 {summary.avgRop.toFixed(2)} ft/hr
               </div>
             </div>
           </div>
         )}
 
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-100/70 dark:bg-slate-900/60 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-200">Comparison Chart</h3>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Comparison Chart</h3>
             {aggregatedQuery.isFetching && (
-              <span className="text-xs text-slate-400">Calculating aggregated statistics...</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Calculating aggregated statistics...
+              </span>
             )}
           </div>
-          <div className="h-72">
+          <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+              <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.2)" />
-                <XAxis dataKey="time" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(value: number, name) => [value?.toFixed?.(2) ?? value, name]} />
+                <XAxis 
+                  dataKey="time" 
+                  tick={{ fontSize: 12, fill: '#64748b' }}
+                  stroke="#64748b"
+                  tickFormatter={(value) => new Date(value).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                />
+                <YAxis 
+                  tick={{ fontSize: 12, fill: '#64748b' }}
+                  stroke="#64748b"
+                />
+                <Tooltip 
+                  contentStyle={{
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                  }}
+                  formatter={(value: number, name) => [value?.toFixed?.(2) ?? value, name]} 
+                  labelFormatter={(value) => new Date(value).toLocaleString()}
+                />
                 <Legend />
                 {selectedMetrics.map((metric, index) => (
                   <Line
@@ -579,18 +608,18 @@ export default function HistoricalData() {
         </div>
 
         {historicalQuery.isError ? (
-          <div className="rounded-md border border-red-500/40 bg-red-900/20 px-4 py-4 text-red-300">
+          <div className="rounded-xl border border-red-500/40 bg-red-50 dark:bg-red-900/20 px-4 py-4 text-red-700 dark:text-red-300">
             Error fetching data: {(historicalQuery.error as Error)?.message ?? 'unknown'}
           </div>
         ) : displayRecords.length === 0 && !historicalQuery.isFetching ? (
-          <div className="rounded-md border border-slate-700 bg-slate-900/40 px-4 py-10 text-center text-slate-300">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-4 py-10 text-center text-slate-500 dark:text-slate-400">
             No data found for the selected time range.
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-700 text-left">
+            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700 text-left">
               <thead>
-                <tr className="text-slate-300 text-sm uppercase">
+                <tr className="text-slate-700 dark:text-slate-300 text-sm font-semibold uppercase bg-slate-50 dark:bg-slate-800">
                   <th className="px-4 py-3">Time</th>
                   <th className="px-4 py-3">Depth</th>
                   <th className="px-4 py-3">WOB</th>
@@ -601,26 +630,26 @@ export default function HistoricalData() {
                   <th className="px-4 py-3">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800 text-sm text-slate-200 font-mono">
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-700 text-sm text-slate-900 dark:text-slate-200 bg-white dark:bg-slate-900">
                 {displayRecords.map((row: any) => (
-                  <tr key={`${row.id}-${row.timestamp}`}>
-                    <td className="px-4 py-2">
+                  <tr key={`${row.id}-${row.timestamp}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                    <td className="px-4 py-2 font-mono">
                       {row.timestamp ? new Date(row.timestamp).toLocaleString('en-US') : '-'}
                     </td>
-                    <td className="px-4 py-2">{row.depth?.toFixed?.(2) ?? row.depth ?? '-'}</td>
-                    <td className="px-4 py-2">{row.wob?.toFixed?.(1) ?? row.wob ?? '-'}</td>
-                    <td className="px-4 py-2">{row.rpm?.toFixed?.(0) ?? row.rpm ?? '-'}</td>
-                    <td className="px-4 py-2">{row.torque?.toFixed?.(0) ?? row.torque ?? '-'}</td>
-                    <td className="px-4 py-2">{row.rop?.toFixed?.(2) ?? row.rop ?? '-'}</td>
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-2 font-mono">{row.depth?.toFixed?.(2) ?? row.depth ?? '-'}</td>
+                    <td className="px-4 py-2 font-mono">{row.wob?.toFixed?.(1) ?? row.wob ?? '-'}</td>
+                    <td className="px-4 py-2 font-mono">{row.rpm?.toFixed?.(0) ?? row.rpm ?? '-'}</td>
+                    <td className="px-4 py-2 font-mono">{row.torque?.toFixed?.(0) ?? row.torque ?? '-'}</td>
+                    <td className="px-4 py-2 font-mono">{row.rop?.toFixed?.(2) ?? row.rop ?? '-'}</td>
+                    <td className="px-4 py-2 font-mono">
                       {row.mud_pressure?.toFixed?.(0) ?? row.mud_pressure ?? '-'}
                     </td>
                     <td className="px-4 py-2">
                       <span
-                        className={`px-2 py-1 rounded-full text-xs ${
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
                           row.status === 'normal'
-                            ? 'bg-green-500/10 text-green-400 border border-green-500/40'
-                            : 'bg-amber-500/10 text-amber-300 border border-amber-500/40'
+                            ? 'bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 border border-green-300 dark:border-green-500/40'
+                            : 'bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40'
                         }`}
                       >
                         {row.status ?? 'unknown'}

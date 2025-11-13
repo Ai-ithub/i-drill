@@ -72,10 +72,13 @@ def json_serializer(obj):
 
 def delivery_report(err, msg):
     """Callback for Kafka delivery reports"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if err is not None:
-        print(f"❌ Delivery failed for record {msg.key()}: {err}")
+        logger.error(f"Delivery failed for record {msg.key()}: {err}")
     else:
-        print(f"✅ Record delivered to {msg.topic()} [{msg.partition()}] at offset {msg.offset()}")
+        logger.debug(f"Record delivered to {msg.topic()} [{msg.partition()}] at offset {msg.offset()}")
 
 
 def create_producer():
@@ -122,7 +125,9 @@ def generate_sensor_data(device_id, timestamp):
     return record
 
 # --- Infinite Stream ---
-print(f"📡 Sending streaming data for {rig_id} to Kafka topic '{topic}' ... (Ctrl+C to stop)")
+import logging
+logger = logging.getLogger(__name__)
+logger.info(f"Sending streaming data for {rig_id} to Kafka topic '{topic}' ... (Ctrl+C to stop)")
 
 record_id = 0
 try:

@@ -18,9 +18,24 @@ except ImportError:
 
 
 class CacheService:
-    """Service for caching operations using Redis"""
+    """
+    Service for caching operations using Redis.
+    
+    Provides key-value caching functionality with TTL support.
+    Automatically handles JSON serialization/deserialization for complex objects.
+    
+    Attributes:
+        redis_client: Redis client instance (if available)
+        enabled: Boolean indicating if caching is enabled
+    """
     
     def __init__(self):
+        """
+        Initialize CacheService.
+        
+        Attempts to connect to Redis using environment variables.
+        Falls back to disabled state if Redis is unavailable.
+        """
         self.redis_client = None
         self.enabled = False
         
@@ -55,7 +70,16 @@ class CacheService:
             self.enabled = False
     
     def get(self, key: str) -> Optional[Any]:
-        """Get value from cache"""
+        """
+        Get value from cache.
+        
+        Args:
+            key: Cache key to retrieve
+            
+        Returns:
+            Cached value if found, None otherwise. Automatically deserializes
+            JSON values if applicable.
+        """
         if not self.enabled or not self.redis_client:
             return None
         
@@ -80,7 +104,20 @@ class CacheService:
         value: Any,
         ttl: Optional[Union[int, timedelta]] = None
     ) -> bool:
-        """Set value in cache with optional TTL"""
+        """
+        Set value in cache with optional TTL.
+        
+        Automatically serializes complex objects to JSON. Supports both
+        integer seconds and timedelta objects for TTL.
+        
+        Args:
+            key: Cache key
+            value: Value to cache (will be JSON serialized if needed)
+            ttl: Time to live in seconds (int) or timedelta object
+            
+        Returns:
+            True if value was successfully cached, False otherwise
+        """
         if not self.enabled or not self.redis_client:
             return False
         
@@ -105,7 +142,15 @@ class CacheService:
             return False
     
     def delete(self, key: str) -> bool:
-        """Delete key from cache"""
+        """
+        Delete a key from cache.
+        
+        Args:
+            key: Cache key to delete
+            
+        Returns:
+            True if key was deleted, False otherwise
+        """
         if not self.enabled or not self.redis_client:
             return False
         
@@ -117,7 +162,18 @@ class CacheService:
             return False
     
     def clear_pattern(self, pattern: str) -> int:
-        """Clear all keys matching pattern"""
+        """
+        Clear all keys matching a pattern.
+        
+        Uses Redis KEYS command to find matching keys, then deletes them.
+        Supports Redis pattern matching (e.g., "user:*").
+        
+        Args:
+            pattern: Redis key pattern to match
+            
+        Returns:
+            Number of keys deleted
+        """
         if not self.enabled or not self.redis_client:
             return 0
         
@@ -131,7 +187,15 @@ class CacheService:
             return 0
     
     def exists(self, key: str) -> bool:
-        """Check if key exists in cache"""
+        """
+        Check if a key exists in cache.
+        
+        Args:
+            key: Cache key to check
+            
+        Returns:
+            True if key exists, False otherwise
+        """
         if not self.enabled or not self.redis_client:
             return False
         
@@ -142,7 +206,19 @@ class CacheService:
             return False
     
     def increment(self, key: str, amount: int = 1) -> Optional[int]:
-        """Increment value in cache"""
+        """
+        Increment a numeric value in cache.
+        
+        Atomically increments the value stored at key by the specified amount.
+        If the key doesn't exist, it is initialized to 0 before incrementing.
+        
+        Args:
+            key: Cache key to increment
+            amount: Amount to increment by (default: 1)
+            
+        Returns:
+            New value after increment, or None if operation failed
+        """
         if not self.enabled or not self.redis_client:
             return None
         

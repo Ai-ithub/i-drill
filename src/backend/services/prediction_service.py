@@ -55,9 +55,26 @@ FEATURE_ORDER: List[str] = list(FEATURE_MAPPINGS.keys())
 
 
 class PredictionService:
-    """Service for making predictions"""
+    """
+    Service for making RUL (Remaining Useful Life) and anomaly predictions.
+    
+    Provides methods for predicting equipment remaining useful life using
+    machine learning models (LSTM, Transformer, CNN-LSTM) and detecting
+    anomalies in sensor data using threshold-based methods.
+    
+    Attributes:
+        model_dir: Directory path where models are stored
+        device: PyTorch device (CPU or CUDA) for model inference
+        loaded_models: Dictionary of loaded model instances keyed by model type
+    """
     
     def __init__(self, model_dir: Optional[str] = None):
+        """
+        Initialize PredictionService.
+        
+        Args:
+            model_dir: Directory path for model storage (default: "models")
+        """
         self.model_dir = model_dir or "models"
         if TORCH_AVAILABLE:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -67,8 +84,13 @@ class PredictionService:
         if TORCH_AVAILABLE:
             self._ensure_model_dir()
     
-    def _ensure_model_dir(self):
-        """Ensure model directory exists"""
+    def _ensure_model_dir(self) -> None:
+        """
+        Ensure the model directory exists.
+        
+        Creates the model directory if it doesn't exist.
+        Only runs if PyTorch is available.
+        """
         Path(self.model_dir).mkdir(parents=True, exist_ok=True)
     
     def predict_rul(
@@ -187,7 +209,21 @@ class PredictionService:
             }
     
     def _load_or_create_model(self, model_type: str):
-        """Load or create a model"""
+        """
+        Load an existing model or create a new one if not found.
+        
+        Attempts to load models in this order:
+        1. From memory cache (if already loaded)
+        2. From MLflow model registry
+        3. From local file system
+        4. Create a new untrained model (for testing/demo only)
+        
+        Args:
+            model_type: Type of model to load ('lstm', 'transformer', 'cnn_lstm')
+            
+        Returns:
+            Loaded PyTorch model instance, or None if loading fails
+        """
         try:
             # Check if model is already loaded
             if model_type in self.loaded_models:
@@ -267,7 +303,19 @@ class PredictionService:
     
     @staticmethod
     def _extract_feature_value(data_point: Dict[str, Any], candidates: List[str]) -> float:
-        """Extract a numeric feature value from data point based on candidate keys"""
+        """
+        Extract a numeric feature value from data point based on candidate keys.
+        
+        Tries multiple key variations (snake_case, camelCase, UPPERCASE, etc.)
+        to find the feature value in the data point dictionary.
+        
+        Args:
+            data_point: Dictionary containing sensor data
+            candidates: List of possible key names for the feature
+            
+        Returns:
+            Numeric feature value if found, 0.0 otherwise
+        """
         candidate_keys = set()
         for raw_key in candidates:
             if not raw_key:

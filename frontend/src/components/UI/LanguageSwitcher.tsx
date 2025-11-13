@@ -1,7 +1,7 @@
 /**
  * Language Switcher Component
  */
-import { useI18n } from '../../i18n';
+import { useI18n } from '../../i18n'
 import { Globe } from 'lucide-react';
 
 export function LanguageSwitcher() {

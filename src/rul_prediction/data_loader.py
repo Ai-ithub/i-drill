@@ -18,7 +18,15 @@ from pathlib import Path
 
 class RULDataset(Dataset):
     """
-    PyTorch Dataset class for RUL prediction data
+    PyTorch Dataset class for RUL (Remaining Useful Life) prediction data.
+    
+    Wraps sequence data and RUL targets in a PyTorch Dataset for use with
+    DataLoader. Handles conversion to tensors and provides indexing interface.
+    
+    Attributes:
+        sequences: Input sequences tensor (samples, sequence_length, features)
+        targets: Target RUL values tensor (samples,)
+        sequence_length: Length of input sequences
     """
     
     def __init__(self, sequences: np.ndarray, targets: np.ndarray, 
@@ -35,10 +43,25 @@ class RULDataset(Dataset):
         self.targets = torch.FloatTensor(targets)
         self.sequence_length = sequence_length
         
-    def __len__(self):
+    def __len__(self) -> int:
+        """
+        Get the number of samples in the dataset.
+        
+        Returns:
+            Number of samples
+        """
         return len(self.sequences)
     
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Get a single sample from the dataset.
+        
+        Args:
+            idx: Sample index
+            
+        Returns:
+            Tuple of (sequence, target) tensors
+        """
         return self.sequences[idx], self.targets[idx]
 
 class RULDataLoader:

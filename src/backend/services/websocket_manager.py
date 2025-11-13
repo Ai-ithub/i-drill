@@ -11,14 +11,37 @@ logger = logging.getLogger(__name__)
 
 
 class WebSocketManager:
-    """Manages WebSocket connections for real-time data streaming"""
+    """
+    Manages WebSocket connections for real-time data streaming.
+    
+    Handles multiple WebSocket connections organized by rig ID, allowing
+    broadcasting of sensor data and other real-time updates to connected clients.
+    
+    Attributes:
+        active_connections: Dictionary mapping rig_id to set of WebSocket connections
+        connection_rigs: Dictionary mapping WebSocket to rig_id for reverse lookup
+    """
     
     def __init__(self):
+        """
+        Initialize WebSocketManager.
+        
+        Sets up empty connection tracking dictionaries.
+        """
         self.active_connections: Dict[str, Set[WebSocket]] = {}
         self.connection_rigs: Dict[WebSocket, str] = {}
     
-    async def connect(self, websocket: WebSocket, rig_id: str):
-        """Accept and register a WebSocket connection"""
+    async def connect(self, websocket: WebSocket, rig_id: str) -> None:
+        """
+        Accept and register a WebSocket connection.
+        
+        Accepts the WebSocket handshake and adds the connection to the
+        appropriate rig's connection set.
+        
+        Args:
+            websocket: FastAPI WebSocket instance
+            rig_id: Rig identifier for this connection
+        """
         await websocket.accept()
         
         if rig_id not in self.active_connections:
@@ -29,8 +52,15 @@ class WebSocketManager:
         
         logger.info(f"WebSocket connected for rig {rig_id}. Total connections: {len(self.connection_rigs)}")
     
-    def disconnect(self, websocket: WebSocket):
-        """Remove a WebSocket connection"""
+    def disconnect(self, websocket: WebSocket) -> None:
+        """
+        Remove a WebSocket connection.
+        
+        Removes the connection from tracking and cleans up empty rig sets.
+        
+        Args:
+            websocket: WebSocket instance to disconnect
+        """
         rig_id = self.connection_rigs.pop(websocket, None)
         
         if rig_id and rig_id in self.active_connections:
@@ -41,8 +71,17 @@ class WebSocketManager:
         
         logger.info(f"WebSocket disconnected for rig {rig_id}. Total connections: {len(self.connection_rigs)}")
     
-    async def send_to_rig(self, rig_id: str, message: dict):
-        """Send message to all connections for a specific rig"""
+    async def send_to_rig(self, rig_id: str, message: dict) -> None:
+        """
+        Send message to all connections for a specific rig.
+        
+        Broadcasts a JSON message to all WebSocket clients connected to
+        the specified rig. Automatically removes disconnected connections.
+        
+        Args:
+            rig_id: Rig identifier to send message to
+            message: Dictionary to send as JSON
+        """
         if rig_id not in self.active_connections:
             return
         
@@ -59,8 +98,16 @@ class WebSocketManager:
         for conn in disconnected:
             self.disconnect(conn)
     
-    async def broadcast_to_all(self, message: dict):
-        """Broadcast message to all connected clients"""
+    async def broadcast_to_all(self, message: dict) -> None:
+        """
+        Broadcast message to all connected clients.
+        
+        Sends a JSON message to all WebSocket clients regardless of rig.
+        Automatically removes disconnected connections.
+        
+        Args:
+            message: Dictionary to send as JSON
+        """
         disconnected = set()
         
         for connections in self.active_connections.values():
@@ -76,11 +123,24 @@ class WebSocketManager:
             self.disconnect(conn)
     
     def get_connected_rigs(self) -> Set[str]:
-        """Get set of all rig IDs with active connections"""
+        """
+        Get set of all rig IDs with active connections.
+        
+        Returns:
+            Set of rig IDs that have at least one active WebSocket connection
+        """
         return set(self.active_connections.keys())
     
     def get_connection_count(self, rig_id: str = None) -> int:
-        """Get connection count for a specific rig or total"""
+        """
+        Get connection count for a specific rig or total.
+        
+        Args:
+            rig_id: Optional rig ID to get count for. If None, returns total count.
+            
+        Returns:
+            Number of active connections for the specified rig, or total if rig_id is None
+        """
         if rig_id:
             return len(self.active_connections.get(rig_id, set()))
         return len(self.connection_rigs)

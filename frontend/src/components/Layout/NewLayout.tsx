@@ -14,10 +14,12 @@ import {
   Moon,
   Sun,
   Wrench,
+  Target,
 } from 'lucide-react'
 import { useThemeMode } from '@/context/ThemeContext'
 import { useUserRole, UserRole } from '@/context/RoleContext'
 import NotificationBadge from '@/components/Notifications/NotificationBadge'
+import DrillingRigIcon from '@/components/Logo/DrillingRigIcon'
 
 interface LayoutProps {
   children: ReactNode
@@ -47,8 +49,11 @@ const menuSections: MenuSection[] = [
     title: 'Monitoring',
     items: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['viewer', 'operator', 'engineer', 'maintenance'] },
-      { name: 'Real-time View', path: '/realtime', icon: Eye, roles: ['viewer', 'operator', 'engineer'] },
-      { name: 'Historical Data', path: '/historical', icon: LineChart, roles: ['viewer', 'operator', 'engineer'] },
+      { name: 'RTM - Real Time Monitoring', path: '/realtime', icon: Eye, roles: ['viewer', 'operator', 'engineer'] },
+      { name: 'Data', path: '/data', icon: Database, roles: ['viewer', 'operator', 'engineer'] },
+      { name: 'RTO - Real Time Optimization', path: '/rto', icon: Target, roles: ['operator', 'engineer'] },
+      { name: 'DVR - Data Validation & Reconciliation', path: '/dvr-page', icon: Database, roles: ['engineer', 'maintenance'] },
+      { name: 'PDM - Predictive Maintenance', path: '/pdm', icon: Wrench, roles: ['engineer', 'maintenance'] },
       { name: 'Predictions', path: '/predictions', icon: Activity, roles: ['engineer'] },
       { name: 'DVR Monitoring', path: '/dvr', icon: Database, roles: ['engineer', 'maintenance'] },
       { name: 'Maintenance', path: '/maintenance', icon: Wrench, roles: ['maintenance'] },
@@ -106,11 +111,11 @@ export default function NewLayout({ children }: LayoutProps) {
               {isMobileMenuOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
             </button>
             <div className="flex items-center gap-2">
-              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white font-bold">
-                ID
+              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white">
+                <DrillingRigIcon size={24} className="text-white" />
               </div>
               <div>
-                <div className="text-sm font-semibold text-slate-900 dark:text-white">i-Drill Control Room</div>
+                <div className="text-sm font-semibold text-slate-900 dark:text-white">i drill</div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">Drilling Operations Control Room</div>
               </div>
             </div>

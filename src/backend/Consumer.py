@@ -66,7 +66,7 @@ def create_consumer():
 
 logger.info(f"Consumer initialized with topic: {topic}")
 
-print(f"📥 Listening to Kafka topic '{topic}' for RIG sensor data... (Press Ctrl+C to stop)")
+logger.info(f"Listening to Kafka topic '{topic}' for RIG sensor data... (Press Ctrl+C to stop)")
 
 # Initialize consumer
 consumer = create_consumer()
@@ -78,7 +78,7 @@ try:
             continue
         if msg.error():
             logger.error(f"Kafka error: {msg.error()}")
-            print(f"⚠️ Error: {msg.error()}")
+            logger.error(f"Kafka error: {msg.error()}")
             continue
 
         try:
@@ -90,33 +90,23 @@ try:
             processed_record = process_data(value)
             
             if processed_record is not None:
-                # --- Print received data summary ---
-                print("────────────────────────────────────────────")
-                print(f"📦 Record ID: {key}")
-                print(f"🕒 Timestamp: {value.get('Timestamp')}")
-                print(f"🛢  RIG: {value.get('Rig_ID')} | Depth: {value.get('Depth', 0):.2f}")
-                print(f"🔧 WOB: {value.get('WOB', 0):.2f} | RPM: {value.get('RPM', 0):.2f} | Torque: {value.get('Torque', 0):.2f}")
-                print(f"💧 Mud Flow: {value.get('Mud_Flow_Rate', 0):.2f} | Pressure: {value.get('Mud_Pressure', 0):.2f} psi")
-                print(f"🌡  Bit Temp: {value.get('Bit_Temperature', 0):.2f} °C | Motor Temp: {value.get('Motor_Temperature', 0):.2f} °C")
-                print(f"⚡ Power: {value.get('Power_Consumption', 0):.2f} kW | Vibration: {value.get('Vibration_Level', 0):.2f}")
-                print(f"✅ Status: {processed_record.get('status', 'Unknown')}")
-                print("────────────────────────────────────────────")
+                # Log received data summary
+                logger.info(
+                    f"Record processed - ID: {key}, RIG: {value.get('Rig_ID')}, "
+                    f"Depth: {value.get('Depth', 0):.2f}, Status: {processed_record.get('status', 'Unknown')}"
+                )
                 
                 logger.info(f"Successfully processed record {key}")
             else:
                 logger.warning(f"Record {key} failed DVR validation")
-                print(f"❌ Record {key} failed validation")
                 
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error for message {key}: {e}")
-            print(f"⚠️ JSON Error: {e}")
         except Exception as e:
-            logger.error(f"Unexpected error processing message {key}: {e}")
-            print(f"⚠️ Processing Error: {e}")
+            logger.error(f"Unexpected error processing message {key}: {e}", exc_info=True)
 
 except KeyboardInterrupt:
     logger.info("Consumer stopped by user")
-    print("\n⛔️ Stopped by user.")
 finally:
     consumer.close()
     logger.info("Consumer closed")
@@ -125,7 +115,7 @@ def process_message(msg):
     try:
         data = json.loads(msg.value().decode('utf-8'))
     except Exception as e:
-        print(f"⚠️ Error decoding message: {e}")
+        logger.error(f"Error decoding message: {e}", exc_info=True)
         return None
 
     rig_id = data['rig_id']

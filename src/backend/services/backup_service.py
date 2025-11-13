@@ -16,9 +16,26 @@ logger = logging.getLogger(__name__)
 
 
 class BackupService:
-    """Service for automated backups"""
+    """
+    Service for automated system backups.
+    
+    Provides scheduled backup functionality for database, ML models, configuration,
+    and logs. Supports automatic cleanup of old backups based on retention policy.
+    
+    Attributes:
+        scheduler: Background scheduler for scheduled backups
+        backup_dir: Directory path where backups are stored
+        enabled: Boolean indicating if auto-backup is enabled
+        retention_days: Number of days to retain backups
+    """
     
     def __init__(self):
+        """
+        Initialize BackupService.
+        
+        Sets up backup directory and scheduler if auto-backup is enabled.
+        Configuration is read from environment variables.
+        """
         self.scheduler = None
         self.backup_dir = Path(os.getenv("BACKUP_DIR", "./backups"))
         self.backup_dir.mkdir(parents=True, exist_ok=True)
@@ -28,8 +45,13 @@ class BackupService:
         if self.enabled:
             self._setup_scheduler()
     
-    def _setup_scheduler(self):
-        """Setup scheduled backup jobs"""
+    def _setup_scheduler(self) -> None:
+        """
+        Setup scheduled backup jobs.
+        
+        Configures the background scheduler with cron-based backup schedule.
+        Default schedule is daily at 3 AM, configurable via BACKUP_SCHEDULE env var.
+        """
         self.scheduler = BackgroundScheduler()
         
         # Daily backup at 3 AM
@@ -45,8 +67,13 @@ class BackupService:
         
         logger.info(f"✅ Auto-backup scheduled: {backup_schedule}")
     
-    def start(self):
-        """Start the backup scheduler"""
+    def start(self) -> None:
+        """
+        Start the backup scheduler.
+        
+        Begins executing scheduled backup jobs. Does nothing if auto-backup
+        is disabled or scheduler is not initialized.
+        """
         if not self.enabled or not self.scheduler:
             logger.warning("Auto-backup is disabled")
             return
@@ -57,8 +84,13 @@ class BackupService:
         except Exception as e:
             logger.error(f"Failed to start backup scheduler: {e}")
     
-    def stop(self):
-        """Stop the backup scheduler"""
+    def stop(self) -> None:
+        """
+        Stop the backup scheduler.
+        
+        Shuts down the scheduler gracefully, preventing any new backup jobs
+        from starting. Existing jobs will complete.
+        """
         if self.scheduler and self.scheduler.running:
             self.scheduler.shutdown()
             logger.info("Backup scheduler stopped")
@@ -70,7 +102,25 @@ class BackupService:
         include_config: bool = True,
         include_logs: bool = False
     ) -> Dict[str, Any]:
-        """Create a backup of the system"""
+        """
+        Create a backup of the system.
+        
+        Creates a timestamped backup directory and backs up specified components.
+        Automatically cleans up old backups after creation.
+        
+        Args:
+            include_database: Whether to backup database (default: True)
+            include_models: Whether to backup ML models (default: True)
+            include_config: Whether to backup configuration files (default: True)
+            include_logs: Whether to backup log files (default: False)
+            
+        Returns:
+            Dictionary containing backup information:
+            - timestamp: ISO timestamp of backup creation
+            - backup_name: Name of the backup directory
+            - files: List of backed up components
+            - size: Total size of backup in bytes
+        """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_name = f"i-drill-backup-{timestamp}"
         backup_path = self.backup_dir / backup_name
@@ -137,8 +187,16 @@ class BackupService:
                 shutil.rmtree(backup_path)
             raise
     
-    def _backup_database(self, backup_path: Path):
-        """Backup database"""
+    def _backup_database(self, backup_path: Path) -> None:
+        """
+        Backup database to backup directory.
+        
+        This is an internal helper method that exports the database schema
+        and data. Currently supports PostgreSQL via pg_dump.
+        
+        Args:
+            backup_path: Path to the backup directory
+        """
         try:
             from database import db_manager
             
@@ -163,8 +221,16 @@ class BackupService:
         except Exception as e:
             logger.error(f"Database backup failed: {e}")
     
-    def _backup_models(self, backup_path: Path):
-        """Backup ML models"""
+    def _backup_models(self, backup_path: Path) -> None:
+        """
+        Backup ML models to backup directory.
+        
+        This is an internal helper method that copies the models directory
+        to the backup location.
+        
+        Args:
+            backup_path: Path to the backup directory
+        """
         try:
             models_dir = Path("models")
             if models_dir.exists():
@@ -173,8 +239,16 @@ class BackupService:
         except Exception as e:
             logger.error(f"Models backup failed: {e}")
     
-    def _backup_config(self, backup_path: Path):
-        """Backup configuration files"""
+    def _backup_config(self, backup_path: Path) -> None:
+        """
+        Backup configuration files to backup directory.
+        
+        This is an internal helper method that backs up .env files,
+        config directory, and alembic.ini.
+        
+        Args:
+            backup_path: Path to the backup directory
+        """
         try:
             config_backup_dir = backup_path / "config"
             config_backup_dir.mkdir(exist_ok=True)
@@ -197,8 +271,16 @@ class BackupService:
         except Exception as e:
             logger.error(f"Config backup failed: {e}")
     
-    def _backup_logs(self, backup_path: Path):
-        """Backup log files"""
+    def _backup_logs(self, backup_path: Path) -> None:
+        """
+        Backup log files to backup directory.
+        
+        This is an internal helper method that copies log files
+        to the backup location.
+        
+        Args:
+            backup_path: Path to the backup directory
+        """
         try:
             logs_backup_dir = backup_path / "logs"
             logs_backup_dir.mkdir(exist_ok=True)
@@ -210,8 +292,13 @@ class BackupService:
         except Exception as e:
             logger.error(f"Logs backup failed: {e}")
     
-    def _cleanup_old_backups(self):
-        """Remove backups older than retention period"""
+    def _cleanup_old_backups(self) -> None:
+        """
+        Clean up old backups based on retention policy.
+        
+        This is an internal helper method that removes backup archives
+        older than the retention_days threshold.
+        """
         try:
             cutoff_date = datetime.now() - timedelta(days=self.retention_days)
             
@@ -225,7 +312,17 @@ class BackupService:
             logger.error(f"Cleanup failed: {e}")
     
     def list_backups(self) -> List[Dict[str, Any]]:
-        """List all available backups"""
+        """
+        List all available backup archives.
+        
+        Returns:
+            List of dictionaries containing backup information:
+            - name: Backup file name
+            - path: Full path to backup file
+            - size: Size in bytes
+            - created: ISO timestamp of creation
+            Sorted by creation date (newest first)
+        """
         backups = []
         
         for backup_file in self.backup_dir.glob("i-drill-backup-*.tar.gz"):
@@ -240,7 +337,24 @@ class BackupService:
         return sorted(backups, key=lambda x: x["created"], reverse=True)
     
     def restore_backup(self, backup_path: str) -> Dict[str, Any]:
-        """Restore from a backup"""
+        """
+        Restore system from a backup archive.
+        
+        Extracts the backup archive and provides manifest information.
+        Actual restoration of files may require manual intervention.
+        
+        Args:
+            backup_path: Path to the backup archive file
+            
+        Returns:
+            Dictionary containing:
+            - success: Boolean indicating if extraction succeeded
+            - manifest: Backup manifest information
+            - extract_dir: Directory where backup was extracted
+            
+        Raises:
+            FileNotFoundError: If backup file does not exist
+        """
         backup_file = Path(backup_path)
         
         if not backup_file.exists():

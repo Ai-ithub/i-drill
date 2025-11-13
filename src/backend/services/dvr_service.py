@@ -21,16 +21,49 @@ logger = logging.getLogger(__name__)
 
 
 class DVRService:
-    """Service layer for Data Validation & Reconciliation operations."""
+    """
+    Service layer for Data Validation & Reconciliation operations.
+    
+    Provides methods for validating, reconciling, and persisting sensor data records
+    with anomaly detection and history tracking capabilities.
+    
+    Attributes:
+        db_manager: Database manager instance for persistence operations
+    """
 
     def __init__(self):
+        """
+        Initialize DVRService.
+        
+        Sets up the service with database manager for persistence.
+        """
         self.db_manager = db_manager
 
     # ------------------------------------------------------------------ #
     # Core processing
     # ------------------------------------------------------------------ #
     def process_record(self, record: Dict[str, Any], source: str = "api") -> Dict[str, Any]:
-        """Validate, reconcile, and persist a DVR record."""
+        """
+        Validate, reconcile, and persist a DVR record.
+        
+        Performs a complete DVR processing pipeline:
+        1. Validates the record using statistical checks
+        2. Reconciles the data if valid
+        3. Detects anomalies in the reconciled data
+        4. Persists processing history to database
+        
+        Args:
+            record: Dictionary containing sensor data record to process
+            source: Source identifier for the record (default: "api")
+            
+        Returns:
+            Dictionary containing:
+            - success: Boolean indicating if processing succeeded
+            - processed_record: Reconciled record if successful, None otherwise
+            - message: Processing status message
+            - history_id: ID of the persisted history record
+            - anomaly_flag: Boolean indicating if anomaly was detected (if successful)
+        """
         raw_payload = record.copy()
         try:
             is_valid, reason = run_statistical_checks(record)
@@ -105,6 +138,21 @@ class DVRService:
     # Analytics & anomaly helpers
     # ------------------------------------------------------------------ #
     def get_recent_stats(self, limit: int = 50) -> Dict[str, Any]:
+        """
+        Get recent DVR processing statistics.
+        
+        Retrieves statistics about recent DVR processing operations including
+        counts of processed/invalid records, rig IDs, and summary information.
+        
+        Args:
+            limit: Maximum number of recent records to analyze (default: 50)
+            
+        Returns:
+            Dictionary containing:
+            - success: Boolean indicating if operation succeeded
+            - summary: Dictionary with statistics (count, processed, invalid, rig_ids, etc.)
+            - message: Error message if operation failed
+        """
         try:
             if self._db_ready():
                 entries = self.get_history(limit=limit)
@@ -150,6 +198,21 @@ class DVRService:
             }
 
     def get_anomaly_snapshot(self, history_size: int = 100) -> Dict[str, Any]:
+        """
+        Get snapshot of anomaly detection history.
+        
+        Retrieves information about the history used for anomaly detection,
+        including numeric columns and history sizes for each column.
+        
+        Args:
+            history_size: Number of historical records to include (default: 100)
+            
+        Returns:
+            Dictionary containing:
+            - success: Boolean indicating if operation succeeded
+            - numeric_columns: List of numeric column names
+            - history_sizes: Dictionary mapping column names to history sizes
+        """
         try:
             history_dict, numeric_cols = get_history_for_anomaly(history_size)
             snapshot = {key: len(values) for key, values in history_dict.items()}
@@ -168,6 +231,21 @@ class DVRService:
             }
 
     def evaluate_record_anomaly(self, record: Dict[str, Any], history_size: int = 100) -> Dict[str, Any]:
+        """
+        Evaluate if a record contains anomalies.
+        
+        Uses historical data to detect anomalies in the provided record.
+        
+        Args:
+            record: Dictionary containing sensor data record to evaluate
+            history_size: Number of historical records to use for comparison (default: 100)
+            
+        Returns:
+            Dictionary containing:
+            - success: Boolean indicating if evaluation succeeded
+            - record: Record with anomaly flag added
+            - message: Error message if evaluation failed
+        """
         try:
             history_dict, numeric_cols = get_history_for_anomaly(history_size)
             evaluated = flag_anomaly(record.copy(), history_dict, numeric_cols)
@@ -187,6 +265,17 @@ class DVRService:
     # History CRUD helpers
     # ------------------------------------------------------------------ #
     def get_history(self, limit: int = 100, rig_id: Optional[str] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get DVR processing history with optional filtering.
+        
+        Args:
+            limit: Maximum number of history entries to return (default: 100)
+            rig_id: Optional filter by rig ID
+            status: Optional filter by processing status
+            
+        Returns:
+            List of history entry dictionaries, ordered by creation time (newest first)
+        """
         if not self._db_ready():
             return []
         try:
@@ -207,6 +296,16 @@ class DVRService:
             return []
 
     def update_history_entry(self, entry_id: int, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Update a DVR history entry.
+        
+        Args:
+            entry_id: ID of the history entry to update
+            updates: Dictionary containing fields to update (status, notes)
+            
+        Returns:
+            Updated history entry dictionary if successful, None otherwise
+        """
         if not self._db_ready():
             return None
         try:
@@ -226,6 +325,15 @@ class DVRService:
             return None
 
     def delete_history_entry(self, entry_id: int) -> bool:
+        """
+        Delete a DVR history entry.
+        
+        Args:
+            entry_id: ID of the history entry to delete
+            
+        Returns:
+            True if deletion was successful, False otherwise
+        """
         if not self._db_ready():
             return False
         try:
@@ -248,6 +356,20 @@ class DVRService:
         rig_id: Optional[str] = None,
         status: Optional[str] = None,
     ) -> Optional[bytes]:
+        """
+        Export DVR history to CSV format.
+        
+        Args:
+            limit: Maximum number of entries to export (default: 500)
+            rig_id: Optional filter by rig ID
+            status: Optional filter by processing status
+            
+        Returns:
+            CSV file content as bytes, or None if no history available
+            
+        Raises:
+            ImportError: If pandas is not installed
+        """
         history = self.get_history(limit=limit, rig_id=rig_id, status=status)
         if not history:
             return None
@@ -279,6 +401,22 @@ class DVRService:
         rig_id: Optional[str] = None,
         status: Optional[str] = None,
     ) -> Optional[bytes]:
+        """
+        Export DVR history to PDF format.
+        
+        Creates a formatted PDF report with DVR processing history in landscape format.
+        
+        Args:
+            limit: Maximum number of entries to export (default: 500)
+            rig_id: Optional filter by rig ID
+            status: Optional filter by processing status
+            
+        Returns:
+            PDF file content as bytes, or None if no history available
+            
+        Raises:
+            ImportError: If ReportLab is not installed
+        """
         history = self.get_history(limit=limit, rig_id=rig_id, status=status)
         if not history:
             return None
@@ -351,6 +489,25 @@ class DVRService:
         anomaly_details: Optional[Dict[str, Any]],
         source: str,
     ) -> Optional[int]:
+        """
+        Persist DVR processing history to database.
+        
+        This is an internal helper method that saves processing history
+        to the database for audit and analysis purposes.
+        
+        Args:
+            raw_record: Original raw sensor data record
+            reconciled_record: Reconciled record (if processing succeeded)
+            is_valid: Boolean indicating if record passed validation
+            reason: Reason for validation failure or success message
+            status: Processing status ("processed", "invalid", "error")
+            anomaly_flag: Boolean indicating if anomaly was detected
+            anomaly_details: Dictionary with anomaly detection details
+            source: Source identifier for the record
+            
+        Returns:
+            Created history entry ID if successful, None otherwise
+        """
         if not self._db_ready():
             return None
         try:
@@ -375,6 +532,17 @@ class DVRService:
             return None
 
     def _history_to_dict(self, entry: DVRProcessHistoryDB) -> Dict[str, Any]:
+        """
+        Convert DVRProcessHistoryDB ORM object to dictionary.
+        
+        This is an internal helper method for serializing database entries.
+        
+        Args:
+            entry: DVRProcessHistoryDB database model instance
+            
+        Returns:
+            Dictionary representation of the history entry
+        """
         return {
             "id": entry.id,
             "rig_id": entry.rig_id,
@@ -392,6 +560,15 @@ class DVRService:
         }
 
     def _db_ready(self) -> bool:
+        """
+        Check if database is ready for operations.
+        
+        This is an internal helper method that checks if the database
+        manager has been initialized.
+        
+        Returns:
+            True if database is initialized and ready, False otherwise
+        """
         return getattr(self.db_manager, "_initialized", False)
 
 
