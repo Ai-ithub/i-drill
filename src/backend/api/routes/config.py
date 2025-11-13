@@ -4,6 +4,7 @@ Configuration API Routes
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from typing import Optional, List
+from datetime import datetime
 import logging
 
 from api.models.schemas import (
@@ -11,7 +12,7 @@ from api.models.schemas import (
     DrillingParametersConfig,
     ErrorResponse
 )
-from api.models.database_models import WellProfileDB
+from api.models.database_models import WellProfileDB, DrillingParametersConfigDB
 from database import get_db
 
 logger = logging.getLogger(__name__)
@@ -272,6 +273,139 @@ async def delete_well_profile(
         raise
     except Exception as e:
         logger.error(f"Error deleting well profile: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/parameters", response_model=DrillingParametersConfig)
+async def get_drilling_parameters(
+    rig_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Get drilling parameters configuration
+    
+    Args:
+        rig_id: Optional rig ID filter. If not provided, returns default or first available config.
+        
+    Returns:
+        Drilling parameters configuration
+    """
+    try:
+        query = db.query(DrillingParametersConfigDB)
+        
+        if rig_id:
+            query = query.filter(DrillingParametersConfigDB.rig_id == rig_id)
+        
+        config = query.first()
+        
+        if not config:
+            # Return default configuration if none exists
+            default_config = DrillingParametersConfig(
+                rig_id=rig_id or "RIG_01",
+                target_wob=15000.0,
+                target_rpm=100.0,
+                target_mud_flow=800.0,
+                target_rop=50.0,
+                safety_limits={
+                    "wob": {"min": 0.0, "max": 50000.0},
+                    "rpm": {"min": 0.0, "max": 300.0},
+                    "mud_flow": {"min": 0.0, "max": 2000.0},
+                    "rop": {"min": 0.0, "max": 200.0},
+                    "torque": {"min": 0.0, "max": 50000.0},
+                    "mud_pressure": {"min": 0.0, "max": 10000.0}
+                }
+            )
+            return default_config
+        
+        return DrillingParametersConfig(
+            rig_id=config.rig_id,
+            target_wob=config.target_wob,
+            target_rpm=config.target_rpm,
+            target_mud_flow=config.target_mud_flow,
+            target_rop=config.target_rop,
+            safety_limits=config.safety_limits or {}
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting drilling parameters: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/parameters", response_model=DrillingParametersConfig)
+async def update_drilling_parameters(
+    config: DrillingParametersConfig,
+    db: Session = Depends(get_db)
+):
+    """
+    Update drilling parameters configuration
+    
+    Creates a new configuration if it doesn't exist, or updates existing one.
+    
+    Args:
+        config: Drilling parameters configuration
+        
+    Returns:
+        Updated drilling parameters configuration
+    """
+    try:
+        # Check if configuration exists
+        existing = db.query(DrillingParametersConfigDB).filter(
+            DrillingParametersConfigDB.rig_id == config.rig_id
+        ).first()
+        
+        if existing:
+            # Update existing configuration
+            existing.target_wob = config.target_wob
+            existing.target_rpm = config.target_rpm
+            existing.target_mud_flow = config.target_mud_flow
+            existing.target_rop = config.target_rop
+            existing.safety_limits = config.safety_limits
+            existing.updated_at = datetime.now()
+            
+            db.commit()
+            db.refresh(existing)
+            
+            logger.info(f"Updated drilling parameters for rig {config.rig_id}")
+            
+            return DrillingParametersConfig(
+                rig_id=existing.rig_id,
+                target_wob=existing.target_wob,
+                target_rpm=existing.target_rpm,
+                target_mud_flow=existing.target_mud_flow,
+                target_rop=existing.target_rop,
+                safety_limits=existing.safety_limits
+            )
+        else:
+            # Create new configuration
+            new_config = DrillingParametersConfigDB(
+                rig_id=config.rig_id,
+                target_wob=config.target_wob,
+                target_rpm=config.target_rpm,
+                target_mud_flow=config.target_mud_flow,
+                target_rop=config.target_rop,
+                safety_limits=config.safety_limits
+            )
+            
+            db.add(new_config)
+            db.commit()
+            db.refresh(new_config)
+            
+            logger.info(f"Created drilling parameters for rig {config.rig_id}")
+            
+            return DrillingParametersConfig(
+                rig_id=new_config.rig_id,
+                target_wob=new_config.target_wob,
+                target_rpm=new_config.target_rpm,
+                target_mud_flow=new_config.target_mud_flow,
+                target_rop=new_config.target_rop,
+                safety_limits=new_config.safety_limits
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating drilling parameters: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 

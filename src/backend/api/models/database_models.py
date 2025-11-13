@@ -280,3 +280,17 @@ class SystemLogDB(Base):
     details = Column(JSON, nullable=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
 
+
+class DrillingParametersConfigDB(Base):
+    """Drilling parameters configuration table"""
+    __tablename__ = "drilling_parameters_config"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    rig_id = Column(String(50), unique=True, index=True, nullable=False)
+    target_wob = Column(Float, nullable=False)
+    target_rpm = Column(Float, nullable=False)
+    target_mud_flow = Column(Float, nullable=False)
+    target_rop = Column(Float, nullable=False)
+    safety_limits = Column(JSON, nullable=False)  # Dict[str, Dict[str, float]]
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

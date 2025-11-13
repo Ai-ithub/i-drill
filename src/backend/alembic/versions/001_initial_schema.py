@@ -350,9 +350,28 @@ def upgrade() -> None:
     op.create_index(op.f('ix_system_logs_service'), 'system_logs', ['service'], unique=False)
     op.create_index(op.f('ix_system_logs_user_id'), 'system_logs', ['user_id'], unique=False)
 
+    # Create drilling_parameters_config table
+    op.create_table(
+        'drilling_parameters_config',
+        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('rig_id', sa.String(length=50), nullable=False),
+        sa.Column('target_wob', sa.Float(), nullable=False),
+        sa.Column('target_rpm', sa.Float(), nullable=False),
+        sa.Column('target_mud_flow', sa.Float(), nullable=False),
+        sa.Column('target_rop', sa.Float(), nullable=False),
+        sa.Column('safety_limits', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column('created_at', sa.DateTime(), nullable=True),
+        sa.Column('updated_at', sa.DateTime(), nullable=True),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('rig_id')
+    )
+    op.create_index(op.f('ix_drilling_parameters_config_id'), 'drilling_parameters_config', ['id'], unique=False)
+    op.create_index(op.f('ix_drilling_parameters_config_rig_id'), 'drilling_parameters_config', ['rig_id'], unique=True)
+
 
 def downgrade() -> None:
     # Drop tables in reverse order (respecting foreign key constraints)
+    op.drop_table('drilling_parameters_config')
     op.drop_table('system_logs')
     op.drop_table('drilling_sessions')
     op.drop_table('well_profiles')
