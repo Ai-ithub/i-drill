@@ -1,0 +1,142 @@
+name: MLOps - Automated Retraining
+
+on:
+  schedule:
+    # Check retraining conditions daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      model_name:
+        description: 'Model name to check for retraining'
+        required: true
+        type: string
+      force_retrain:
+        description: 'Force retraining even if conditions not met'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  PYTHON_VERSION: '3.11'
+  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI || 'http://localhost:5000' }}
+
+jobs:
+  check-retraining-conditions:
+    name: Check Retraining Conditions
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements/ml.txt
+          pip install mlflow[extras] pyyaml
+      
+      - name: Check retraining conditions
+        id: check
+        env:
+          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+        run: |
+          python scripts/trigger_retraining.py \
+            --model_name "${{ github.event.inputs.model_name || 'all' }}" \
+            --config ./config/mlops_config.yaml \
+            --check-only > retraining_check.json || true
+      
+      - name: Parse check results
+        id: parse
+        run: |
+          if [ -f retraining_check.json ]; then
+            SHOULD_RETRAIN=$(python -c "import json; d=json.load(open('retraining_check.json')); print('true' if d.get('should_retrain', False) else 'false')")
+            echo "should_retrain=$SHOULD_RETRAIN" >> $GITHUB_OUTPUT
+          else
+            echo "should_retrain=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Upload check results
+        uses: actions/upload-artifact@v4
+        with:
+          name: retraining-check-${{ github.run_id }}
+          path: retraining_check.json
+          retention-days: 30
+
+  trigger-training:
+    name: Trigger Model Training
+    runs-on: ubuntu-latest
+    needs: check-retraining-conditions
+    if: |
+      needs.check-retraining-conditions.outputs.should_retrain == 'true' || 
+      github.event.inputs.force_retrain == 'true'
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Trigger training workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const modelName = context.payload.inputs?.model_name || 'all';
+            
+            // Determine model type from name
+            let modelType = 'ppo';
+            if (modelName.includes('sac')) modelType = 'sac';
+            else if (modelName.includes('lstm')) modelType = 'lstm';
+            else if (modelName.includes('transformer')) modelType = 'transformer';
+            
+            // Trigger training workflow
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'mlops-train.yml',
+              ref: context.ref,
+              inputs: {
+                model_type: modelType,
+                experiment_name: 'i-drill-retraining'
+              }
+            });
+            
+            console.log(`✅ Triggered training for ${modelName}`);
+
+  notify-retraining:
+    name: Notify Retraining Status
+    runs-on: ubuntu-latest
+    needs: [check-retraining-conditions, trigger-training]
+    if: always()
+    
+    steps:
+      - name: Download check results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: retraining-check-*
+          merge-multiple: true
+      
+      - name: Notify results
+        run: |
+          if [ -f retraining_check.json ]; then
+            python -c "
+            import json
+            data = json.load(open('retraining_check.json'))
+            if data.get('should_retrain'):
+              print('✅ Retraining triggered')
+              print('Reasons:', data.get('reasons', []))
+            else:
+              print('ℹ️ Retraining not needed')
+            "
+          fi
+

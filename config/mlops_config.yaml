@@ -1,0 +1,198 @@
+# MLOps Pipeline Configuration
+
+# Model Training Configuration
+training:
+  # Default training parameters
+  default_params:
+    total_timesteps: 100000
+    evaluation_interval: 10000
+    save_interval: 50000
+  
+  # Model-specific parameters
+  models:
+    ppo:
+      learning_rate: 0.0003
+      gamma: 0.99
+      clip_range: 0.2
+      total_timesteps: 100000
+    
+    sac:
+      learning_rate: 0.0003
+      gamma: 0.99
+      tau: 0.005
+      total_timesteps: 100000
+    
+    lstm:
+      hidden_size: 64
+      num_layers: 2
+      learning_rate: 0.001
+      batch_size: 32
+      epochs: 50
+    
+    transformer:
+      d_model: 128
+      nhead: 8
+      num_layers: 4
+      learning_rate: 0.0001
+      batch_size: 32
+      epochs: 50
+
+# Model Validation Configuration
+validation:
+  # Performance thresholds
+  performance_thresholds:
+    accuracy: 0.7
+    f1_score: 0.6
+    r2_score: 0.5
+    mean_absolute_error: 100.0
+    mean_reward: -1000.0  # For RL models
+  
+  # Data validation
+  data_validation:
+    enabled: true
+    checks:
+      - missing_values
+      - outliers
+      - data_types
+      - value_ranges
+  
+  # Drift detection
+  drift_detection:
+    enabled: true
+    threshold: 0.1
+    reference_data_path: "./data/reference/reference_dataset.csv"
+    production_data_path: "./data/production/latest_data.csv"
+
+# Model Deployment Configuration
+deployment:
+  # Deployment strategies
+  strategies:
+    canary:
+      initial_traffic_percentage: 10
+      increment_percentage: 10
+      evaluation_duration_minutes: 30
+    
+    blue_green:
+      health_check_interval: 10
+      health_check_timeout: 60
+    
+    rolling:
+      max_unavailable: 1
+      max_surge: 1
+  
+  # Health checks
+  health_checks:
+    enabled: true
+    endpoint: "/health"
+    timeout: 5
+    interval: 10
+    max_retries: 3
+  
+  # Smoke tests
+  smoke_tests:
+    enabled: true
+    test_cases:
+      - name: "health_check"
+        endpoint: "/health"
+        expected_status: 200
+      - name: "prediction_endpoint"
+        endpoint: "/predict"
+        method: "POST"
+        payload: "./config/smoke_test_payload.json"
+
+# Monitoring Configuration
+monitoring:
+  # Performance monitoring
+  performance:
+    enabled: true
+    time_window_hours: 24
+    metrics:
+      - average_latency_ms
+      - p95_latency_ms
+      - p99_latency_ms
+      - error_rate
+      - success_rate
+      - total_predictions
+  
+  # Model monitoring
+  model_metrics:
+    enabled: true
+    log_to_mlflow: true
+    experiment_name: "i-drill-monitoring"
+    collection_interval_seconds: 3600
+  
+  # Alerting
+  alerts:
+    enabled: true
+    channels:
+      - email
+      - slack
+    thresholds:
+      error_rate: 0.05
+      latency_p95_ms: 1000
+      success_rate: 0.95
+
+# Retraining Configuration
+retraining:
+  # Automatic retraining conditions
+  conditions:
+    # Time-based retraining
+    time_based:
+      enabled: true
+      interval_days: 30
+    
+    # Performance-based retraining
+    performance_based:
+      enabled: true
+      degradation_threshold: 0.1
+      baseline_metrics:
+        accuracy: 0.85
+        f1_score: 0.80
+        r2_score: 0.75
+    
+    # Drift-based retraining
+    drift_based:
+      enabled: true
+      drift_threshold: 0.1
+      reference_data_path: "./data/reference/reference_dataset.csv"
+      production_data_path: "./data/production/latest_data.csv"
+    
+    # Data availability retraining
+    data_availability:
+      enabled: true
+      data_path: "./data/new/new_data.csv"
+      min_samples: 1000
+  
+  # Retraining schedule
+  schedule:
+    enabled: true
+    cron: "0 2 * * 0"  # Weekly on Sunday at 2 AM
+    timezone: "UTC"
+
+# MLflow Configuration
+mlflow:
+  tracking_uri: "${MLFLOW_TRACKING_URI:-http://localhost:5000}"
+  experiment_name: "i-drill-models"
+  registry_stages:
+    - Staging
+    - Production
+    - Archived
+  
+  # Model promotion workflow
+  promotion:
+    auto_promote: false
+    requires_validation: true
+    requires_approval: true
+
+# Data Management
+data:
+  # Data versioning
+  versioning:
+    enabled: true
+    backend: "dvc"  # or "s3", "gcs", etc.
+  
+  # Feature store (if using)
+  feature_store:
+    enabled: false
+    backend: "feast"
+

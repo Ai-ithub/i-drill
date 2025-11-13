@@ -1,0 +1,202 @@
+name: MLOps - Model Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_name:
+        description: 'Model name to validate'
+        required: true
+        type: string
+      model_version:
+        description: 'Model version (optional)'
+        required: false
+        type: string
+      validation_config:
+        description: 'Validation configuration (JSON)'
+        required: false
+        type: string
+        default: '{}'
+  workflow_run:
+    workflows: ["MLOps - Model Training Pipeline"]
+    types:
+      - completed
+
+env:
+  PYTHON_VERSION: '3.11'
+  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI || 'http://localhost:5000' }}
+
+jobs:
+  validate-model:
+    name: Validate Model
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements/ml.txt
+          pip install mlflow[extras] pytest great-expectations
+      
+      - name: Determine model to validate
+        id: model_info
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            MODEL_NAME="${{ github.event.inputs.model_name }}"
+            MODEL_VERSION="${{ github.event.inputs.model_version }}"
+          else
+            # Extract from previous workflow
+            MODEL_NAME="latest"
+            MODEL_VERSION=""
+          fi
+          
+          echo "MODEL_NAME=$MODEL_NAME" >> $GITHUB_OUTPUT
+          echo "MODEL_VERSION=$MODEL_VERSION" >> $GITHUB_OUTPUT
+          echo "🔍 Validating model: $MODEL_NAME (version: ${MODEL_VERSION:-latest})"
+      
+      - name: Download validation dataset
+        run: |
+          echo "📥 Downloading validation dataset..."
+          mkdir -p data/validation
+          # Add your dataset download logic here
+      
+      - name: Load model from MLflow
+        id: load_model
+        env:
+          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+        run: |
+          echo "📦 Loading model from MLflow..."
+          python scripts/load_model_from_mlflow.py \
+            --model_name "${{ steps.model_info.outputs.MODEL_NAME }}" \
+            --model_version "${{ steps.model_info.outputs.MODEL_VERSION }}" \
+            --output_path ./models/validation || exit 1
+      
+      - name: Run data validation
+        id: data_validation
+        run: |
+          echo "🔬 Running data validation..."
+          python scripts/validate_data.py \
+            --data_path ./data/validation \
+            --config "${{ github.event.inputs.validation_config }}" || exit 1
+      
+      - name: Run model validation tests
+        id: model_tests
+        run: |
+          echo "🧪 Running model validation tests..."
+          python -m pytest tests/test_model_validation.py \
+            --model_path ./models/validation \
+            --model_name "${{ steps.model_info.outputs.MODEL_NAME }}" \
+            -v --junitxml=validation-results.xml || exit 1
+      
+      - name: Check model performance metrics
+        id: performance_check
+        run: |
+          echo "📊 Checking model performance metrics..."
+          python scripts/check_model_performance.py \
+            --model_path ./models/validation \
+            --validation_data ./data/validation \
+            --thresholds_file ./config/performance_thresholds.yaml || exit 1
+      
+      - name: Run model bias/drift detection
+        id: drift_detection
+        run: |
+          echo "🔍 Running drift detection..."
+          python scripts/detect_drift.py \
+            --model_path ./models/validation \
+            --reference_data ./data/reference \
+            --validation_data ./data/validation || echo "⚠️ Drift detection failed (non-critical)"
+      
+      - name: Generate validation report
+        id: report
+        if: always()
+        run: |
+          echo "📋 Generating validation report..."
+          python scripts/generate_validation_report.py \
+            --output_path ./reports/validation_report_${{ github.run_id }}.html || exit 1
+      
+      - name: Upload validation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-results-${{ github.run_id }}
+          path: |
+            validation-results.xml
+            reports/validation_report_*.html
+            logs/validation_*.log
+          retention-days: 90
+      
+      - name: Comment validation results
+        if: github.event_name == 'workflow_run'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reportPath = './reports/validation_report_*.html';
+            const report = fs.existsSync(reportPath) 
+              ? fs.readFileSync(reportPath, 'utf8') 
+              : 'Validation report not available';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Model Validation Results\n\n✅ Validation completed\n\nReport: ${report}`
+            });
+
+  promote-model:
+    name: Promote Model to Staging
+    runs-on: ubuntu-latest
+    needs: validate-model
+    if: success()
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mlflow[extras]
+      
+      - name: Promote model to Staging
+        env:
+          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+        run: |
+          echo "🚀 Promoting model to Staging..."
+          python scripts/promote_model.py \
+            --model_name "${{ steps.model_info.outputs.MODEL_NAME }}" \
+            --version "${{ steps.model_info.outputs.MODEL_VERSION }}" \
+            --stage "Staging" || exit 1
+      
+      - name: Create deployment tag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/tags/model-${{ steps.model_info.outputs.MODEL_NAME }}-staging-${{ github.run_id }}`,
+              sha: context.sha
+            });
+

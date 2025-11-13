@@ -1,0 +1,308 @@
+name: MLOps - Model Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_name:
+        description: 'Model name to deploy'
+        required: true
+        type: string
+      model_version:
+        description: 'Model version (optional, defaults to latest Production)'
+        required: false
+        type: string
+      environment:
+        description: 'Deployment environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      deployment_strategy:
+        description: 'Deployment strategy'
+        required: true
+        type: choice
+        options:
+          - canary
+          - blue-green
+          - rolling
+        default: canary
+  workflow_run:
+    workflows: ["MLOps - Model Validation"]
+    types:
+      - completed
+
+env:
+  PYTHON_VERSION: '3.11'
+  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI || 'http://localhost:5000' }}
+
+jobs:
+  pre-deployment-checks:
+    name: Pre-Deployment Checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Validate deployment request
+        run: |
+          MODEL_NAME="${{ github.event.inputs.model_name }}"
+          ENV="${{ github.event.inputs.environment }}"
+          
+          if [ -z "$MODEL_NAME" ]; then
+            echo "❌ Model name is required"
+            exit 1
+          fi
+          
+          if [ -z "$ENV" ]; then
+            echo "❌ Environment is required"
+            exit 1
+          fi
+          
+          echo "✅ Deployment request validated"
+          echo "MODEL_NAME=$MODEL_NAME" >> $GITHUB_ENV
+          echo "ENVIRONMENT=$ENV" >> $GITHUB_ENV
+      
+      - name: Check model exists in MLflow
+        env:
+          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+        run: |
+          echo "🔍 Checking if model exists in MLflow..."
+          python scripts/check_model_exists.py \
+            --model_name "$MODEL_NAME" \
+            --version "${{ github.event.inputs.model_version }}" || exit 1
+      
+      - name: Verify model stage
+        env:
+          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+        run: |
+          echo "✅ Verifying model stage..."
+          python scripts/verify_model_stage.py \
+            --model_name "$MODEL_NAME" \
+            --required_stage "Staging" || exit 1
+
+  build-model-image:
+    name: Build Model Serving Image
+    runs-on: ubuntu-latest
+    needs: pre-deployment-checks
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Load model from MLflow
+        env:
+          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+        run: |
+          echo "📦 Loading model from MLflow..."
+          mkdir -p ./models/deployment
+          python scripts/load_model_for_deployment.py \
+            --model_name "$MODEL_NAME" \
+            --version "${{ github.event.inputs.model_version }}" \
+            --output_path ./models/deployment || exit 1
+      
+      - name: Build model serving Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.model-serving
+          push: false
+          tags: |
+            ${{ secrets.DOCKER_REGISTRY }}/i-drill-model:${{ github.run_id }}
+            ${{ secrets.DOCKER_REGISTRY }}/i-drill-model:${{ github.event.inputs.environment }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            MODEL_PATH=./models/deployment
+            MODEL_NAME=$MODEL_NAME
+      
+      - name: Test model image
+        run: |
+          echo "🧪 Testing model serving image..."
+          docker run --rm \
+            -e MODEL_NAME="$MODEL_NAME" \
+            ${{ secrets.DOCKER_REGISTRY }}/i-drill-model:${{ github.run_id }} \
+            python scripts/test_model_server.py || exit 1
+      
+      - name: Push image to registry
+        if: success()
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.model-serving
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_REGISTRY }}/i-drill-model:${{ github.run_id }}
+            ${{ secrets.DOCKER_REGISTRY }}/i-drill-model:${{ github.event.inputs.environment }}-latest
+          secrets: |
+            "username=${{ secrets.DOCKER_USERNAME }}"
+            "password=${{ secrets.DOCKER_PASSWORD }}"
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build-model-image
+    if: github.event.inputs.environment == 'staging' || contains(github.event.workflow_run.conclusion, 'success')
+    environment:
+      name: staging
+      url: https://staging-ml.i-drill.example.com
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Deploy to staging
+        run: |
+          echo "🚀 Deploying model to staging environment..."
+          IMAGE_TAG="${{ secrets.DOCKER_REGISTRY }}/i-drill-model:${{ github.run_id }}"
+          
+          # Kubernetes deployment
+          kubectl set image deployment/i-drill-model-staging \
+            i-drill-model=$IMAGE_TAG \
+            -n staging || \
+          
+          # Docker Compose deployment (fallback)
+          docker-compose -f docker-compose.staging.yml \
+            -p i-drill-staging up -d --no-deps model-serving
+      
+      - name: Wait for deployment
+        run: |
+          echo "⏳ Waiting for deployment to be ready..."
+          timeout 300 bash -c '
+            until curl -f https://staging-ml.i-drill.example.com/health; do
+              echo "Waiting for service..."
+              sleep 5
+            done
+          ' || exit 1
+      
+      - name: Run smoke tests
+        run: |
+          echo "🧪 Running smoke tests..."
+          python scripts/run_smoke_tests.py \
+            --endpoint https://staging-ml.i-drill.example.com \
+            --model_name "$MODEL_NAME" || exit 1
+      
+      - name: Update model stage in MLflow
+        env:
+          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+        run: |
+          python scripts/update_model_stage.py \
+            --model_name "$MODEL_NAME" \
+            --stage "Staging" \
+            --deployment_info "staging-${{ github.run_id }}"
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build-model-image
+    if: github.event.inputs.environment == 'production'
+    environment:
+      name: production
+      url: https://ml.i-drill.example.com
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Deploy using ${{ github.event.inputs.deployment_strategy }}
+        run: |
+          echo "🚀 Deploying to production using ${{ github.event.inputs.deployment_strategy }} strategy..."
+          IMAGE_TAG="${{ secrets.DOCKER_REGISTRY }}/i-drill-model:${{ github.run_id }}"
+          
+          case "${{ github.event.inputs.deployment_strategy }}" in
+            canary)
+              echo "Deploying canary release..."
+              python scripts/deploy_canary.py \
+                --image $IMAGE_TAG \
+                --canary_percentage 10
+              ;;
+            blue-green)
+              echo "Deploying blue-green..."
+              python scripts/deploy_blue_green.py \
+                --image $IMAGE_TAG
+              ;;
+            rolling)
+              echo "Deploying rolling update..."
+              kubectl set image deployment/i-drill-model-prod \
+                i-drill-model=$IMAGE_TAG \
+                -n production
+              ;;
+          esac
+      
+      - name: Wait for deployment
+        run: |
+          echo "⏳ Waiting for deployment..."
+          timeout 600 bash -c '
+            until curl -f https://ml.i-drill.example.com/health; do
+              sleep 10
+            done
+          ' || exit 1
+      
+      - name: Run production tests
+        run: |
+          echo "🧪 Running production tests..."
+          python scripts/run_production_tests.py \
+            --endpoint https://ml.i-drill.example.com \
+            --model_name "$MODEL_NAME" || exit 1
+      
+      - name: Monitor deployment metrics
+        run: |
+          echo "📊 Monitoring deployment metrics..."
+          python scripts/monitor_deployment.py \
+            --duration 300 \
+            --threshold_file ./config/deployment_thresholds.yaml || exit 1
+      
+      - name: Promote model to Production in MLflow
+        if: success()
+        env:
+          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+        run: |
+          echo "✅ Promoting model to Production stage..."
+          python scripts/promote_model.py \
+            --model_name "$MODEL_NAME" \
+            --stage "Production" \
+            --deployment_info "production-${{ github.run_id }}"
+      
+      - name: Create production deployment tag
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/tags/model-${{ github.event.inputs.model_name }}-prod-${{ github.run_id }}`,
+              sha: context.sha
+            });
+      
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "⚠️ Deployment failed, rolling back..."
+          python scripts/rollback_deployment.py \
+            --environment production \
+            --model_name "$MODEL_NAME"
+
+  post-deployment-monitoring:
+    name: Post-Deployment Monitoring
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    
+    steps:
+      - name: Start monitoring
+        run: |
+          echo "📊 Starting post-deployment monitoring..."
+          # This would typically run as a background service
+          echo "Monitor deployment health for 24 hours"
+
