@@ -195,7 +195,7 @@ async def apply_change(
                 applied_by=current_user.id if should_auto_execute else None,
                 approved_at=datetime.now() if should_auto_execute else None,
                 applied_at=datetime.now() if should_auto_execute else None,
-                metadata=change_request.metadata
+                change_metadata=change_request.metadata
             )
             
             session.add(change)
@@ -374,7 +374,7 @@ async def get_change_history(
                     "applied_at": change.applied_at.isoformat() if change.applied_at else None,
                     "rejection_reason": change.rejection_reason,
                     "error_message": change.error_message,
-                    "metadata": change.metadata,
+                    "metadata": change.change_metadata,
                 })
             
             return ChangeHistoryResponse(
@@ -633,7 +633,7 @@ async def get_change(
                     "applied_at": change.applied_at.isoformat() if change.applied_at else None,
                     "rejection_reason": change.rejection_reason,
                     "error_message": change.error_message,
-                    "metadata": change.metadata,
+                    "metadata": change.change_metadata,
                 }
             }
             

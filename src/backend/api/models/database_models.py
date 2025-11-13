@@ -164,7 +164,7 @@ class ChangeRequestDB(Base):
     applied_at = Column(DateTime, nullable=True)
     rejection_reason = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
-    metadata = Column(JSON, nullable=True)  # Additional data about the change
+    change_metadata = Column(JSON, nullable=True)  # Additional data about the change
 
 
 class RULPredictionDB(Base):
