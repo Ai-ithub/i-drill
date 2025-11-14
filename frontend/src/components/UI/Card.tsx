@@ -7,7 +7,7 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 export interface CardHeaderProps extends HTMLAttributes<HTMLDivElement> {
-  title?: string
+  title?: string | ReactNode
   subtitle?: string
   action?: ReactNode
 }
@@ -44,7 +44,13 @@ const CardHeader = ({ className, title, subtitle, action, children, ...props }: 
     <div className={cn('flex items-start justify-between mb-4', className)} {...props}>
       {(title || subtitle) && (
         <div className="flex-1">
-          {title && <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-1">{title}</h3>}
+          {title && (
+            typeof title === 'string' ? (
+              <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-1">{title}</h3>
+            ) : (
+              <div className="mb-1">{title}</div>
+            )
+          )}
           {subtitle && <p className="text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>}
         </div>
       )}

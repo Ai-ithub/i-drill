@@ -19,7 +19,7 @@
 
 ### پیش‌نیازها
 
-- **Python 3.10+**
+- **Python 3.12+**
 - **Node.js 18+**
 - **PostgreSQL 15+**
 - **Docker & Docker Compose** (اختیاری)

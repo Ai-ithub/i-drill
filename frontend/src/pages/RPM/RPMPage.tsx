@@ -293,7 +293,7 @@ export default function RPMPage() {
           <div className="mt-4 pt-4 border-t border-gray-700">
             <div className="text-xs text-gray-400">Last Check</div>
             <div className="text-sm text-cyan-400 font-mono">
-              {new Date().toLocaleTimeString()}
+              {new Date().toLocaleTimeString('en-US')}
             </div>
           </div>
         </div>

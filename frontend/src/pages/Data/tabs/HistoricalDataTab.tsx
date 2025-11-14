@@ -353,7 +353,7 @@ export default function HistoricalDataTab() {
                     border: '1px solid #e2e8f0',
                     borderRadius: '8px',
                   }}
-                  labelFormatter={(value) => new Date(value).toLocaleString()}
+                  labelFormatter={(value) => new Date(value).toLocaleString('en-US')}
                   formatter={(value: number, name: string) => {
                     const metric = ALL_METRICS.find((m) => m.key === name)
                     return [`${value?.toFixed(2) || 0} ${metric?.unit || ''}`, metric?.label || name]

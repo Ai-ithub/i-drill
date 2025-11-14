@@ -15,7 +15,7 @@
 
 ### Prerequisites
 
-- Python 3.9+
+- Python 3.12+
 - PostgreSQL 12+
 - Kafka (optional, for real-time streaming)
 - Redis (optional, for caching)

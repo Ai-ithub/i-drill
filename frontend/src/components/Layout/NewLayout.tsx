@@ -48,12 +48,12 @@ const menuSections: MenuSection[] = [
   {
     title: 'Monitoring',
     items: [
-      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['viewer', 'operator', 'engineer', 'maintenance'] },
       { name: 'RTM - Real Time Monitoring', path: '/realtime', icon: Eye, roles: ['viewer', 'operator', 'engineer'] },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['viewer', 'operator', 'engineer', 'maintenance'] },
+      { name: 'RTO - Real Time Optimization', path: '/rto', icon: Target, roles: ['viewer', 'operator', 'engineer'] },
+      { name: 'DVR - Data Validation & Reconciliation', path: '/dvr-page', icon: Database, roles: ['viewer', 'operator', 'engineer', 'maintenance'] },
+      { name: 'PDM - Predictive Maintenance', path: '/pdm', icon: Wrench, roles: ['viewer', 'operator', 'engineer', 'maintenance'] },
       { name: 'Data', path: '/data', icon: Database, roles: ['viewer', 'operator', 'engineer'] },
-      { name: 'RTO - Real Time Optimization', path: '/rto', icon: Target, roles: ['operator', 'engineer'] },
-      { name: 'DVR - Data Validation & Reconciliation', path: '/dvr-page', icon: Database, roles: ['engineer', 'maintenance'] },
-      { name: 'PDM - Predictive Maintenance', path: '/pdm', icon: Wrench, roles: ['engineer', 'maintenance'] },
       { name: 'Predictions', path: '/predictions', icon: Activity, roles: ['engineer'] },
       { name: 'DVR Monitoring', path: '/dvr', icon: Database, roles: ['engineer', 'maintenance'] },
       { name: 'Maintenance', path: '/maintenance', icon: Wrench, roles: ['maintenance'] },
@@ -66,7 +66,6 @@ export default function NewLayout({ children }: LayoutProps) {
   const location = useLocation()
   const { mode, toggle } = useThemeMode()
   const { role, setRole } = useUserRole()
-  const [expandedSection, setExpandedSection] = useState<string | null>('Monitoring')
   const [isMobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isScrolled, setScrolled] = useState(false)
 
@@ -175,40 +174,28 @@ export default function NewLayout({ children }: LayoutProps) {
             </div>
 
             {filteredSections.map((section) => (
-              <div key={section.title} className="space-y-2">
-                <button
-                  onClick={() => setExpandedSection((prev) => (prev === section.title ? null : section.title))}
-                  className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400"
-                >
-                  <span>{section.title}</span>
-                  {expandedSection === section.title ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </button>
-
-                {expandedSection === section.title && (
-                  <nav className="space-y-1">
-                    {section.items.map((item) => {
-                      const Icon = item.icon
-                      const normalizedPath = location.pathname === '/' ? '/realtime' : location.pathname
-                      const isActive = normalizedPath === item.path
-                      return (
-                        <Link
-                          key={item.path}
-                          to={item.path}
-                          onClick={() => setMobileMenuOpen(false)}
-                          className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all ${
-                            isActive
-                              ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 border border-cyan-500/40'
-                              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800/70'
-                          }`}
-                        >
-                          <Icon className="w-4 h-4" />
-                          <span>{item.name}</span>
-                        </Link>
-                      )
-                    })}
-                  </nav>
-                )}
-              </div>
+              <nav key={section.title} className="space-y-1">
+                {section.items.map((item) => {
+                  const Icon = item.icon
+                  const normalizedPath = location.pathname === '/' ? '/realtime' : location.pathname
+                  const isActive = normalizedPath === item.path
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all ${
+                        isActive
+                          ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 border border-cyan-500/40'
+                          : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800/70'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span>{item.name}</span>
+                    </Link>
+                  )
+                })}
+              </nav>
             ))}
           </div>
         </aside>

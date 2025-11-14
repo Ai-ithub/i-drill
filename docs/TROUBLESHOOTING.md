@@ -20,7 +20,7 @@
 
 **خطا:**
 ```
-Python version 3.8 is required but 3.7 is installed
+Python version 3.12 is required but older version is installed
 ```
 
 **راه‌حل:**
@@ -28,10 +28,10 @@ Python version 3.8 is required but 3.7 is installed
 # بررسی نسخه Python
 python --version
 
-# نصب Python 3.10+
+# نصب Python 3.12+
 # Windows: از python.org دانلود کنید
-# Linux: sudo apt install python3.10
-# macOS: brew install python@3.10
+# Linux: sudo apt install python3.12
+# macOS: brew install python@3.12
 ```
 
 ### مشکل: npm install fails

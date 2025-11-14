@@ -216,3 +216,114 @@ def validate_password_strength(password: str) -> Tuple[bool, List[str]]:
     
     return len(issues) == 0, issues
 
+
+def get_csp_policy(is_production: bool = False, api_url: str = None) -> str:
+    """
+    Generate Content Security Policy (CSP) header value
+    
+    Args:
+        is_production: Whether running in production mode
+        api_url: API base URL for connect-src directive
+        
+    Returns:
+        CSP policy string
+    """
+    # Get custom CSP from environment or use default
+    custom_csp = os.getenv("CSP_POLICY")
+    if custom_csp:
+        return custom_csp
+    
+    # Default CSP policy
+    if is_production:
+        # Strict CSP for production
+        connect_src = ["'self'"]
+        
+        # Add API URL and WebSocket support if provided
+        if api_url:
+            connect_src.append(api_url)
+            ws_url = api_url.replace("http://", "ws://").replace("https://", "wss://")
+            connect_src.append(ws_url)
+        
+        csp_directives = [
+            "default-src 'self'",
+            "script-src 'self'",  # No unsafe-inline or unsafe-eval in production
+            "style-src 'self' 'unsafe-inline'",  # Allow inline styles for React
+            "img-src 'self' data: https:",
+            "font-src 'self' data:",
+            f"connect-src {' '.join(connect_src)}",
+            "frame-ancestors 'none'",
+            "base-uri 'self'",
+            "form-action 'self'",
+            "upgrade-insecure-requests",
+        ]
+    else:
+        # More permissive CSP for development
+        csp_directives = [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'",  # Allow for HMR
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data: https: http:",
+            "font-src 'self' data:",
+            "connect-src 'self' ws: wss: http: https:",
+            "frame-ancestors 'self'",
+        ]
+    
+    return "; ".join(csp_directives)
+
+
+def get_security_headers(is_production: bool = False, api_url: str = None) -> dict:
+    """
+    Get security headers dictionary
+    
+    Args:
+        is_production: Whether running in production mode
+        api_url: API base URL for CSP
+        
+    Returns:
+        Dictionary of security headers
+    """
+    headers = {
+        # Prevent MIME type sniffing
+        "X-Content-Type-Options": "nosniff",
+        
+        # Prevent clickjacking
+        "X-Frame-Options": "DENY",
+        
+        # XSS Protection (legacy but still useful)
+        "X-XSS-Protection": "1; mode=block",
+        
+        # Referrer policy
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        
+        # Content Security Policy
+        "Content-Security-Policy": get_csp_policy(is_production, api_url),
+        
+        # Permissions Policy (formerly Feature-Policy)
+        "Permissions-Policy": (
+            "geolocation=(), "
+            "microphone=(), "
+            "camera=(), "
+            "payment=(), "
+            "usb=(), "
+            "magnetometer=(), "
+            "gyroscope=(), "
+            "accelerometer=()"
+        ),
+    }
+    
+    # HSTS only in production with HTTPS
+    if is_production and os.getenv("FORCE_HTTPS", "false").lower() == "true":
+        max_age = int(os.getenv("HSTS_MAX_AGE", "31536000"))  # 1 year default
+        include_subdomains = os.getenv("HSTS_INCLUDE_SUBDOMAINS", "true").lower() == "true"
+        
+        hsts_value = f"max-age={max_age}"
+        if include_subdomains:
+            hsts_value += "; includeSubDomains"
+        
+        preload = os.getenv("HSTS_PRELOAD", "false").lower() == "true"
+        if preload:
+            hsts_value += "; preload"
+        
+        headers["Strict-Transport-Security"] = hsts_value
+    
+    return headers

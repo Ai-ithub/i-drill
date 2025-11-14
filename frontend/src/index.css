@@ -33,5 +33,10 @@ body {
 #root {
   width: 100%;
   min-height: 100vh;
+  background-color: #f1f5f9; /* Default light background */
+}
+
+html.dark #root {
+  background-color: #020617; /* Dark background */
 }
 

@@ -8,7 +8,7 @@ import os
 from collections import defaultdict
 import pandas as pd
 
-# اضافه کردن مسیر پروژه به sys.path
+# Add project path to sys.path
 current_dir = os.getcwd()
 sys.path.append(current_dir)
 
@@ -20,8 +20,8 @@ class AgentEvaluator:
         self.results = {}
         
     def evaluate_agent(self, model, agent_name, num_episodes=10):
-        """ارزیابی کامل یک عامل"""
-        print(f"\n=== ارزیابی {agent_name} ===")
+        """Complete evaluation of an agent"""
+        print(f"\n=== Evaluating {agent_name} ===")
         
         episode_rewards = []
         episode_lengths = []
@@ -53,7 +53,7 @@ class AgentEvaluator:
                 total_reward += reward
                 steps += 1
                 
-                # ذخیره داده‌های اپیزود
+                # Store episode data
                 episode_data['rewards'].append(reward)
                 episode_data['depths'].append(obs[0])  # depth
                 episode_data['bit_wears'].append(obs[1])  # bit_wear
@@ -76,9 +76,9 @@ class AgentEvaluator:
             episode_pressures.append(np.mean(episode_data['pressures']))
             episode_vibrations.append(np.mean(episode_data['vibrations']))
             
-            print(f"اپیزود {episode + 1}: پاداش = {total_reward:.2f}, طول = {steps}")
+            print(f"Episode {episode + 1}: Reward = {total_reward:.2f}, Length = {steps}")
         
-        # محاسبه آمار
+        # Calculate statistics
         results = {
             'mean_reward': np.mean(episode_rewards),
             'std_reward': np.std(episode_rewards),
@@ -97,23 +97,23 @@ class AgentEvaluator:
         return results
     
     def compare_agents(self):
-        """مقایسه عملکرد دو عامل"""
+        """Compare performance of two agents"""
         print("\n" + "="*60)
-        print("📊 مقایسه عملکرد عوامل")
+        print("📊 Agent Performance Comparison")
         print("="*60)
         
         comparison_data = []
         for agent_name, results in self.results.items():
             comparison_data.append({
-                'عامل': agent_name,
-                'میانگین پاداش': f"{results['mean_reward']:.2f} ± {results['std_reward']:.2f}",
-                'میانگین طول اپیزود': f"{results['mean_length']:.1f} ± {results['std_length']:.1f}",
-                'میانگین عمق': f"{results['mean_depth']:.2f}",
-                'میانگین سایش مته': f"{results['mean_bit_wear']:.6f}",
-                'میانگین ROP': f"{results['mean_rop']:.2f}",
-                'میانگین گشتاور': f"{results['mean_torque']:.2f}",
-                'میانگین فشار': f"{results['mean_pressure']:.2f}",
-                'میانگین ارتعاش': f"{results['mean_vibration']:.4f}"
+                'Agent': agent_name,
+                'Mean Reward': f"{results['mean_reward']:.2f} ± {results['std_reward']:.2f}",
+                'Mean Episode Length': f"{results['mean_length']:.1f} ± {results['std_length']:.1f}",
+                'Mean Depth': f"{results['mean_depth']:.2f}",
+                'Mean Bit Wear': f"{results['mean_bit_wear']:.6f}",
+                'Mean ROP': f"{results['mean_rop']:.2f}",
+                'Mean Torque': f"{results['mean_torque']:.2f}",
+                'Mean Pressure': f"{results['mean_pressure']:.2f}",
+                'Mean Vibration': f"{results['mean_vibration']:.4f}"
             })
         
         df = pd.DataFrame(comparison_data)
@@ -122,132 +122,132 @@ class AgentEvaluator:
         return df
     
     def plot_performance_comparison(self):
-        """رسم نمودار مقایسه عملکرد"""
+        """Plot performance comparison graph"""
         if len(self.results) < 2:
-            print("نیاز به حداقل دو عامل برای مقایسه")
+            print("Need at least two agents for comparison")
             return
         
-        # تنظیم فونت فارسی
+        # Set font
         plt.rcParams['font.family'] = 'DejaVu Sans'
         
         fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-        fig.suptitle('مقایسه عملکرد عوامل PPO و SAC', fontsize=16, fontweight='bold')
+        fig.suptitle('PPO and SAC Agents Performance Comparison', fontsize=16, fontweight='bold')
         
-        # 1. پاداش
+        # 1. Reward
         agents = list(self.results.keys())
         rewards = [self.results[agent]['mean_reward'] for agent in agents]
         reward_stds = [self.results[agent]['std_reward'] for agent in agents]
         
         axes[0, 0].bar(agents, rewards, yerr=reward_stds, capsize=5, alpha=0.7)
-        axes[0, 0].set_title('میانگین پاداش')
-        axes[0, 0].set_ylabel('پاداش')
+        axes[0, 0].set_title('Mean Reward')
+        axes[0, 0].set_ylabel('Reward')
         axes[0, 0].grid(True, alpha=0.3)
         
-        # 2. طول اپیزود
+        # 2. Episode Length
         lengths = [self.results[agent]['mean_length'] for agent in agents]
         length_stds = [self.results[agent]['std_length'] for agent in agents]
         
         axes[0, 1].bar(agents, lengths, yerr=length_stds, capsize=5, alpha=0.7, color='orange')
-        axes[0, 1].set_title('میانگین طول اپیزود')
-        axes[0, 1].set_ylabel('تعداد گام‌ها')
+        axes[0, 1].set_title('Mean Episode Length')
+        axes[0, 1].set_ylabel('Number of Steps')
         axes[0, 1].grid(True, alpha=0.3)
         
-        # 3. عمق
+        # 3. Depth
         depths = [self.results[agent]['mean_depth'] for agent in agents]
         axes[0, 2].bar(agents, depths, alpha=0.7, color='green')
-        axes[0, 2].set_title('میانگین عمق حفاری')
-        axes[0, 2].set_ylabel('عمق (متر)')
+        axes[0, 2].set_title('Mean Drilling Depth')
+        axes[0, 2].set_ylabel('Depth (meters)')
         axes[0, 2].grid(True, alpha=0.3)
         
-        # 4. سایش مته
+        # 4. Bit Wear
         bit_wears = [self.results[agent]['mean_bit_wear'] for agent in agents]
         axes[1, 0].bar(agents, bit_wears, alpha=0.7, color='red')
-        axes[1, 0].set_title('میانگین سایش مته')
-        axes[1, 0].set_ylabel('سایش مته')
+        axes[1, 0].set_title('Mean Bit Wear')
+        axes[1, 0].set_ylabel('Bit Wear')
         axes[1, 0].grid(True, alpha=0.3)
         
         # 5. ROP
         rops = [self.results[agent]['mean_rop'] for agent in agents]
         axes[1, 1].bar(agents, rops, alpha=0.7, color='purple')
-        axes[1, 1].set_title('میانگین نرخ حفاری (ROP)')
-        axes[1, 1].set_ylabel('ROP (متر/ساعت)')
+        axes[1, 1].set_title('Mean Rate of Penetration (ROP)')
+        axes[1, 1].set_ylabel('ROP (meters/hour)')
         axes[1, 1].grid(True, alpha=0.3)
         
-        # 6. ارتعاش
+        # 6. Vibration
         vibrations = [self.results[agent]['mean_vibration'] for agent in agents]
         axes[1, 2].bar(agents, vibrations, alpha=0.7, color='brown')
-        axes[1, 2].set_title('میانگین ارتعاش')
-        axes[1, 2].set_ylabel('سطح ارتعاش')
+        axes[1, 2].set_title('Mean Vibration')
+        axes[1, 2].set_ylabel('Vibration Level')
         axes[1, 2].grid(True, alpha=0.3)
         
         plt.tight_layout()
         plt.savefig('agent_performance_comparison.png', dpi=300, bbox_inches='tight')
         plt.show()
         
-        print("\n📈 نمودار مقایسه عملکرد در فایل 'agent_performance_comparison.png' ذخیره شد.")
+        print("\n📈 Performance comparison chart saved to 'agent_performance_comparison.png'.")
     
     def generate_report(self):
-        """تولید گزارش کامل ارزیابی"""
+        """Generate complete evaluation report"""
         print("\n" + "="*60)
-        print("📋 گزارش کامل ارزیابی عوامل")
+        print("📋 Complete Agent Evaluation Report")
         print("="*60)
         
         for agent_name, results in self.results.items():
             print(f"\n🔍 {agent_name}:")
-            print(f"   📊 پاداش: {results['mean_reward']:.2f} ± {results['std_reward']:.2f}")
-            print(f"   ⏱️  طول اپیزود: {results['mean_length']:.1f} ± {results['std_length']:.1f}")
-            print(f"   🕳️  عمق: {results['mean_depth']:.2f} متر")
-            print(f"   🔧 سایش مته: {results['mean_bit_wear']:.6f}")
-            print(f"   ⚡ ROP: {results['mean_rop']:.2f} متر/ساعت")
-            print(f"   🔄 گشتاور: {results['mean_torque']:.2f} N.m")
-            print(f"   💨 فشار: {results['mean_pressure']:.2f} Pa")
-            print(f"   📳 ارتعاش: {results['mean_vibration']:.4f}")
+            print(f"   📊 Reward: {results['mean_reward']:.2f} ± {results['std_reward']:.2f}")
+            print(f"   ⏱️  Episode Length: {results['mean_length']:.1f} ± {results['std_length']:.1f}")
+            print(f"   🕳️  Depth: {results['mean_depth']:.2f} meters")
+            print(f"   🔧 Bit Wear: {results['mean_bit_wear']:.6f}")
+            print(f"   ⚡ ROP: {results['mean_rop']:.2f} meters/hour")
+            print(f"   🔄 Torque: {results['mean_torque']:.2f} N.m")
+            print(f"   💨 Pressure: {results['mean_pressure']:.2f} Pa")
+            print(f"   📳 Vibration: {results['mean_vibration']:.4f}")
         
-        # تعیین برنده
+        # Determine winner
         if len(self.results) >= 2:
             best_agent = max(self.results.keys(), key=lambda x: self.results[x]['mean_reward'])
-            print(f"\n🏆 برنده: {best_agent}")
-            print(f"   با پاداش: {self.results[best_agent]['mean_reward']:.2f}")
+            print(f"\n🏆 Winner: {best_agent}")
+            print(f"   With reward: {self.results[best_agent]['mean_reward']:.2f}")
 
 def main():
-    print("=== ارزیابی عملکرد عوامل PPO و SAC ===")
+    print("=== PPO and SAC Agents Performance Evaluation ===")
     
-    # ساخت محیط
-    print("ساخت محیط DrillingEnv...")
+    # Create environment
+    print("Creating DrillingEnv...")
     env = DrillingEnv()
     
-    # ساخت ارزیاب
+    # Create evaluator
     evaluator = AgentEvaluator(env)
     
     try:
-        # بارگذاری مدل PPO
-        print("بارگذاری مدل PPO...")
+        # Load PPO model
+        print("Loading PPO model...")
         ppo_model = PPO.load("ppo_drilling_env")
         evaluator.evaluate_agent(ppo_model, "PPO", num_episodes=5)
         
-        # بارگذاری مدل SAC
-        print("بارگذاری مدل SAC...")
+        # Load SAC model
+        print("Loading SAC model...")
         sac_model = SAC.load("sac_drilling_env")
         evaluator.evaluate_agent(sac_model, "SAC", num_episodes=5)
         
-        # مقایسه عوامل
+        # Compare agents
         comparison_df = evaluator.compare_agents()
         
-        # رسم نمودار
+        # Plot graph
         evaluator.plot_performance_comparison()
         
-        # تولید گزارش
+        # Generate report
         evaluator.generate_report()
         
-        # ذخیره نتایج
+        # Save results
         comparison_df.to_csv('agent_evaluation_results.csv', index=False, encoding='utf-8-sig')
-        print("\n💾 نتایج در فایل 'agent_evaluation_results.csv' ذخیره شد.")
+        print("\n💾 Results saved to 'agent_evaluation_results.csv'.")
         
     except FileNotFoundError as e:
-        print(f"❌ خطا: فایل مدل یافت نشد - {e}")
-        print("لطفاً ابتدا مدل‌ها را آموزش دهید.")
+        print(f"❌ Error: Model file not found - {e}")
+        print("Please train the models first.")
     except Exception as e:
-        print(f"❌ خطا در ارزیابی: {e}")
+        print(f"❌ Error in evaluation: {e}")
 
 if __name__ == "__main__":
     main() 

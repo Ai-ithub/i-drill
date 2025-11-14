@@ -20,12 +20,12 @@ export default function Predictions() {
   const [modelType, setModelType] = useState('lstm')
   const [predictionHistory, setPredictionHistory] = useState<PredictionHistory[]>([])
 
-  const predictionMutation = useMutation(
-    (payload: { rig_id: string; lookback_hours: number; model_type: string }) =>
+  const predictionMutation = useMutation({
+    mutationFn: (payload: { rig_id: string; lookback_hours: number; model_type: string }) =>
       predictionsApi
         .predictRULAuto(payload.rig_id, payload.lookback_hours, payload.model_type)
-        .then((res) => res.data)
-  )
+        .then((res) => res.data),
+  })
 
   // Fetch analytics for statistics
   const { data: analyticsData } = useQuery({

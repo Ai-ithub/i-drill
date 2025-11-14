@@ -1,13 +1,25 @@
 # ===== Application Server Stack =====
-fastapi==0.115.0
-uvicorn[standard]==0.32.1
-starlette>=0.47.2
+# FastAPI and related dependencies - Updated to latest stable versions (Jan 2025)
+# FastAPI 0.121.2 - Latest stable version with security fixes and improvements
+# Breaking changes: None significant from 0.115.0, mostly bug fixes and performance improvements
+fastapi>=0.121.0,<0.122.0
+# Uvicorn 0.38.0 - ASGI server with standard extras (uvloop, httptools, websockets)
+# Updated for better performance and compatibility with FastAPI 0.121.x
+uvicorn[standard]>=0.38.0,<0.39.0
+# Starlette - Web framework (FastAPI dependency)
+# Compatible with FastAPI 0.121.x
+starlette>=0.47.2,<0.48.0
+# Multipart form data support
 python-multipart>=0.0.9
 
 # ===== Schema & Validation =====
-pydantic==2.11.7
-pydantic-core==2.33.2
-annotated-types==0.7.0
+# Pydantic v2 - Updated to latest compatible versions
+# Pydantic 2.12.4 - Latest stable, fully compatible with FastAPI 0.121.x
+# Note: Pydantic 2.12.x includes performance improvements and bug fixes
+pydantic>=2.12.0,<2.13.0
+# pydantic-core should be auto-installed with pydantic, but pinning for stability
+pydantic-core>=2.33.2
+annotated-types>=0.7.0,<0.8.0
 # Note: typing-extensions is provided by requirements/ml.txt
 
 # ===== Database & Persistence =====

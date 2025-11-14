@@ -588,7 +588,7 @@ export default function HistoricalData() {
                     borderRadius: '8px',
                   }}
                   formatter={(value: number, name) => [value?.toFixed?.(2) ?? value, name]} 
-                  labelFormatter={(value) => new Date(value).toLocaleString()}
+                  labelFormatter={(value) => new Date(value).toLocaleString('en-US')}
                 />
                 <Legend />
                 {selectedMetrics.map((metric, index) => (

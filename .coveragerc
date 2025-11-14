@@ -1,0 +1,39 @@
+[run]
+source = src/backend
+omit = 
+    */tests/*
+    */migrations/*
+    */scripts/*
+    */__pycache__/*
+    */venv/*
+    */env/*
+    */node_modules/*
+    app.py
+    start_server.py
+    setup.py
+    */test_*.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+    @abc.abstractmethod
+    class .*\bProtocol\):
+    if .*DEBUG.*:
+    if .*TESTING.*:
+
+precision = 2
+show_missing = True
+skip_covered = False
+
+[html]
+directory = htmlcov
+
+[xml]
+output = coverage.xml
+

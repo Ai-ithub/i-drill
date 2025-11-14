@@ -456,7 +456,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - run: pip install -r requirements/dev.txt
       - run: pytest --cov --cov-report=xml
       - uses: codecov/codecov-action@v3

@@ -43,7 +43,10 @@ class SensorData(Base):
     status = Column(String(20), default="normal")
     
     # Indexes for faster queries
+    # Composite index for common query pattern: rig_id + timestamp
     __table_args__ = (
+        # PostgreSQL/MySQL: Composite index for rig_id + timestamp queries
+        # This significantly improves performance for queries filtering by rig_id and ordering by timestamp
         {'mysql_engine': 'InnoDB', 'mysql_charset': 'utf8mb4'},
     )
 

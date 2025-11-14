@@ -51,7 +51,7 @@ src/predictive_maintenance/
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.12+
 - CUDA-compatible GPU (recommended)
 - 8GB+ GPU memory for training
 

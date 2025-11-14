@@ -448,7 +448,7 @@ torchrun --nproc_per_node=2 main.py --mode train --config configs/distributed.ya
 
 ### System Requirements
 
-- **Python**: 3.8 or higher
+- **Python**: 3.12 or higher
 - **GPU**: NVIDIA GPU with CUDA support (recommended)
 - **Memory**: 8GB+ RAM, 6GB+ GPU memory
 - **Storage**: Sufficient space for datasets and checkpoints

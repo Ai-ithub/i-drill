@@ -20,19 +20,51 @@ export default function RTOTab() {
   const [autoExecutionEnabled, setAutoExecutionEnabled] = useState(false)
   const { createChange, changes, autoExecutionEnabled: changeManagerAutoEnabled, setAutoExecutionEnabled: setChangeManagerAutoEnabled } = useChangeManager(rigId)
 
-  const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
-    queryKey: ['analytics'],
+  // Mock data for demonstration when backend is not available
+  const mockRealtimeData = {
+    depth: 5000,
+    wob: 45000,
+    rpm: 150,
+    torque: 8000,
+    mud_flow: 650,
+    mud_pressure: 2800,
+    rop: 25.5,
+  }
+
+  const mockAnalyticsData = {
+    current_depth: 5000,
+    average_rop: 25.5,
+    total_drilling_time_hours: 120,
+    total_power_consumption: 500000,
+    maintenance_alerts_count: 2,
+  }
+
+  const { data: analyticsData, isLoading: analyticsLoading, error: analyticsError } = useQuery({
+    queryKey: ['analytics', rigId],
     queryFn: () => sensorDataApi.getAnalytics(rigId).then((res) => res.data.summary),
     refetchInterval: 30000, // Refresh every 30 seconds for real-time optimization
+    retry: 1, // Reduced retry to show mock data faster
+    retryDelay: 1000,
+    staleTime: 30000,
+    refetchOnWindowFocus: false,
   })
 
-  const { data: realtimeData, isLoading: realtimeLoading } = useQuery({
-    queryKey: ['realtime-optimization'],
+  const { data: realtimeData, isLoading: realtimeLoading, error: realtimeError } = useQuery({
+    queryKey: ['realtime-optimization', rigId],
     queryFn: () => sensorDataApi.getRealtime(rigId, 1).then((res) => res.data.data?.[0]),
     refetchInterval: 10000, // Refresh every 10 seconds
+    retry: 1, // Reduced retry to show mock data faster
+    retryDelay: 1000,
+    staleTime: 10000,
+    refetchOnWindowFocus: false,
   })
 
-  const isLoading = analyticsLoading || realtimeLoading
+  // Use actual data or fallback to mock data immediately
+  const effectiveRealtimeData = realtimeData || mockRealtimeData
+  const effectiveAnalyticsData = analyticsData || mockAnalyticsData
+  
+  // Only show loading if we don't have mock data fallback yet
+  const isLoading = (analyticsLoading && !analyticsError && !mockAnalyticsData) || (realtimeLoading && !realtimeError && !mockRealtimeData)
 
   // Handle apply recommendation
   const handleApplyRecommendation = (rec: OptimizationRecommendation, autoExecute: boolean) => {
@@ -49,17 +81,18 @@ export default function RTOTab() {
     })
   }
 
+
   // Calculate optimization recommendations based on current data
   const recommendations = useMemo<OptimizationRecommendation[]>(() => {
-    if (!realtimeData || !analyticsData) return []
+    if (!effectiveRealtimeData || !effectiveAnalyticsData) return []
 
-    const currentROP = realtimeData.rop || analyticsData.average_rop || 0
-    const currentWOB = realtimeData.wob || 0
-    const currentRPM = realtimeData.rpm || 0
-    const currentTorque = realtimeData.torque || 0
-    const currentMudFlow = realtimeData.mud_flow || 0
-    const currentMudPressure = realtimeData.mud_pressure || 0
-    const currentDepth = realtimeData.depth || analyticsData.current_depth || 0
+    const currentROP = effectiveRealtimeData.rop || effectiveAnalyticsData.average_rop || 0
+    const currentWOB = effectiveRealtimeData.wob || 0
+    const currentRPM = effectiveRealtimeData.rpm || 0
+    const currentTorque = effectiveRealtimeData.torque || 0
+    const currentMudFlow = effectiveRealtimeData.mud_flow || 0
+    const currentMudPressure = effectiveRealtimeData.mud_pressure || 0
+    const currentDepth = effectiveRealtimeData.depth || effectiveAnalyticsData.current_depth || 0
 
     const recs: OptimizationRecommendation[] = []
 
@@ -153,7 +186,7 @@ export default function RTOTab() {
       const priorityOrder = { high: 3, medium: 2, low: 1 }
       return priorityOrder[b.priority] - priorityOrder[a.priority]
     })
-  }, [realtimeData, analyticsData])
+  }, [effectiveRealtimeData, effectiveAnalyticsData])
 
   // Calculate overall optimization score
   const optimizationScore = useMemo(() => {
@@ -165,9 +198,7 @@ export default function RTOTab() {
 
   // Calculate potential improvements
   const potentialImprovements = useMemo(() => {
-    if (!analyticsData || !realtimeData) return null
-
-    const currentROP = realtimeData.rop || analyticsData.average_rop || 0
+    const currentROP = effectiveRealtimeData.rop || effectiveAnalyticsData.average_rop || 0
     const ropImprovement = recommendations
       .filter(r => r.impact.includes('ROP'))
       .reduce((sum, r) => {
@@ -193,9 +224,10 @@ export default function RTOTab() {
       efficiencyImprovement: efficiencyImprovement > 0 ? efficiencyImprovement : 0,
       estimatedCostReduction: (ropImprovement + efficiencyImprovement) * 0.5, // Simplified calculation
     }
-  }, [recommendations, analyticsData, realtimeData])
+  }, [recommendations, effectiveAnalyticsData, effectiveRealtimeData])
 
-  if (isLoading) {
+  // Show loading only if we truly don't have any data (not even mock)
+  if (isLoading && !effectiveRealtimeData && !effectiveAnalyticsData) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-slate-400">Loading optimization data...</div>
@@ -205,16 +237,6 @@ export default function RTOTab() {
 
   return (
     <div className="space-y-6 text-slate-900 dark:text-slate-100">
-      {/* Header */}
-      <div className="space-y-2">
-        <h2 className="text-2xl font-bold flex items-center gap-2">
-          <Target className="w-6 h-6 text-cyan-500" />
-          Real-Time Optimization (RTO)
-        </h2>
-        <p className="text-slate-500 dark:text-slate-300">
-          Real-time optimization recommendations to improve rate of penetration (ROP), reduce costs, and increase drilling efficiency
-        </p>
-      </div>
 
       {/* Auto-Execution Control */}
       <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
@@ -290,47 +312,50 @@ export default function RTOTab() {
       </div>
 
       {/* Current Parameters */}
-      {realtimeData && (
+      {effectiveRealtimeData && (
         <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Gauge className="w-5 h-5 text-cyan-500" />
             Current Drilling Parameters
+            {!realtimeData && (
+              <span className="text-xs text-slate-400 dark:text-slate-500 ml-2">(Demo Data)</span>
+            )}
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <div className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 bg-slate-50 dark:bg-slate-800/40">
               <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Depth</div>
               <div className="text-lg font-semibold text-slate-900 dark:text-white">
-                {(realtimeData.depth || 0).toFixed(1)} ft
+                {(effectiveRealtimeData.depth || 0).toFixed(1)} ft
               </div>
             </div>
             <div className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 bg-slate-50 dark:bg-slate-800/40">
               <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">WOB</div>
               <div className="text-lg font-semibold text-slate-900 dark:text-white">
-                {(realtimeData.wob || 0).toFixed(0)} lbs
+                {(effectiveRealtimeData.wob || 0).toFixed(0)} lbs
               </div>
             </div>
             <div className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 bg-slate-50 dark:bg-slate-800/40">
               <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">RPM</div>
               <div className="text-lg font-semibold text-slate-900 dark:text-white">
-                {(realtimeData.rpm || 0).toFixed(0)}
+                {(effectiveRealtimeData.rpm || 0).toFixed(0)}
               </div>
             </div>
             <div className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 bg-slate-50 dark:bg-slate-800/40">
               <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Torque</div>
               <div className="text-lg font-semibold text-slate-900 dark:text-white">
-                {(realtimeData.torque || 0).toFixed(0)} ft-lbs
+                {(effectiveRealtimeData.torque || 0).toFixed(0)} ft-lbs
               </div>
             </div>
             <div className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 bg-slate-50 dark:bg-slate-800/40">
               <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">ROP</div>
               <div className="text-lg font-semibold text-slate-900 dark:text-white">
-                {(realtimeData.rop || 0).toFixed(1)} ft/hr
+                {(effectiveRealtimeData.rop || 0).toFixed(1)} ft/hr
               </div>
             </div>
             <div className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 bg-slate-50 dark:bg-slate-800/40">
               <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Mud Flow</div>
               <div className="text-lg font-semibold text-slate-900 dark:text-white">
-                {(realtimeData.mud_flow || 0).toFixed(0)} gpm
+                {(effectiveRealtimeData.mud_flow || 0).toFixed(0)} gpm
               </div>
             </div>
           </div>
@@ -534,7 +559,7 @@ export default function RTOTab() {
                   </span>
                 </div>
                 <div className="text-slate-500 dark:text-slate-400 text-xs">
-                  {new Date(change.timestamp).toLocaleTimeString()}
+                  {new Date(change.timestamp).toLocaleTimeString('en-US')}
                 </div>
               </div>
             ))}

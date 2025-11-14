@@ -43,11 +43,57 @@ export default function PDMTab() {
   const [selectedRecommendations, setSelectedRecommendations] = useState<Set<string>>(new Set())
   const { createChange, changes, setAutoExecutionEnabled: setChangeManagerAutoEnabled } = useChangeManager(rigId)
 
+  // Mock data for demonstration when backend is not available
+  const mockAnalyticsData = {
+    current_depth: 5000,
+    average_rop: 25.5,
+    total_drilling_time_hours: 120,
+    total_power_consumption: 500000,
+    maintenance_alerts_count: 2,
+  }
+
+  const mockRealtimeData = {
+    depth: 5000,
+    wob: 45000,
+    rpm: 150,
+    torque: 8000,
+    mud_flow: 650,
+    mud_pressure: 2800,
+    rop: 25.5,
+    pump_pressure: 3200,
+  }
+
+  const mockRulData = {
+    success: true,
+    predicted_rul_hours: 85,
+    confidence_score: 0.88,
+  }
+
+  const mockAlertsData = [
+    {
+      id: 'alert-1',
+      component: 'Pump System',
+      alert_type: 'High Pressure Warning',
+      message: 'Pump pressure is elevated. Schedule maintenance.',
+      severity: 'high',
+    },
+    {
+      id: 'alert-2',
+      component: 'Drill Bit',
+      alert_type: 'Wear Indicator',
+      message: 'Drill bit shows signs of wear. Monitor closely.',
+      severity: 'medium',
+    },
+  ]
+
   // Fetch analytics data
   const { data: analyticsData } = useQuery({
     queryKey: ['analytics', rigId],
     queryFn: () => sensorDataApi.getAnalytics(rigId).then((res) => res.data.summary),
     refetchInterval: 60000,
+    retry: 1,
+    retryDelay: 1000,
+    refetchOnWindowFocus: false,
   })
 
   // Fetch real-time data
@@ -55,6 +101,9 @@ export default function PDMTab() {
     queryKey: ['realtime-pdm', rigId],
     queryFn: () => sensorDataApi.getRealtime(rigId, 1).then((res) => res.data.data?.[0]),
     refetchInterval: 30000,
+    retry: 1,
+    retryDelay: 1000,
+    refetchOnWindowFocus: false,
   })
 
   // Fetch RUL predictions
@@ -62,6 +111,9 @@ export default function PDMTab() {
     queryKey: ['rul-prediction', rigId],
     queryFn: () => predictionsApi.predictRULAuto(rigId, 24, 'lstm').then((res) => res.data),
     refetchInterval: 300000, // Every 5 minutes
+    retry: 1,
+    retryDelay: 1000,
+    refetchOnWindowFocus: false,
   })
 
   // Fetch maintenance alerts
@@ -69,16 +121,25 @@ export default function PDMTab() {
     queryKey: ['maintenance-alerts-pdm', rigId],
     queryFn: () => maintenanceApi.getAlerts(rigId).then((res) => res.data),
     refetchInterval: 60000,
+    retry: 1,
+    retryDelay: 1000,
+    refetchOnWindowFocus: false,
   })
+
+  // Use actual data or fallback to mock data
+  const effectiveAnalyticsData = analyticsData || mockAnalyticsData
+  const effectiveRealtimeData = realtimeData || mockRealtimeData
+  const effectiveRulData = rulData || mockRulData
+  const effectiveAlertsData = alertsData || mockAlertsData
 
   // Generate maintenance recommendations
   const recommendations = useMemo<MaintenanceRecommendation[]>(() => {
     const recs: MaintenanceRecommendation[] = []
 
     // RUL-based maintenance recommendations
-    if (rulData?.success && rulData.predicted_rul_hours) {
-      const rulHours = rulData.predicted_rul_hours
-      const confidence = rulData.confidence_score || 0.85
+    if (effectiveRulData?.success && effectiveRulData.predicted_rul_hours) {
+      const rulHours = effectiveRulData.predicted_rul_hours
+      const confidence = effectiveRulData.confidence_score || 0.85
 
       if (rulHours < 100) {
         recs.push({
@@ -135,10 +196,10 @@ export default function PDMTab() {
     }
 
     // Temperature-based recommendations
-    if (realtimeData) {
-      const bitTemp = realtimeData.bit_temperature || 0
-      const motorTemp = realtimeData.motor_temperature || 0
-      const mudTemp = realtimeData.mud_temperature || 0
+    if (effectiveRealtimeData) {
+      const bitTemp = effectiveRealtimeData.bit_temperature || 0
+      const motorTemp = effectiveRealtimeData.motor_temperature || 0
+      const mudTemp = effectiveRealtimeData.mud_temperature || 0
 
       if (bitTemp > 120) {
         recs.push({
@@ -178,9 +239,9 @@ export default function PDMTab() {
     }
 
     // Pressure-based recommendations
-    if (realtimeData) {
-      const mudPressure = realtimeData.mud_pressure || 0
-      const pumpPressure = realtimeData.pump_pressure || 0
+    if (effectiveRealtimeData) {
+      const mudPressure = effectiveRealtimeData.mud_pressure || 0
+      const pumpPressure = effectiveRealtimeData.pump_pressure || 0
 
       if (mudPressure > 3000) {
         recs.push({
@@ -220,14 +281,14 @@ export default function PDMTab() {
     }
 
     // Optimization recommendations for drilling conditions
-    if (realtimeData && analyticsData) {
-      const currentROP = realtimeData.rop || analyticsData.average_rop || 0
-      const currentWOB = realtimeData.wob || 0
-      const currentRPM = realtimeData.rpm || 0
-      const currentTorque = realtimeData.torque || 0
+    if (effectiveRealtimeData && effectiveAnalyticsData) {
+      const currentROP = effectiveRealtimeData.rop || effectiveAnalyticsData.average_rop || 0
+      const currentWOB = effectiveRealtimeData.wob || 0
+      const currentRPM = effectiveRealtimeData.rpm || 0
+      const currentTorque = effectiveRealtimeData.torque || 0
 
       // WOB optimization
-      const optimalWOB = (realtimeData.depth || 0) * 2.5
+      const optimalWOB = (effectiveRealtimeData.depth || 0) * 2.5
       if (currentWOB > 0 && Math.abs(currentWOB - optimalWOB) / optimalWOB > 0.2) {
         recs.push({
           id: 'opt-wob',
@@ -245,7 +306,7 @@ export default function PDMTab() {
       }
 
       // RPM optimization
-      const optimalRPM = (realtimeData.depth || 0) < 5000 ? 180 : (realtimeData.depth || 0) < 10000 ? 150 : 120
+      const optimalRPM = (effectiveRealtimeData.depth || 0) < 5000 ? 180 : (effectiveRealtimeData.depth || 0) < 10000 ? 150 : 120
       if (Math.abs(currentRPM - optimalRPM) > 20) {
         recs.push({
           id: 'opt-rpm',
@@ -282,8 +343,8 @@ export default function PDMTab() {
     }
 
     // Maintenance alerts from API
-    if (alertsData && Array.isArray(alertsData)) {
-      alertsData.forEach((alert: any, index: number) => {
+    if (effectiveAlertsData && Array.isArray(effectiveAlertsData)) {
+      effectiveAlertsData.forEach((alert: any, index: number) => {
         recs.push({
           id: `alert-${alert.id || index}`,
           type: 'maintenance',
@@ -304,7 +365,7 @@ export default function PDMTab() {
       const priorityOrder = { critical: 4, high: 3, medium: 2, low: 1 }
       return priorityOrder[b.priority] - priorityOrder[a.priority]
     })
-  }, [rulData, realtimeData, analyticsData, alertsData])
+  }, [effectiveRulData, effectiveRealtimeData, effectiveAnalyticsData, effectiveAlertsData])
 
   // Toggle recommendation selection
   const toggleSelection = (id: string) => {
@@ -363,7 +424,7 @@ export default function PDMTab() {
       return { success: true, executed: recommendationIds.length }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['maintenance-alerts-pdm'])
+      queryClient.invalidateQueries({ queryKey: ['maintenance-alerts-pdm'] })
       setSelectedRecommendations(new Set())
     },
   })
@@ -409,16 +470,6 @@ export default function PDMTab() {
 
   return (
     <div className="space-y-6 text-slate-900 dark:text-slate-100">
-      {/* Header */}
-      <div className="space-y-2">
-        <h2 className="text-2xl font-bold flex items-center gap-2">
-          <Wrench className="w-6 h-6 text-cyan-500" />
-          PDM - Predictive Maintenance
-        </h2>
-        <p className="text-slate-500 dark:text-slate-300">
-          Proactive recommendations for rig maintenance and optimal drilling conditions with automatic execution capability
-        </p>
-      </div>
 
       {/* Auto-Execution Toggle */}
       <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
@@ -491,8 +542,11 @@ export default function PDMTab() {
             <Shield className="w-6 h-6 text-cyan-500" />
             <div>
               <div className="text-2xl font-bold text-slate-900 dark:text-white">
-                {rulData?.predicted_rul_hours ? `${rulData.predicted_rul_hours.toFixed(0)}h` : '--'}
+                {effectiveRulData?.predicted_rul_hours ? `${effectiveRulData.predicted_rul_hours.toFixed(0)}h` : '--'}
               </div>
+              {!rulData && (
+                <span className="text-xs text-slate-400 dark:text-slate-500">(Demo Data)</span>
+              )}
               <div className="text-sm text-slate-500 dark:text-slate-400">Predicted RUL</div>
               <div className="text-xs text-slate-400 dark:text-slate-500">Predicted RUL</div>
             </div>
@@ -646,7 +700,7 @@ export default function PDMTab() {
                   <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-700">
                     <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                       <Clock className="w-4 h-4" />
-                      {new Date().toLocaleString()}
+                      {new Date().toLocaleString('en-US')}
                     </div>
                     <div className="flex items-center gap-2">
                       <button
@@ -712,7 +766,7 @@ export default function PDMTab() {
                   </span>
                 </div>
                 <div className="text-slate-500 dark:text-slate-400 text-xs">
-                  {new Date(change.timestamp).toLocaleTimeString()}
+                  {new Date(change.timestamp).toLocaleTimeString('en-US')}
                 </div>
               </div>
             ))}

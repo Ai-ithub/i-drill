@@ -35,7 +35,12 @@ class DatabaseManager:
         pool_recycle: int = 3600,
     ):
         """
-        Initialize database connection
+        Initialize database connection with optimized pool settings
+        
+        Performance optimizations:
+        - Connection pooling for reduced connection overhead
+        - Pool pre-ping to verify connections before use
+        - Configurable pool size based on workload
         
         Args:
             database_url: Database connection URL

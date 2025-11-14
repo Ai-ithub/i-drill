@@ -22,11 +22,19 @@ ON CONFLICT ("timestamp") DO UPDATE SET
     {', '.join([f'"{col}"=EXCLUDED."{col}"' for col in COLUMNS if col != 'timestamp'])}
 """
 
-# put creds in envs or a single dict (don’t hardcode in multiple places)
+# put creds in envs or a single dict (don't hardcode in multiple places)
+# SECURITY: DB_PASSWORD must be set via environment variable - no default value
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+if not DB_PASSWORD:
+    raise ValueError(
+        "DB_PASSWORD environment variable must be set. "
+        "Never use default passwords in production!"
+    )
+
 DB_CONFIG = {
     "dbname": os.getenv("DB_NAME", "oilrig"),
     "user": os.getenv("DB_USER", "postgres"),
-    "password": os.getenv("DB_PASSWORD", "1234"),
+    "password": DB_PASSWORD,  # No default - must be set via environment
     "host": os.getenv("DB_HOST", "localhost"),
     "port": int(os.getenv("DB_PORT", 5432)),
 }

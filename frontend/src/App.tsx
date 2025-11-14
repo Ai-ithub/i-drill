@@ -46,6 +46,7 @@ function App() {
                     <Route path="/display/rpm" element={<RPMPage />} />
                     <Route path="/display/rl" element={<RLControl />} />
                     <Route path="/dvr" element={<DVRMonitoring />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </NewLayout>
               }

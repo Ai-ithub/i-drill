@@ -397,7 +397,7 @@ if os.getenv("FORCE_HTTPS", "false").lower() == "true":
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Import security utilities
-from utils.security import get_rate_limit_config
+from utils.security import get_rate_limit_config, get_security_headers
 
 # Rate Limiting Configuration
 rate_limit_config = get_rate_limit_config()
@@ -479,29 +479,18 @@ async def log_requests(request: Request, call_next):
     process_time = time.time() - start_time
     response.headers["X-Process-Time"] = str(process_time)
     
-    # Add Security Headers
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # Get API URL for CSP (if needed)
+    api_url = None
+    if APP_ENV == "production":
+        # Try to get from environment or construct from request
+        api_url = os.getenv("API_URL") or f"{request.url.scheme}://{request.url.netloc}"
     
-    # Add Strict-Transport-Security in production (HTTPS only)
-    if APP_ENV == "production" and os.getenv("FORCE_HTTPS", "false").lower() == "true":
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    # Add comprehensive Security Headers using utility function
+    is_production = APP_ENV == "production"
+    security_headers = get_security_headers(is_production=is_production, api_url=api_url)
     
-    # Content Security Policy (CSP) - configurable via environment
-    csp_policy = os.getenv(
-        "CSP_POLICY",
-        "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' ws: wss:;"
-    )
-    response.headers["Content-Security-Policy"] = csp_policy
-    
-    # Permissions Policy (formerly Feature Policy)
-    permissions_policy = os.getenv(
-        "PERMISSIONS_POLICY",
-        "geolocation=(), microphone=(), camera=()"
-    )
-    response.headers["Permissions-Policy"] = permissions_policy
+    for header_name, header_value in security_headers.items():
+        response.headers[header_name] = header_value
     
     # Log response
     logger.info(

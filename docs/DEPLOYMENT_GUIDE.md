@@ -6,7 +6,7 @@
 
 - **سیستم‌عامل**: Ubuntu 22.04 یا Windows Server 2019
 - **Docker & Docker Compose** (آخرین نسخه)
-- **Python 3.10** و **Node.js 18** برای نصب محلی بدون Docker
+- **Python 3.12** و **Node.js 18** برای نصب محلی بدون Docker
 - دسترسی به **PostgreSQL 15** و **Kafka 7.5** در شبکه داخلی یا سرویس مدیریت‌شده
 
 ## ۲. استقرار سریع با Docker Compose
@@ -30,12 +30,12 @@
 
 1. نصب وابستگی‌های سیستم:
    `ash
-   sudo apt update && sudo apt install build-essential python3.10 python3.10-venv nodejs npm
+   sudo apt update && sudo apt install build-essential python3.12 python3.12-venv nodejs npm
    `
 2. ایجاد و فعال‌سازی محیط مجازی Python:
    `ash
    cd i-drill/src/backend
-   python3.10 -m venv .venv
+   python3.12 -m venv .venv
    source .venv/bin/activate
    pip install -r requirements_backend.txt
    `

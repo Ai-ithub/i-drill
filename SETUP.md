@@ -6,7 +6,7 @@ This system processes real-time drilling sensor data using Kafka for streaming, 
 ## Prerequisites
 
 ### Software Requirements
-- Python 3.11 or higher (recommended: 3.11+)
+- Python 3.12 or higher (required: 3.12+)
 - PostgreSQL 12 or higher
 - Apache Kafka 2.8 or higher
 - Git

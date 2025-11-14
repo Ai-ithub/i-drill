@@ -55,7 +55,8 @@ export default function RealTimeDataTab() {
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'plc' | 'lwd'>('all')
 
   // WebSocket connection for real-time data
-  const wsUrl = `ws://localhost:8001/api/v1/sensor-data/ws/${rigId}`
+  const wsBaseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8001/api/v1'
+  const wsUrl = `${wsBaseUrl}/sensor-data/ws/${rigId}`
   const { data: wsData, isConnected } = useWebSocket(wsUrl)
 
   // Fallback: Poll API if WebSocket is not available
@@ -369,7 +370,7 @@ export default function RealTimeDataTab() {
                           border: '1px solid #e2e8f0',
                           borderRadius: '8px',
                         }}
-                        labelFormatter={(value) => new Date(value).toLocaleString()}
+                        labelFormatter={(value) => new Date(value).toLocaleString('en-US')}
                         formatter={(value: number) => [`${value?.toFixed(2)} ${param.unit}`, param.label]}
                       />
                       <Line
@@ -418,7 +419,7 @@ export default function RealTimeDataTab() {
                           border: '1px solid #e2e8f0',
                           borderRadius: '8px',
                         }}
-                        labelFormatter={(value) => new Date(value).toLocaleString()}
+                        labelFormatter={(value) => new Date(value).toLocaleString('en-US')}
                         formatter={(value: number) => [`${value?.toFixed(2)} ${param.unit}`, param.label]}
                       />
                       <Line

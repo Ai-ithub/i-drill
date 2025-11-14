@@ -6,7 +6,7 @@ Guide for developers working on the i-Drill backend.
 
 ### Prerequisites
 
-- Python 3.9+
+- Python 3.12+
 - PostgreSQL 12+
 - Git
 - Virtual environment tool (venv, virtualenv, or conda)

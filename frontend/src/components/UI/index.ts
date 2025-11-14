@@ -4,10 +4,10 @@ export type { ButtonProps } from './Button'
 export { default as Card } from './Card'
 export type { CardProps, CardHeaderProps, CardContentProps, CardFooterProps } from './Card'
 
-export { default as Loading, Loading as LoadingComponent } from './Loading'
+export { default as Loading } from './Loading'
 export type { LoadingProps, SkeletonProps, SkeletonTextProps } from './Loading'
 
-export { default as Toast, ToastContainer, toast, toastManager } from './Toast'
+export { ToastContainer, toast, toastManager } from './Toast'
 export type { Toast, ToastType } from './Toast'
 
 export { default as EmptyState } from './EmptyState'

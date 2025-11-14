@@ -90,24 +90,27 @@ export default function RLControl() {
     refetchOnWindowFocus: false,
   })
 
-  const resetMutation = useMutation((randomInit: boolean) => rlApi.reset(randomInit).then((res) => res.data), {
+  const resetMutation = useMutation({
+    mutationFn: (randomInit: boolean) => rlApi.reset(randomInit).then((res) => res.data),
     onSuccess: (data) => {
-      queryClient.setQueryData(['rl-state'], data)
-      queryClient.invalidateQueries(['rl-history'])
+      queryClient.setQueryData({ queryKey: ['rl-state'] }, data)
+      queryClient.invalidateQueries({ queryKey: ['rl-history'] })
     },
   })
 
-  const stepMutation = useMutation(() => rlApi.step(action).then((res) => res.data), {
+  const stepMutation = useMutation({
+    mutationFn: () => rlApi.step(action).then((res) => res.data),
     onSuccess: (data) => {
-      queryClient.setQueryData(['rl-state'], data)
-      queryClient.invalidateQueries(['rl-history'])
+      queryClient.setQueryData({ queryKey: ['rl-state'] }, data)
+      queryClient.invalidateQueries({ queryKey: ['rl-history'] })
     },
   })
 
-  const autoStepMutation = useMutation(() => rlApi.autoStep().then((res) => res.data), {
+  const autoStepMutation = useMutation({
+    mutationFn: () => rlApi.autoStep().then((res) => res.data),
     onSuccess: (data) => {
-      queryClient.setQueryData(['rl-state'], data)
-      queryClient.invalidateQueries(['rl-history'])
+      queryClient.setQueryData({ queryKey: ['rl-state'] }, data)
+      queryClient.invalidateQueries({ queryKey: ['rl-history'] })
     },
     onError: (error: any) => {
       const detail = error.response?.data?.detail ?? 'Auto execution failed'
@@ -115,35 +118,31 @@ export default function RLControl() {
     },
   })
 
-  const loadPolicyMutation = useMutation(
-    (payload: { source: 'mlflow' | 'file'; model_name?: string; stage?: string; file_path?: string }) =>
+  const loadPolicyMutation = useMutation({
+    mutationFn: (payload: { source: 'mlflow' | 'file'; model_name?: string; stage?: string; file_path?: string }) =>
       rlApi.loadPolicy(payload).then((res) => res.data),
-    {
-      onSuccess: (data) => {
-        setPolicyFeedback({ tone: 'success', message: data.message ?? 'Model loaded successfully.' })
-        queryClient.invalidateQueries(['rl-policy-status'])
-      },
-      onError: (error: any) => {
-        const detail = error.response?.data?.detail ?? 'Model loading encountered an error.'
-        setPolicyFeedback({ tone: 'error', message: detail })
-      },
+    onSuccess: (data) => {
+      setPolicyFeedback({ tone: 'success', message: data.message ?? 'Model loaded successfully.' })
+      queryClient.invalidateQueries({ queryKey: ['rl-policy-status'] })
     },
-  )
+    onError: (error: any) => {
+      const detail = error.response?.data?.detail ?? 'Model loading encountered an error.'
+      setPolicyFeedback({ tone: 'error', message: detail })
+    },
+  })
 
-  const policyModeMutation = useMutation(
-    (payload: { mode: 'manual' | 'auto'; auto_interval_seconds?: number }) =>
+  const policyModeMutation = useMutation({
+    mutationFn: (payload: { mode: 'manual' | 'auto'; auto_interval_seconds?: number }) =>
       rlApi.setPolicyMode(payload).then((res) => res.data),
-    {
-      onSuccess: (data) => {
-        setPolicyFeedback({ tone: 'success', message: data.message ?? 'Policy mode updated.' })
-        queryClient.invalidateQueries(['rl-policy-status'])
-      },
-      onError: (error: any) => {
-        const detail = error.response?.data?.detail ?? 'Failed to change policy mode.'
-        setPolicyFeedback({ tone: 'error', message: detail })
-      },
+    onSuccess: (data) => {
+      setPolicyFeedback({ tone: 'success', message: data.message ?? 'Policy mode updated.' })
+      queryClient.invalidateQueries({ queryKey: ['rl-policy-status'] })
     },
-  )
+    onError: (error: any) => {
+      const detail = error.response?.data?.detail ?? 'Failed to change policy mode.'
+      setPolicyFeedback({ tone: 'error', message: detail })
+    },
+  })
 
   const config = configQuery.data?.config
   const rlAvailable = config?.available ?? true
@@ -161,11 +160,26 @@ export default function RLControl() {
     }
   }, [policyStatus?.mode, policyStatus?.auto_interval_seconds])
 
+  // Map Persian observation labels to English
+  const mapObservationLabelToEnglish = (label: string): string => {
+    const persianToEnglish: Record<string, string> = {
+      'عمق': 'Depth',
+      'فرسایش مته': 'Bit Wear',
+      'نرخ حفاری': 'ROP',
+      'گشتاور': 'Torque',
+      'فشار': 'Pressure',
+      'ارتعاش محوری': 'Vibration Axial',
+      'ارتعاش جانبی': 'Vibration Lateral',
+      'ارتعاش پیچشی': 'Vibration Torsional',
+    }
+    return persianToEnglish[label] || label
+  }
+
   const observationLabels = useMemo(() => {
     if (config?.observation_labels?.length === state?.observation?.length) {
-      return config.observation_labels
+      return config.observation_labels.map(mapObservationLabelToEnglish)
     }
-    return state?.observation?.map((_, idx: number) => `Feature ${idx + 1}`) ?? []
+    return state?.observation?.map((_, idx: number) => `Observation ${idx + 1}`) ?? []
   }, [config, state])
 
   const chartData = useMemo(() => {
@@ -181,7 +195,7 @@ export default function RLControl() {
   const hasPolicyLoaded = policyStatus?.policy_loaded ?? false
 
   const latestLoadedAt = policyStatus?.loaded_at
-    ? new Date(policyStatus.loaded_at).toLocaleString()
+    ? new Date(policyStatus.loaded_at).toLocaleString('en-US')
     : '—'
 
   const handleLoadPolicy = () => {

@@ -11,8 +11,8 @@ npm install
 
 2. Create `.env` file (optional):
 ```env
-VITE_API_URL=http://localhost:8000/api/v1
-VITE_WS_URL=ws://localhost:8000/api/v1
+VITE_API_URL=http://localhost:8001/api/v1
+VITE_WS_URL=ws://localhost:8001/api/v1
 ```
 
 3. Run development server:
@@ -20,7 +20,9 @@ VITE_WS_URL=ws://localhost:8000/api/v1
 npm run dev
 ```
 
-The dashboard will be available at `http://localhost:3000`
+The dashboard will be available at `http://localhost:3001`
+
+**Note**: Make sure the backend server is running on port 8001 before accessing the dashboard.
 
 ## Features
 

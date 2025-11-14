@@ -117,8 +117,8 @@ export function useChangeManager(rigId: string) {
         )
       )
       // Invalidate relevant queries
-      queryClient.invalidateQueries(['analytics', rigId])
-      queryClient.invalidateQueries(['realtime', rigId])
+      queryClient.invalidateQueries({ queryKey: ['analytics', rigId] })
+      queryClient.invalidateQueries({ queryKey: ['realtime', rigId] })
     },
     onError: (error, change) => {
       setChanges((prev) =>
@@ -321,7 +321,7 @@ export default function ChangeManager({ rigId, autoExecutionEnabled, onAutoExecu
                   </span>
                 </div>
                 <div className="text-slate-500 dark:text-slate-400">
-                  {change.executedAt ? new Date(change.executedAt).toLocaleTimeString() : '--'}
+                  {change.executedAt ? new Date(change.executedAt).toLocaleTimeString('en-US') : '--'}
                 </div>
               </div>
             ))}

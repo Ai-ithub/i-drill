@@ -3,14 +3,16 @@ import { useQuery } from '@tanstack/react-query'
 import { healthApi } from '@/services/api'
 
 export default function Header() {
-  const { data: healthData, isLoading } = useQuery({
+  const { data: healthData, isLoading, isError } = useQuery({
     queryKey: ['health'],
     queryFn: healthApi.check,
     refetchInterval: 30000, // Check every 30 seconds
-    retry: 1,
+    retry: 3,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    staleTime: 15000,
   })
 
-  const isHealthy = healthData?.data?.status === 'healthy'
+  const isHealthy = !isError && healthData?.data?.status === 'healthy'
 
   return (
     <header className="bg-slate-800 border-b border-slate-700 px-6 py-4">

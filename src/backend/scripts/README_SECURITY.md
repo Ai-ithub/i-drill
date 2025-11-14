@@ -166,7 +166,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.12'
       - run: pip install -r requirements/backend.txt
       - run: pip install safety
       - run: python src/backend/scripts/check_security.py

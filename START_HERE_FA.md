@@ -10,7 +10,7 @@
 
 ### مرحله 1: نصب نرم‌افزارها
 
-- [ ] **Python 3.8+** نصب شده باشد
+- [ ] **Python 3.12+** نصب شده باشد
 - [ ] **PostgreSQL 12+** نصب و راه‌اندازی شده باشد
 - [ ] **Node.js v18+** برای Frontend (اختیاری)
 
@@ -158,7 +158,7 @@ Content-Type: application/json
 pip install -r src\backend\requirements_backend.txt
 
 # بررسی Python version
-python --version  # باید 3.8+ باشد
+python --version  # باید 3.12+ باشد
 ```
 
 ### ❌ Database connection failed

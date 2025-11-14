@@ -416,7 +416,7 @@ export default function SyntheticDataTab() {
                       border: '1px solid #e2e8f0',
                       borderRadius: '8px',
                     }}
-                    labelFormatter={(value) => new Date(value).toLocaleString()}
+                    labelFormatter={(value) => new Date(value).toLocaleString('en-US')}
                     formatter={(value: number) => [`${value?.toFixed(2)} ${metric.unit}`, metric.label]}
                   />
                   <Line

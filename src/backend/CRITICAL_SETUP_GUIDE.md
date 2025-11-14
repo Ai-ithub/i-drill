@@ -74,7 +74,7 @@
 
 ### 1. نرم‌افزارهای مورد نیاز:
 ```bash
-- Python 3.8+
+- Python 3.12+
 - PostgreSQL 12+
 - Kafka (optional)
 - Redis (optional)
@@ -340,7 +340,7 @@ http://localhost:8001/api/v1
 
 ### با Docker:
 ```dockerfile
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 COPY requirements_backend.txt .

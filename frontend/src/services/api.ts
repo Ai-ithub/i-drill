@@ -23,11 +23,21 @@ api.interceptors.request.use(
   }
 )
 
-// Response interceptor to handle token refresh
+// Response interceptor to handle token refresh and connection errors
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config
+
+    // Handle connection errors (network errors, timeouts, etc.)
+    if (!error.response) {
+      const connectionError = new Error(
+        error.code === 'ECONNREFUSED' || error.message?.includes('Network Error')
+          ? 'Unable to connect to the server. Please ensure the backend is running on ' + API_BASE_URL
+          : error.message || 'Network error occurred'
+      )
+      return Promise.reject(connectionError)
+    }
 
     // If error is 401 and we haven't tried to refresh yet
     if (error.response?.status === 401 && !originalRequest._retry) {

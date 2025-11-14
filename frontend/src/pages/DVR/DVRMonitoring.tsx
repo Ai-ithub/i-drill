@@ -62,19 +62,19 @@ export default function DVRMonitoring() {
     refetchOnWindowFocus: false,
   })
 
-  const processMutation = useMutation((record: any) => dvrApi.processRecord(record).then((res) => res.data))
+  const processMutation = useMutation({
+    mutationFn: (record: any) => dvrApi.processRecord(record).then((res) => res.data),
+  })
 
-  const evaluateMutation = useMutation(
-    (payload: { record: any; size: number }) =>
+  const evaluateMutation = useMutation({
+    mutationFn: (payload: { record: any; size: number }) =>
       dvrApi.evaluateRecord(payload.record, payload.size).then((res) => res.data),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries(['dvr-stats'])
-        queryClient.invalidateQueries(['dvr-anomalies'])
-        queryClient.invalidateQueries(['dvr-history', historyParams])
-      },
-    }
-  )
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dvr-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['dvr-anomalies'] })
+      queryClient.invalidateQueries({ queryKey: ['dvr-history', historyParams] })
+    },
+  })
 
   const historyQuery = useQuery({
     queryKey: ['dvr-history', historyParams],

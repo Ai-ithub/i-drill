@@ -88,7 +88,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       formData.append('username', username)
       formData.append('password', password)
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8001/api/v1'}/auth/login`, {
+      const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8001/api/v1'
+      const response = await fetch(`${apiBaseUrl}/auth/login`, {
         method: 'POST',
         body: formData,
       })
@@ -124,7 +125,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (token) {
         // Call logout endpoint to blacklist token
         try {
-          await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8001/api/v1'}/auth/logout`, {
+          const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8001/api/v1'
+          await fetch(`${apiBaseUrl}/auth/logout`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -148,7 +150,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8001/api/v1'}/auth/refresh`, {
+      const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8001/api/v1'
+      const response = await fetch(`${apiBaseUrl}/auth/refresh`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

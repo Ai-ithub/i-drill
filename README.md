@@ -2,7 +2,7 @@
 
 > Real-time drilling intelligence with AI-driven optimization and predictive maintenance
 
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-blue)](https://www.python.org/)
 [![React](https://img.shields.io/badge/React-18.2%2B-61DAFB)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.2%2B-3178C6)](https://www.typescriptlang.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104%2B-009688)](https://fastapi.tiangolo.com/)
@@ -55,7 +55,7 @@ i-Drill is a comprehensive intelligent drilling automation platform that combine
 
 - Docker & Docker Compose
 - Node.js 18+ (for frontend development)
-- Python 3.8+ (for backend development)
+- Python 3.12+ (for backend development)
 
 ### Installation
 

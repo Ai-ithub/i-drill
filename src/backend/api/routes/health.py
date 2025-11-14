@@ -172,47 +172,63 @@ async def get_services_status():
     Returns detailed health information for each service.
     """
     try:
-        services = []
-        
         # Database status
         db_health = check_database_health()
         db_healthy = db_health.get("database") == "healthy" and getattr(db_manager, "is_available", lambda: False)()
-        
-        services.append({
-            "name": "postgresql",
-            "status": "healthy" if db_healthy else "unhealthy",
-            "is_healthy": db_healthy,
-            "last_check": datetime.now().isoformat(),
-            "details": db_health
-        })
+        db_status = "healthy" if db_healthy else "unhealthy"
         
         # Kafka status
         kafka_healthy = _check_kafka_health()
-        services.append({
-            "name": "kafka",
-            "status": "healthy" if kafka_healthy else "unhealthy",
-            "is_healthy": kafka_healthy,
-            "last_check": datetime.now().isoformat(),
-            "details": {
-                "producer_initialized": kafka_service.producer is not None,
-                "library_installed": getattr(kafka_service, "available", False),
-                "active_consumers": len(kafka_service.consumers)
-            }
-        })
+        kafka_status = "healthy" if kafka_healthy else "unhealthy"
+        kafka_available = kafka_service.is_available()
         
-        # API status
-        services.append({
-            "name": "api",
-            "status": "healthy",
-            "is_healthy": True,
-            "last_check": datetime.now().isoformat(),
-            "details": {
-                "version": "1.0.0"
-            }
-        })
+        # RL Environment status (check if available)
+        try:
+            from services.rl_service import rl_service
+            rl_status = "available" if hasattr(rl_service, 'is_available') and rl_service.is_available() else "unavailable"
+            rl_message = "RL environment is available" if rl_status == "available" else "RL environment is not available"
+        except Exception:
+            rl_status = "unavailable"
+            rl_message = "RL environment service not initialized"
         
+        # MLflow status (check if available)
+        try:
+            from services.mlflow_service import mlflow_service
+            mlflow_status = "available" if hasattr(mlflow_service, 'is_available') and mlflow_service.is_available() else "unavailable"
+            mlflow_message = "MLflow is available" if mlflow_status == "available" else "MLflow is not available"
+        except Exception:
+            mlflow_status = "unavailable"
+            mlflow_message = "MLflow service not initialized"
+        
+        # Return in format expected by frontend
         return {
-            "services": services,
+            "details": {
+                "database": {
+                    "status": db_status,
+                    "database": db_status,  # Legacy format support
+                    "message": db_health.get("message", f"Database is {db_status}"),
+                    **db_health
+                },
+                "kafka": {
+                    "status": kafka_status,
+                    "kafka": kafka_status,  # Legacy format support
+                    "message": f"Kafka is {kafka_status}",
+                    "available": kafka_available,
+                    "producer_initialized": kafka_service.producer is not None,
+                    "library_installed": getattr(kafka_service, "available", False),
+                    "active_consumers": len(kafka_service.consumers)
+                },
+                "rl_environment": {
+                    "status": rl_status,
+                    "rl_environment": rl_status,  # Legacy format support
+                    "message": rl_message
+                },
+                "mlflow": {
+                    "status": mlflow_status,
+                    "mlflow": mlflow_status,  # Legacy format support
+                    "message": mlflow_message
+                }
+            },
             "timestamp": datetime.now().isoformat()
         }
         

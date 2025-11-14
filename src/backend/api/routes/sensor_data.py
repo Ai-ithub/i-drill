@@ -45,6 +45,7 @@ from api.models.schemas import (
 from services.data_service import DataService
 from services.kafka_service import kafka_service
 from services.websocket_manager import websocket_manager
+from utils.validators import validate_rig_id
 import logging
 import asyncio
 
@@ -275,7 +276,17 @@ async def websocket_sensor_data(websocket: WebSocket, rig_id: str):
     WebSocket endpoint for real-time sensor data streaming
     
     Establishes a WebSocket connection and streams real-time data from Kafka.
+    
+    ⚠️ SECURITY WARNING: This endpoint currently does not require authentication.
+    In production, implement token-based authentication before allowing connections.
+    See SECURITY_VULNERABILITY_ASSESSMENT_FA.md for details.
     """
+    # Validate rig_id format to prevent injection attacks
+    if not validate_rig_id(rig_id):
+        await websocket.close(code=1008, reason="Invalid rig_id format")
+        logger.warning(f"WebSocket connection rejected: invalid rig_id format: {rig_id}")
+        return
+    
     await websocket_manager.connect(websocket, rig_id)
     logger.info(f"WebSocket connection established for rig {rig_id}")
     

@@ -75,6 +75,8 @@ class DataService:
         """
         Get latest sensor readings
         
+        Optimized with caching for frequently accessed data.
+        
         Args:
             rig_id: Filter by rig ID
             limit: Number of records to return
@@ -84,16 +86,33 @@ class DataService:
         """
         if not self._db_ready():
             return []
+        
+        # Try cache first (TTL: 10 seconds for real-time data)
+        from services.cache_service import cache_service
+        cache_key = f"sensor_data:latest:{rig_id or 'all'}:{limit}"
+        cached_data = cache_service.get(cache_key)
+        if cached_data is not None:
+            logger.debug(f"Cache hit for latest sensor data: {cache_key}")
+            return cached_data
+        
         try:
             with self.db_manager.session_scope() as session:
+                # Optimized query: use index on (rig_id, timestamp) if available
                 query = session.query(SensorData)
                 
                 if rig_id:
                     query = query.filter(SensorData.rig_id == rig_id)
                 
+                # Order by timestamp descending (most recent first)
+                # Use index on timestamp for better performance
                 results = query.order_by(desc(SensorData.timestamp)).limit(limit).all()
                 
-                return [self._sensor_data_to_dict(record) for record in results]
+                data = [self._sensor_data_to_dict(record) for record in results]
+                
+                # Cache result for 10 seconds (real-time data changes frequently)
+                cache_service.set(cache_key, data, ttl=10)
+                
+                return data
                 
         except Exception as e:
             logger.error(f"Error getting latest sensor data: {e}")
@@ -148,7 +167,14 @@ class DataService:
                     query = query.filter(SensorData.timestamp <= end_time)
                 
                 # Order and paginate
-                query = query.order_by(SensorData.timestamp)
+                # Use index on timestamp for better performance
+                query = query.order_by(SensorData.timestamp.desc())
+                
+                # Optimize pagination: use cursor-based pagination for large datasets
+                # For now, use offset-based but with limit on offset
+                if offset > 10000:
+                    logger.warning(f"Large offset detected: {offset}. Consider using cursor-based pagination.")
+                
                 results = query.offset(offset).limit(limit).all()
                 
                 return [self._sensor_data_to_dict(record) for record in results]
