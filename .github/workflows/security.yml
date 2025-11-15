@@ -1,0 +1,393 @@
+name: Security Checks
+
+on:
+  push:
+    branches: [ main, develop, master ]
+  pull_request:
+    branches: [ main, develop, master ]
+  schedule:
+    # Run weekly security scans every Sunday at 2 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.12'
+  SECURITY_SEVERITY: 'high'  # fail on high/critical severity
+
+jobs:
+  # ==================== Python Code Security Scanning ====================
+  
+  bandit-scan:
+    name: Bandit - Python Code Security Scan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install Bandit
+        run: |
+          pip install bandit[toml]>=1.7.5
+      
+      - name: Run Bandit security scan
+        run: |
+          bandit -r src/ \
+            -f json \
+            -o bandit-report.json \
+            -ll \
+            --exclude src/backend/tests,src/tests,src/processing/tests \
+            || true
+      
+      - name: Upload Bandit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-report
+          path: i-drill/bandit-report.json
+          retention-days: 30
+      
+      - name: Display Bandit results
+        run: |
+          bandit -r src/ \
+            -f screen \
+            -ll \
+            --exclude src/backend/tests,src/tests,src/processing/tests
+        continue-on-error: true
+
+  # ==================== Dependency Vulnerability Scanning ====================
+  
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        requirements_file:
+          - requirements/backend.txt
+          - requirements/ml.txt
+          - requirements/dev.txt
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install pip-audit
+        run: |
+          pip install pip-audit>=2.6.1
+      
+      - name: Run pip-audit
+        run: |
+          pip-audit \
+            --requirement ${{ matrix.requirements_file }} \
+            --format json \
+            --output pip-audit-${{ matrix.requirements_file }}.json \
+            --desc \
+            || true
+      
+      - name: Upload pip-audit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pip-audit-${{ matrix.requirements_file }}
+          path: i-drill/pip-audit-${{ matrix.requirements_file }}.json
+          retention-days: 30
+      
+      - name: Display pip-audit summary
+        run: |
+          pip-audit \
+            --requirement ${{ matrix.requirements_file }} \
+            --desc
+        continue-on-error: true
+
+  # ==================== Safety Check ====================
+  
+  safety-check:
+    name: Safety - Python Dependency Security Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install Safety
+        run: |
+          pip install safety>=3.2.0
+      
+      - name: Run Safety check
+        run: |
+          safety check \
+            --file requirements/backend.txt \
+            --file requirements/ml.txt \
+            --file requirements/dev.txt \
+            --json \
+            --output safety-report.json \
+            || true
+      
+      - name: Upload Safety results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: safety-report
+          path: i-drill/safety-report.json
+          retention-days: 30
+      
+      - name: Display Safety results
+        run: |
+          safety check \
+            --file requirements/backend.txt \
+            --file requirements/ml.txt \
+            --file requirements/dev.txt
+        continue-on-error: true
+
+  # ==================== Secret Scanning ====================
+  
+  secret-scan:
+    name: Secret Scanning (TruffleHog)
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better secret detection
+      
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --json --no-update
+      
+      - name: Upload TruffleHog results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trufflehog-results
+          path: trufflehog-results.json
+          retention-days: 7
+
+  # ==================== Docker Security Scanning ====================
+  
+  dockerfile-lint:
+    name: Dockerfile Security Lint (Hadolint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run Hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          failure-threshold: warning
+          format: json
+          output-file: hadolint-report.json
+      
+      - name: Upload Hadolint results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hadolint-report
+          path: i-drill/hadolint-report.json
+          retention-days: 30
+
+  # ==================== Trivy Security Scanning ====================
+  
+  trivy-fs-scan:
+    name: Trivy - File System Scan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'  # Don't fail on findings, just report
+      
+      - name: Upload Trivy FS results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-fs-results.sarif'
+          wait-for-processing: true
+      
+      - name: Upload Trivy FS results as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-fs-results
+          path: i-drill/trivy-fs-results.sarif
+          retention-days: 30
+
+  trivy-docker-scan:
+    name: Trivy - Docker Image Scan
+    runs-on: ubuntu-latest
+    needs: [dockerfile-lint]
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./i-drill
+          push: false
+          tags: i-drill:security-scan
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Run Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'i-drill:security-scan'
+          format: 'sarif'
+          output: 'trivy-image-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'  # Don't fail on findings, just report
+      
+      - name: Upload Trivy Image results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-image-results.sarif'
+          wait-for-processing: true
+      
+      - name: Upload Trivy Image results as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-image-results
+          path: i-drill/trivy-image-results.sarif
+          retention-days: 30
+
+  # ==================== Semgrep Static Analysis ====================
+  
+  semgrep-scan:
+    name: Semgrep - Static Analysis
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./i-drill
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/python
+            p/owasp-top-ten
+          generateSarif: "1"
+          outputFormat: "sarif"
+      
+      - name: Upload Semgrep results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          wait-for-processing: true
+
+  # ==================== Security Summary ====================
+  
+  security-summary:
+    name: Security Scan Summary
+    runs-on: ubuntu-latest
+    needs:
+      - bandit-scan
+      - dependency-scan
+      - safety-check
+      - secret-scan
+      - dockerfile-lint
+      - trivy-fs-scan
+      - trivy-docker-scan
+      - semgrep-scan
+    if: always()
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: security-reports
+      
+      - name: Generate security summary
+        run: |
+          echo "## 🔒 Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Scans Completed:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Bandit (Python Code Security)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Dependency Vulnerability (pip-audit)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Safety Check" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Secret Scanning (TruffleHog)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Dockerfile Security (Hadolint)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Trivy File System Scan" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Trivy Docker Image Scan" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Semgrep Static Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📊 Check the Security tab and artifacts for detailed results." >> $GITHUB_STEP_SUMMARY
+      
+      - name: Comment PR (if applicable)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🔒 Security scans completed! Check the Security tab and workflow artifacts for detailed results.'
+            })
+

@@ -1,0 +1,36 @@
+# Bandit configuration file for i-drill project
+# This file configures security scanning rules for Bandit
+
+[bandit]
+# Exclude these paths from scanning
+exclude_dirs = 
+    tests,
+    test,
+    __pycache__,
+    .venv,
+    venv,
+    node_modules,
+    .git,
+    migrations,
+    scripts
+
+# Test IDs to skip (comma-separated)
+# B101: assert_used - Allow asserts in tests
+# B601: shell_injection_subprocess - Some subprocess calls are intentional
+skips = 
+    B101,
+    B601
+
+# Only report issues of these severity levels or higher
+# low, medium, high, critical
+min_severity = medium
+
+# Confidence level: low, medium, high
+min_confidence = medium
+
+# Include these test IDs (none by default)
+# tests = 
+
+# Aggressive mode (not recommended for CI)
+# aggressive = false
+

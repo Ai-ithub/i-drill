@@ -73,6 +73,19 @@ class AuthService:
         return pwd_context.hash(password)
     
     @staticmethod
+    def hash_password(password: str) -> str:
+        """
+        Hash a password (alias for get_password_hash for backward compatibility)
+        
+        Args:
+            password: Plain text password
+            
+        Returns:
+            Hashed password
+        """
+        return AuthService.get_password_hash(password)
+    
+    @staticmethod
     def create_access_token(
         data: Dict[str, Any],
         expires_delta: Optional[timedelta] = None

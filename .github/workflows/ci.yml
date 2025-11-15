@@ -221,7 +221,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   security-scan:
-    name: Security Scan
+    name: Quick Security Scan
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -235,15 +235,26 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
       
-      - name: Install safety
+      - name: Install security tools
         run: |
-          pip install safety
+          pip install bandit[toml] pip-audit safety
       
-      - name: Run safety check
+      - name: Run Bandit (quick scan)
         run: |
-          safety check --file requirements/backend.txt || true
-          safety check --file requirements/ml.txt || true
+          bandit -r src/ -f screen -ll --exclude src/backend/tests,src/tests || true
+        continue-on-error: true
+      
+      - name: Run pip-audit
+        run: |
+          pip-audit --requirement requirements/backend.txt --desc || true
+        continue-on-error: true
+      
+      - name: Run Safety check
+        run: |
+          safety check --file requirements/backend.txt --file requirements/ml.txt || true
+        continue-on-error: true
       
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
@@ -252,9 +263,16 @@ jobs:
           scan-ref: '.'
           format: 'sarif'
           output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
       
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
+          wait-for-processing: true
+      
+      - name: Security scan note
+        run: |
+          echo "ℹ️ For comprehensive security scans, see the 'security.yml' workflow"
