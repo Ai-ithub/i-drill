@@ -1,0 +1,7 @@
+﻿feat: Complete backend-dashboard integration and automated CI
+
+- Enhanced frontend pages (HistoricalData, Maintenance, Predictions)
+- Improved backend services (maintenance, prediction, MLflow)
+- Added comprehensive API tests for maintenance and predictions
+- Updated CI/CD workflows
+- WebSocket service improvements

@@ -73,6 +73,9 @@ tensorboard_logs/
 *.env
 config.env
 !config.env.example
+# Docker environment files
+docker-compose.env
+!docker-compose.env.example
 
 # Docker
 .dockerignore
@@ -92,3 +95,11 @@ outputs/
 
 # Kafka
 *.lock
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
+playwright-report/
+test-results/
+*.zip

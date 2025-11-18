@@ -14,7 +14,21 @@ export interface UseWebSocketReturn {
   reconnect: () => void
 }
 
-export function useWebSocket(url: string): UseWebSocketReturn {
+export interface UseWebSocketOptions {
+  /**
+   * Access token for authentication.
+   * If not provided, will try to get from cookies (httpOnly cookies are automatically sent).
+   * For better security, prefer using cookies over query parameter.
+   */
+  token?: string | null
+  /**
+   * Whether to include credentials (cookies) in WebSocket connection.
+   * Default: true (recommended for httpOnly cookie authentication)
+   */
+  withCredentials?: boolean
+}
+
+export function useWebSocket(url: string, options?: UseWebSocketOptions): UseWebSocketReturn {
   const [data, setData] = useState<WebSocketMessage | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<Error | null>(null)
@@ -25,7 +39,21 @@ export function useWebSocket(url: string): UseWebSocketReturn {
 
   const connect = useCallback(() => {
     try {
-      const ws = new WebSocket(url)
+      // Build WebSocket URL with token if provided
+      let wsUrl = url
+      const token = options?.token
+      
+      // Add token to query parameter if provided (fallback method)
+      // Note: Prefer using httpOnly cookies (automatically sent) for better security
+      if (token) {
+        const separator = url.includes('?') ? '&' : '?'
+        wsUrl = `${url}${separator}token=${encodeURIComponent(token)}`
+      }
+      
+      // Note: WebSocket API doesn't support withCredentials option directly
+      // Cookies (including httpOnly cookies) are automatically sent by the browser
+      // if the WebSocket URL is on the same origin or configured CORS allows credentials
+      const ws = new WebSocket(wsUrl)
 
       ws.onopen = () => {
         console.log('WebSocket connected:', url)
@@ -71,7 +99,7 @@ export function useWebSocket(url: string): UseWebSocketReturn {
       console.error('Error creating WebSocket:', err)
       setError(err as Error)
     }
-  }, [url, reconnectAttempts])
+  }, [url, options?.token, reconnectAttempts])
 
   const reconnect = useCallback(() => {
     setReconnectAttempts(0)

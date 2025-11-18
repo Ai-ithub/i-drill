@@ -7,15 +7,14 @@ export const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // Important: include cookies in all requests
 })
 
-// Request interceptor to add auth token
+// Request interceptor - tokens are now in httpOnly cookies, no need to add Authorization header
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('i_drill_access_token')
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
+    // Tokens are automatically sent via httpOnly cookies
+    // No need to manually add Authorization header
     return config
   },
   (error) => {
@@ -43,30 +42,24 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
 
-      const refreshToken = localStorage.getItem('i_drill_refresh_token')
-      if (refreshToken) {
-        try {
-          const response = await axios.post(
-            `${API_BASE_URL}/auth/refresh`,
-            { refresh_token: refreshToken }
-          )
+      // Refresh token is in httpOnly cookie, just call refresh endpoint
+      try {
+        const response = await axios.post(
+          `${API_BASE_URL}/auth/refresh`,
+          {}, // No body needed, refresh token is in cookie
+          { withCredentials: true }
+        )
 
-          const { access_token, refresh_token: newRefreshToken } = response.data
-          localStorage.setItem('i_drill_access_token', access_token)
-          if (newRefreshToken) {
-            localStorage.setItem('i_drill_refresh_token', newRefreshToken)
-          }
+        // Tokens are now in httpOnly cookies, no need to store in localStorage
+        // New cookies are automatically set by backend
 
-          // Retry original request with new token
-          originalRequest.headers.Authorization = `Bearer ${access_token}`
-          return api(originalRequest)
-        } catch (refreshError) {
-          // Refresh failed, clear auth
-          localStorage.removeItem('i_drill_access_token')
-          localStorage.removeItem('i_drill_refresh_token')
-          localStorage.removeItem('i_drill_user')
-          return Promise.reject(refreshError)
-        }
+        // Retry original request (cookies will be sent automatically)
+        return api(originalRequest)
+      } catch (refreshError) {
+        // Refresh failed, clear auth
+        localStorage.removeItem('i_drill_user')
+        // Redirect to login if needed (handled by AuthContext)
+        return Promise.reject(refreshError)
       }
     }
 
@@ -189,16 +182,17 @@ export const authApi = {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      withCredentials: true, // Ensure cookies are included
     })
   },
 
   loginJson: (username: string, password: string) =>
-    api.post('/auth/login/json', { username, password }),
+    api.post('/auth/login/json', { username, password }, { withCredentials: true }),
 
-  logout: () => api.post('/auth/logout'),
+  logout: () => api.post('/auth/logout', {}, { withCredentials: true }),
 
-  refresh: (refreshToken: string) =>
-    api.post('/auth/refresh', { refresh_token: refreshToken }),
+  refresh: () =>
+    api.post('/auth/refresh', {}, { withCredentials: true }), // Refresh token is in cookie
 
   me: () => api.get('/auth/me'),
 

@@ -1,0 +1,27 @@
+55c0e0d298dbb9cb20cb534bcc1014ae0584c71c
+feat: Add RL system management and autonomous mode
+
+- Implement RL control page with system management interface
+- Add RL service with autonomous mode support
+- Create RL API routes for system control
+- Add comprehensive RL API tests
+- Enhance RL service with advanced control features
+
+696ad6000c518b4699f22de2624cea803451675d
+chore: Improve security configurations and phase zero maintenance infrastructure
+
+- Add security headers and middleware improvements
+- Enhance health check endpoints
+- Update docker-compose configuration
+- Improve Kafka service reliability
+- Update setup guide documentation
+
+8a934b16a8fb02582a97458efe43aab8f67ba866
+feat: Complete backend-dashboard integration and automated CI
+
+- Enhanced frontend pages (HistoricalData, Maintenance, Predictions)
+- Improved backend services (maintenance, prediction, MLflow)
+- Added comprehensive API tests for maintenance and predictions
+- Updated CI/CD workflows
+- WebSocket service improvements
+

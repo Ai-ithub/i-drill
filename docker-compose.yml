@@ -1,5 +1,19 @@
 version: "3.9"
 
+# ===== SECURITY WARNING =====
+# This file uses environment variables from .env file.
+# NEVER commit .env files to version control!
+# 
+# Setup:
+#   1. Copy docker-compose.env.example to .env
+#   2. Edit .env with secure passwords
+#   3. Run: docker-compose up
+#
+# Required environment variables:
+#   - POSTGRES_PASSWORD (minimum 16 characters)
+#   - SECRET_KEY (minimum 32 characters)
+#   - DEFAULT_ADMIN_PASSWORD (minimum 12 characters)
+
 services:
   fastapi:
     build: .
@@ -19,17 +33,27 @@ services:
       - "8001:8001"
     working_dir: /src/backend
     command: uvicorn app:app --host 0.0.0.0 --port 8001
+    env_file:
+      - .env
     environment:
       - PYTHONPATH=/src/backend
-      - APP_ENV=development
-      - SECRET_KEY=dev-secret-change-me
-      - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5175
+      - APP_ENV=${APP_ENV:-development}
+      # SECRET_KEY must be set in .env file (no default for security)
+      - SECRET_KEY=${SECRET_KEY}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:5175}
       - RATE_LIMIT_DEFAULT=200/minute
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - MLFLOW_TRACKING_URI=http://mlflow:5000
       - MLFLOW_EXPERIMENT_NAME=i-drill-models
+      # Database connection (uses POSTGRES_USER and POSTGRES_PASSWORD from .env)
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-drill_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-drilling_db}
+      # Default admin account (must be set in .env)
+      - DEFAULT_ADMIN_USERNAME=${DEFAULT_ADMIN_USERNAME:-admin}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
+      - DEFAULT_ADMIN_EMAIL=${DEFAULT_ADMIN_EMAIL:-admin@example.com}
     volumes:
       - ./src:/src
       - mlflow_artifacts:/mlflow/artifacts
@@ -76,16 +100,20 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: i-drill-postgres
+    env_file:
+      - .env
     environment:
-      POSTGRES_DB: drilling_db
-      POSTGRES_USER: drill_user
-      POSTGRES_PASSWORD: drill_password
+      # Use environment variables from .env file (no hardcoded passwords)
+      POSTGRES_DB: ${POSTGRES_DB:-drilling_db}
+      POSTGRES_USER: ${POSTGRES_USER:-drill_user}
+      # POSTGRES_PASSWORD must be set in .env file (no default for security)
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U drill_user"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-drill_user}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -93,13 +121,30 @@ services:
   redis:
     image: redis:7.4-alpine
     container_name: i-drill-redis
+    env_file:
+      - .env
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    # Use password if provided in .env (recommended for production)
+    command: >
+      sh -c "
+      if [ -n \"$$REDIS_PASSWORD\" ]; then
+        redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\"
+      else
+        redis-server --appendonly yes
+      fi
+      "
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: >
+        sh -c "
+        if [ -n \"$$REDIS_PASSWORD\" ]; then
+          redis-cli -a \"$$REDIS_PASSWORD\" ping
+        else
+          redis-cli ping
+        fi
+        "
       interval: 10s
       timeout: 5s
       retries: 5
@@ -109,14 +154,16 @@ services:
     container_name: i-drill-mlflow
     ports:
       - "5000:5000"
+    env_file:
+      - .env
     environment:
-      - MLFLOW_BACKEND_STORE_URI=postgresql://drill_user:drill_password@postgres:5432/drilling_db
+      - MLFLOW_BACKEND_STORE_URI=postgresql://${POSTGRES_USER:-drill_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-drilling_db}
       - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlflow/artifacts
     volumes:
       - mlflow_artifacts:/mlflow/artifacts
     command: >
       mlflow server
-      --backend-store-uri postgresql://drill_user:drill_password@postgres:5432/drilling_db
+      --backend-store-uri postgresql://${POSTGRES_USER:-drill_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-drilling_db}
       --default-artifact-root /mlflow/artifacts
       --host 0.0.0.0
       --port 5000

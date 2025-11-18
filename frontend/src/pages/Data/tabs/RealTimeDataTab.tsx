@@ -3,6 +3,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useQuery } from '@tanstack/react-query'
 import { sensorDataApi } from '@/services/api'
+import { useAuth } from '@/context/AuthContext'
 import { Activity, TrendingUp, Zap, AlertCircle, WifiOff, Wifi, Gauge, Thermometer, Radio, Database } from 'lucide-react'
 
 interface SensorDataPoint {
@@ -54,10 +55,11 @@ export default function RealTimeDataTab() {
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting')
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'plc' | 'lwd'>('all')
 
-  // WebSocket connection for real-time data
+  // WebSocket connection for real-time data with authentication
   const wsBaseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8001/api/v1'
   const wsUrl = `${wsBaseUrl}/sensor-data/ws/${rigId}`
-  const { data: wsData, isConnected } = useWebSocket(wsUrl)
+  const { token } = useAuth() // Get token for WebSocket authentication (fallback to cookie)
+  const { data: wsData, isConnected } = useWebSocket(wsUrl, { token })
 
   // Fallback: Poll API if WebSocket is not available
   const { data: apiData } = useQuery({

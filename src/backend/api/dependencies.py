@@ -2,7 +2,7 @@
 FastAPI Dependencies
 Authentication, authorization, and other reusable dependencies
 """
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request, WebSocket
 from fastapi.security import OAuth2PasswordBearer, SecurityScopes
 from typing import Optional
 import logging
@@ -14,7 +14,11 @@ from services.auth_service import auth_service
 
 logger = logging.getLogger(__name__)
 
-# OAuth2 scheme for token authentication
+# Cookie names for tokens
+ACCESS_TOKEN_COOKIE_NAME = "i_drill_access_token"
+REFRESH_TOKEN_COOKIE_NAME = "i_drill_refresh_token"
+
+# OAuth2 scheme for token authentication (kept for backward compatibility)
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="/api/v1/auth/login",
     scopes={
@@ -28,16 +32,147 @@ oauth2_scheme = OAuth2PasswordBearer(
 )
 
 
+async def get_token_from_cookie_or_header(request: Request) -> Optional[str]:
+    """
+    Get access token from cookie (preferred) or Authorization header (fallback)
+    
+    Args:
+        request: FastAPI request object
+        
+    Returns:
+        Token string or None
+    """
+    # First, try to get token from cookie (httpOnly cookie)
+    token = request.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
+    
+    # Fallback to Authorization header for backward compatibility
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+    
+    return token
+
+
+async def get_token_from_websocket(websocket: WebSocket) -> Optional[str]:
+    """
+    Get access token from WebSocket connection.
+    
+    WebSocket connections can pass tokens via:
+    1. Query parameter (token) - fallback method
+    2. Cookie (httpOnly cookie) - preferred method (automatically sent by browser)
+    
+    Args:
+        websocket: FastAPI WebSocket instance
+        
+    Returns:
+        Token string or None
+    """
+    # Try to get token from query parameters (fallback method)
+    query_params = websocket.query_params
+    token = query_params.get("token")
+    
+    # Try to get token from cookies (preferred method - httpOnly cookies are automatically sent)
+    if not token:
+        # WebSocket in FastAPI can access cookies through headers
+        cookie_header = websocket.headers.get("cookie", "")
+        if cookie_header:
+            # Parse cookies manually
+            cookies = {}
+            for cookie in cookie_header.split(";"):
+                cookie = cookie.strip()
+                if "=" in cookie:
+                    key, value = cookie.split("=", 1)
+                    cookies[key.strip()] = value.strip()
+            token = cookies.get(ACCESS_TOKEN_COOKIE_NAME)
+    
+    return token
+
+
+async def authenticate_websocket(websocket: WebSocket) -> Optional[UserDB]:
+    """
+    Authenticate WebSocket connection using token.
+    
+    Validates the token and returns the authenticated user.
+    Closes the WebSocket connection if authentication fails.
+    
+    Args:
+        websocket: FastAPI WebSocket instance
+        
+    Returns:
+        Authenticated user object or None if authentication fails
+    """
+    try:
+        # Get token from WebSocket
+        token = await get_token_from_websocket(websocket)
+        
+        if not token:
+            from utils.security_logging import log_security_event, SecurityEventType
+            await websocket.close(code=1008, reason="Authentication required")
+            log_security_event(
+                event_type=SecurityEventType.WEBSOCKET_AUTH_FAILED.value,
+                severity="warning",
+                message="WebSocket connection rejected: No token provided",
+                ip_address=websocket.client.host if websocket.client else None
+            )
+            logger.warning("WebSocket connection rejected: No token provided")
+            return None
+        
+        # Check if token is blacklisted
+        if auth_service.is_token_blacklisted(token):
+            await websocket.close(code=1008, reason="Token revoked")
+            logger.warning("WebSocket connection rejected: Token is blacklisted")
+            return None
+        
+        # Decode token
+        token_data = auth_service.decode_access_token(token)
+        
+        if token_data is None or token_data.username is None:
+            await websocket.close(code=1008, reason="Invalid token")
+            logger.warning("WebSocket connection rejected: Invalid token")
+            return None
+        
+        # Get user from database
+        user = auth_service.get_user_by_username(token_data.username)
+        
+        if user is None:
+            await websocket.close(code=1008, reason="User not found")
+            logger.warning(f"WebSocket connection rejected: User not found: {token_data.username}")
+            return None
+        
+        if not user.is_active:
+            await websocket.close(code=1008, reason="User inactive")
+            logger.warning(f"WebSocket connection rejected: User inactive: {user.username}")
+            return None
+        
+        # Check if account is locked
+        if user.locked_until and user.locked_until > datetime.now():
+            await websocket.close(code=1008, reason="Account locked")
+            logger.warning(f"WebSocket connection rejected: Account locked: {user.username}")
+            return None
+        
+        logger.info(f"WebSocket authenticated: {user.username}")
+        return user
+        
+    except Exception as e:
+        logger.error(f"Error authenticating WebSocket: {e}")
+        try:
+            await websocket.close(code=1011, reason="Authentication error")
+        except:
+            pass
+        return None
+
+
 async def get_current_user(
     security_scopes: SecurityScopes,
-    token: str = Depends(oauth2_scheme)
+    request: Request
 ) -> UserDB:
     """
-    Get current authenticated user from JWT token
+    Get current authenticated user from JWT token (from cookie or header)
     
     Args:
         security_scopes: Required security scopes
-        token: JWT token from request
+        request: FastAPI request object
         
     Returns:
         Current user object
@@ -56,6 +191,12 @@ async def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": authenticate_value},
     )
+    
+    # Get token from cookie (preferred) or Authorization header (fallback)
+    token = await get_token_from_cookie_or_header(request)
+    
+    if not token:
+        raise credentials_exception
     
     # Check if token is blacklisted
     if auth_service.is_token_blacklisted(token):
@@ -177,18 +318,20 @@ async def get_current_engineer_user(
 
 
 async def get_optional_current_user(
-    token: Optional[str] = Depends(oauth2_scheme)
+    request: Request
 ) -> Optional[UserDB]:
     """
     Get current user if token is provided, otherwise None
     Useful for endpoints that work with or without authentication
     
     Args:
-        token: Optional JWT token
+        request: FastAPI request object
         
     Returns:
         User object or None
     """
+    token = await get_token_from_cookie_or_header(request)
+    
     if token is None:
         return None
     

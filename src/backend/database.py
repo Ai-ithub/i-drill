@@ -63,6 +63,8 @@ class DatabaseManager:
         
         try:
             # Create engine with connection pooling
+            # Use connect_args to set connection timeout to avoid hanging
+            # Set pool_pre_ping=False initially to avoid connection attempts during engine creation
             self.engine = create_engine(
                 database_url,
                 echo=echo,
@@ -70,7 +72,10 @@ class DatabaseManager:
                 max_overflow=max_overflow,
                 pool_timeout=pool_timeout,
                 pool_recycle=pool_recycle,
-                pool_pre_ping=True,  # Verify connections before using
+                pool_pre_ping=False,  # Disable pre-ping to avoid immediate connection attempts
+                connect_args={
+                    "connect_timeout": 3,  # 3 second connection timeout (reduced from 5)
+                },
             )
             
             # Add connection event listeners
@@ -90,11 +95,16 @@ class DatabaseManager:
             )
             
             self._initialized = True
-            logger.info(f"Database initialized successfully: {self._mask_password(database_url)}")
+            logger.info(f"Database engine initialized: {self._mask_password(database_url)}")
+            logger.info("Note: Connection will be tested on first use")
             
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to initialize database: {e}")
-            raise
+        except Exception as e:
+            logger.error(f"Failed to initialize database engine: {e}")
+            logger.warning("Backend will continue without database (limited functionality)")
+            self.engine = None
+            self.SessionLocal = None
+            self._initialized = False
+            # Don't raise - allow application to continue
     
     def create_tables(self):
         """Create all database tables"""
@@ -122,14 +132,16 @@ class DatabaseManager:
     
     def get_session(self) -> Session:
         """
-        Get a new database session
+        Get a database session
         
         Returns:
-            SQLAlchemy Session instance
+            Database session
+            
+        Raises:
+            RuntimeError: If database is not initialized
         """
-        if not self._initialized:
-            raise RuntimeError("Database not initialized. Call initialize() first.")
-        
+        if not self._initialized or self.SessionLocal is None:
+            raise RuntimeError("Database not initialized or not available")
         return self.SessionLocal()
     
     @contextmanager
@@ -144,6 +156,9 @@ class DatabaseManager:
         Yields:
             Database session
         """
+        if not self._initialized or self.SessionLocal is None:
+            raise RuntimeError("Database not initialized or not available")
+            
         session = self.get_session()
         try:
             yield session
@@ -162,15 +177,16 @@ class DatabaseManager:
         Returns:
             True if connection is healthy, False otherwise
         """
-        if not self._initialized:
+        if not self._initialized or self.engine is None:
             return False
         
         try:
+            from sqlalchemy import text
             with self.session_scope() as session:
-                session.execute("SELECT 1")
+                session.execute(text("SELECT 1"))
             return True
         except Exception as e:
-            logger.error(f"Database health check failed: {e}")
+            logger.debug(f"Database health check failed: {e}")
             return False
     
     def close(self):
@@ -286,11 +302,11 @@ def check_database_health() -> dict:
 
 def execute_raw_sql(sql: str, params: dict = None) -> list:
     """
-    Execute raw SQL query
+    Execute raw SQL query with parameterized queries for security.
     
     Args:
-        sql: SQL query string
-        params: Query parameters
+        sql: SQL query string (use :param_name for parameters)
+        params: Query parameters dictionary (e.g., {"param_name": value})
     
     Returns:
         Query results
@@ -298,9 +314,29 @@ def execute_raw_sql(sql: str, params: dict = None) -> list:
     Warning:
         Use with caution. Prefer ORM methods when possible.
         For schema changes, use Alembic migrations instead.
+        
+    Security Note:
+        This function uses parameterized queries to prevent SQL injection.
+        Always use named parameters (:param_name) in SQL and pass values via params dict.
+        Never concatenate user input directly into SQL strings!
+        
+    Example:
+        >>> execute_raw_sql(
+        ...     "SELECT * FROM users WHERE username = :username",
+        ...     {"username": "admin"}
+        ... )
     """
+    from sqlalchemy import text
+    
+    if params is None:
+        params = {}
+    
+    # Use SQLAlchemy text() for safer parameterized queries
+    # This ensures proper escaping and prevents SQL injection
     with db_manager.session_scope() as session:
-        result = session.execute(sql, params or {})
+        # Wrap SQL in text() to enable parameterized queries
+        stmt = text(sql)
+        result = session.execute(stmt, params)
         return result.fetchall()
 
 

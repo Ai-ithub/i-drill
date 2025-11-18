@@ -277,18 +277,58 @@ async def websocket_sensor_data(websocket: WebSocket, rig_id: str):
     
     Establishes a WebSocket connection and streams real-time data from Kafka.
     
-    ⚠️ SECURITY WARNING: This endpoint currently does not require authentication.
-    In production, implement token-based authentication before allowing connections.
-    See SECURITY_VULNERABILITY_ASSESSMENT_FA.md for details.
+    Authentication:
+    - Token can be provided via query parameter: ?token=<access_token>
+    - Token can be provided via cookie (httpOnly cookie is automatically sent)
+    - Connection will be rejected if authentication fails
+    
+    Rate Limiting:
+    - Maximum connections per user: 5 (configurable via WS_MAX_CONNECTIONS_PER_USER)
+    - Maximum connections per IP: 10 (configurable via WS_MAX_CONNECTIONS_PER_IP)
+    - Maximum messages per minute: 100 (configurable via WS_MAX_MESSAGES_PER_MINUTE)
+    
+    Args:
+        websocket: WebSocket connection instance
+        rig_id: Rig identifier for the data stream
     """
+    from api.dependencies import authenticate_websocket
+    from utils.websocket_rate_limiter import websocket_rate_limiter
+    from utils.security_logging import log_security_event
+    
+    # Authenticate WebSocket connection
+    user = await authenticate_websocket(websocket)
+    if not user:
+        # authenticate_websocket already closes the connection on failure
+        return
+    
+    # Check rate limiting before accepting connection
+    is_allowed, reason = websocket_rate_limiter.check_connection_allowed(
+        websocket, user_id=user.id
+    )
+    if not is_allowed:
+        await websocket.close(code=1008, reason=reason or "Rate limit exceeded")
+        log_security_event(
+            event_type="websocket_rate_limit",
+            severity="warning",
+            message=f"WebSocket connection rate limited for user {user.username}",
+            user_id=user.id,
+            details={"reason": reason, "rig_id": rig_id}
+        )
+        logger.warning(f"WebSocket connection rate limited: {reason} (user: {user.username})")
+        return
+    
     # Validate rig_id format to prevent injection attacks
     if not validate_rig_id(rig_id):
         await websocket.close(code=1008, reason="Invalid rig_id format")
-        logger.warning(f"WebSocket connection rejected: invalid rig_id format: {rig_id}")
+        logger.warning(f"WebSocket connection rejected: invalid rig_id format: {rig_id} (user: {user.username})")
         return
     
-    await websocket_manager.connect(websocket, rig_id)
-    logger.info(f"WebSocket connection established for rig {rig_id}")
+    # Register connection with rate limiter
+    websocket_rate_limiter.register_connection(websocket, user_id=user.id)
+    
+    # Connect WebSocket with user authentication
+    await websocket_manager.connect(websocket, rig_id, user_id=user.id)
+    logger.info(f"WebSocket connection established for rig {rig_id} (user: {user.username}, user_id: {user.id})")
     
     consumer_id = None
     
@@ -375,6 +415,10 @@ async def websocket_sensor_data(websocket: WebSocket, rig_id: str):
         # Cancel ping task
         if 'ping_task' in locals():
             ping_task.cancel()
+        
+        # Unregister from rate limiter
+        from utils.websocket_rate_limiter import websocket_rate_limiter
+        websocket_rate_limiter.unregister_connection(websocket)
         
         # Cleanup Kafka consumer
         if consumer_id:

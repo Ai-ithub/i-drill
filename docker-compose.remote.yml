@@ -1,5 +1,20 @@
 version: "3.9"
 
+# ===== SECURITY WARNING =====
+# This file uses environment variables from .env file.
+# NEVER commit .env files to version control!
+# 
+# Setup:
+#   1. Copy docker-compose.env.example to .env
+#   2. Edit .env with secure passwords and remote service URLs
+#   3. Run: docker-compose -f docker-compose.remote.yml up
+#
+# Required environment variables:
+#   - SECRET_KEY (minimum 32 characters, NO default!)
+#   - DATABASE_URL (with secure password)
+#   - REDIS_PASSWORD (if Redis requires authentication)
+#   - KAFKA_SASL_PASSWORD (if Kafka requires authentication)
+
 # Docker Compose configuration for connecting to remote services
 # This configuration runs only the FastAPI application locally
 # and connects to remote databases, Kafka, Redis, and MLflow services
@@ -10,19 +25,23 @@ services:
   fastapi:
     build: .
     container_name: i-drill-fastapi-remote
+    env_file:
+      - .env
     ports:
       - "8001:8001"
     working_dir: /src/backend
     command: uvicorn app:app --host 0.0.0.0 --port 8001
     environment:
       - PYTHONPATH=/src/backend
-      - APP_ENV=production
-      - SECRET_KEY=${SECRET_KEY:-dev-secret-change-me}
+      - APP_ENV=${APP_ENV:-production}
+      # SECRET_KEY must be set in .env file (no default for security)
+      - SECRET_KEY=${SECRET_KEY}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173}
       - RATE_LIMIT_DEFAULT=200/minute
       
       # Remote Database Configuration
-      - DATABASE_URL=${DATABASE_URL:-postgresql://user:pass@remote-db.example.com:5432/drilling_db}
+      # DATABASE_URL must be set in .env with secure password (no default!)
+      - DATABASE_URL=${DATABASE_URL}
       
       # Remote Redis Configuration
       - REDIS_HOST=${REDIS_HOST:-remote-redis.example.com}

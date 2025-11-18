@@ -1,0 +1,49 @@
+# Playwright ignore file
+# Files and directories to ignore during test discovery
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Test outputs
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Config files that shouldn't be tested
+*.config.js
+*.config.ts
+!playwright.config.ts
+
+# Documentation
+*.md
+!README.md
+

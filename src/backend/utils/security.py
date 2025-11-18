@@ -26,28 +26,41 @@ def generate_secret_key(length: int = 32) -> str:
 
 def get_or_generate_secret_key() -> str:
     """
-    Get SECRET_KEY from environment or generate a new one
+    Get SECRET_KEY from environment variable.
     
-    In production, this should always come from environment variables.
-    In development, if not set, generates a temporary key with warning.
+    SECRET_KEY MUST be set via environment variable. No default values are allowed
+    for security reasons. This ensures that developers explicitly set secure keys.
     
     Returns:
         Secret key string
+        
+    Raises:
+        RuntimeError: If SECRET_KEY is not set in environment
     """
     secret_key = os.getenv("SECRET_KEY")
     
     if not secret_key:
-        if os.getenv("APP_ENV", "development").lower() == "production":
-            raise RuntimeError(
-                "SECRET_KEY environment variable must be set in production. "
-                "Generate one using: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
-            )
+        app_env = os.getenv("APP_ENV", "development").lower()
+        error_message = (
+            "SECRET_KEY environment variable is REQUIRED and must be set.\n"
+            "No default values are allowed for security reasons.\n\n"
+            "To generate a secure SECRET_KEY:\n"
+            "  python scripts/generate_secret_key.py\n\n"
+            "Or using Python:\n"
+            "  python -c 'import secrets; print(secrets.token_urlsafe(32))'\n\n"
+            "Then add it to your .env file:\n"
+            "  SECRET_KEY=<your-generated-key>\n\n"
+            f"Current APP_ENV: {app_env}"
+        )
+        
+        if app_env == "production":
+            raise RuntimeError(error_message)
         else:
-            # Development mode - generate temporary key
-            secret_key = generate_secret_key()
-            logger.warning(
-                f"⚠️ SECRET_KEY not set. Generated temporary key: {secret_key[:10]}... "
-                "This key will change on restart. Set SECRET_KEY in .env for persistence."
+            # In development, also raise error but with more helpful message
+            raise RuntimeError(
+                error_message + "\n\n"
+                "Even in development, SECRET_KEY must be explicitly set.\n"
+                "This prevents accidental use of insecure default values."
             )
     
     # Validate secret key strength
@@ -57,12 +70,15 @@ def get_or_generate_secret_key() -> str:
             "Recommended minimum: 32 characters for production."
         )
     
-    # Check for common insecure patterns
+    # Check for common insecure patterns and placeholder values
     insecure_patterns = [
         "your-secret-key",
         "change-in-production",
         "change_this",
         "change_this_to_a_secure",
+        "change_this_to_a_secure_random_key_min_32_chars",
+        "dev-secret-change-me",
+        "dev-secret",
         "secret",
         "password",
         "12345",
@@ -70,21 +86,30 @@ def get_or_generate_secret_key() -> str:
         "default",
         "test",
         "demo",
-        "example"
+        "example",
+        "placeholder",
+        "temp",
+        "temporary"
     ]
     
     secret_key_lower = secret_key.lower()
     for pattern in insecure_patterns:
         if pattern in secret_key_lower:
-            if os.getenv("APP_ENV", "development").lower() == "production":
-                raise RuntimeError(
-                    f"SECRET_KEY contains insecure pattern '{pattern}'. "
-                    "Please use a secure random key in production."
-                )
+            app_env = os.getenv("APP_ENV", "development").lower()
+            error_msg = (
+                f"SECRET_KEY contains insecure pattern '{pattern}'. "
+                "This is not allowed for security reasons.\n"
+                "Please generate a secure random key using:\n"
+                "  python scripts/generate_secret_key.py"
+            )
+            
+            if app_env == "production":
+                raise RuntimeError(error_msg)
             else:
-                logger.warning(
-                    f"⚠️ SECRET_KEY contains potentially insecure pattern '{pattern}'. "
-                    "Consider using a more secure key."
+                # In development, also raise error (no warnings for insecure keys)
+                raise RuntimeError(
+                    error_msg + "\n\n"
+                    "Even in development, insecure SECRET_KEY values are not allowed."
                 )
     
     return secret_key

@@ -1,5 +1,14 @@
 version: "3.9"
 
+# ===== SECURITY WARNING =====
+# This file uses environment variables from .env file.
+# NEVER commit .env files to version control!
+# 
+# Setup:
+#   1. Copy docker-compose.env.example to .env
+#   2. Edit .env with secure passwords (especially GF_SECURITY_ADMIN_PASSWORD)
+#   3. Run: docker-compose -f docker-compose.monitoring.yml up
+
 services:
   prometheus:
     image: prom/prometheus:latest
@@ -21,11 +30,15 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: i-drill-grafana
+    env_file:
+      - .env
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      # Use environment variables from .env (no hardcoded passwords)
+      # WARNING: Change GF_SECURITY_ADMIN_PASSWORD in .env file!
+      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana

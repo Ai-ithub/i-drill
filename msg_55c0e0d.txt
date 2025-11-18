@@ -1,0 +1,7 @@
+﻿feat: Add RL system management and autonomous mode
+
+- Implement RL control page with system management interface
+- Add RL service with autonomous mode support
+- Create RL API routes for system control
+- Add comprehensive RL API tests
+- Enhance RL service with advanced control features

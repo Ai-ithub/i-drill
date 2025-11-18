@@ -4,6 +4,19 @@ Simple server starter with error handling
 """
 import sys
 import logging
+from pathlib import Path
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).parent / '.env'
+    if env_path.exists():
+        load_dotenv(env_path)
+        print(f"[OK] Loaded environment variables from {env_path}")
+    else:
+        print(f"[WARN] .env file not found at {env_path}")
+except ImportError:
+    print("[WARN] python-dotenv not installed. Environment variables must be set manually.")
 
 logging.basicConfig(
     level=logging.INFO,

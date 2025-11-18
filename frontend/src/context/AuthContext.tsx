@@ -26,36 +26,31 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-const TOKEN_KEY = 'i_drill_access_token'
-const REFRESH_TOKEN_KEY = 'i_drill_refresh_token'
-const USER_KEY = 'i_drill_user'
+const USER_KEY = 'i_drill_user' // Only user data in localStorage, tokens are in httpOnly cookies
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
-  const [token, setToken] = useState<string | null>(null)
-  const [refreshToken, setRefreshToken] = useState<string | null>(null)
+  const [token, setToken] = useState<string | null>(null) // Not used anymore, kept for backward compatibility
+  const [refreshToken, setRefreshToken] = useState<string | null>(null) // Not used anymore, kept for backward compatibility
   const [isLoading, setIsLoading] = useState(true)
   const navigate = useNavigate()
 
-  // Load from localStorage on mount
+  // Load user from localStorage on mount and verify authentication
   useEffect(() => {
-    const storedToken = localStorage.getItem(TOKEN_KEY)
-    const storedRefreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)
     const storedUser = localStorage.getItem(USER_KEY)
 
-    if (storedToken && storedUser) {
+    if (storedUser) {
       try {
-        setToken(storedToken)
-        setRefreshToken(storedRefreshToken)
         setUser(JSON.parse(storedUser))
-        // Verify token is still valid
+        // Verify token is still valid (token is in httpOnly cookie)
         verifyToken()
       } catch (error) {
         console.error('Error loading auth state:', error)
         clearAuth()
       }
     } else {
-      setIsLoading(false)
+      // Check if user is authenticated via cookie
+      verifyToken()
     }
   }, [])
 
@@ -69,14 +64,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error: any) {
       console.error('Token verification failed:', error)
-      // Try to refresh token
-      if (refreshToken) {
-        try {
-          await refreshAccessToken()
-        } catch {
-          clearAuth()
-        }
-      } else {
+      // Try to refresh token (refresh token is in httpOnly cookie)
+      try {
+        await refreshAccessToken()
+      } catch {
         clearAuth()
       }
     }
@@ -92,6 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await fetch(`${apiBaseUrl}/auth/login`, {
         method: 'POST',
         body: formData,
+        credentials: 'include', // Important: include cookies
       })
 
       if (!response.ok) {
@@ -101,12 +93,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await response.json()
       
-      setToken(data.access_token)
-      setRefreshToken(data.refresh_token)
-      localStorage.setItem(TOKEN_KEY, data.access_token)
-      if (data.refresh_token) {
-        localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token)
-      }
+      // Tokens are now in httpOnly cookies, no need to store in localStorage
+      // Keep token state for backward compatibility (though not used)
+      setToken(data.access_token || null)
+      setRefreshToken(data.refresh_token || null)
 
       // Get user info
       const userResponse = await authApi.me()
@@ -122,19 +112,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      if (token) {
-        // Call logout endpoint to blacklist token
-        try {
-          const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8001/api/v1'
-          await fetch(`${apiBaseUrl}/auth/logout`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-            },
-          })
-        } catch (error) {
-          console.error('Logout API call failed:', error)
-        }
+      // Call logout endpoint to blacklist token and clear cookies
+      try {
+        const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8001/api/v1'
+        await fetch(`${apiBaseUrl}/auth/logout`, {
+          method: 'POST',
+          credentials: 'include', // Important: include cookies
+        })
+      } catch (error) {
+        console.error('Logout API call failed:', error)
       }
     } catch (error) {
       console.error('Logout error:', error)
@@ -145,18 +131,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const refreshAccessToken = async () => {
-    if (!refreshToken) {
-      throw new Error('No refresh token available')
-    }
-
     try {
       const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8001/api/v1'
       const response = await fetch(`${apiBaseUrl}/auth/refresh`, {
         method: 'POST',
+        credentials: 'include', // Important: include cookies (refresh token is in cookie)
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ refresh_token: refreshToken }),
       })
 
       if (!response.ok) {
@@ -164,12 +146,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const data = await response.json()
-      setToken(data.access_token)
-      setRefreshToken(data.refresh_token)
-      localStorage.setItem(TOKEN_KEY, data.access_token)
-      if (data.refresh_token) {
-        localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token)
-      }
+      
+      // Tokens are now in httpOnly cookies, no need to store in localStorage
+      // Keep token state for backward compatibility (though not used)
+      setToken(data.access_token || null)
+      setRefreshToken(data.refresh_token || null)
 
       return data.access_token
     } catch (error) {
@@ -183,9 +164,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
     setToken(null)
     setRefreshToken(null)
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
+    // Cookies are cleared by backend on logout
     setIsLoading(false)
   }
 
@@ -196,9 +176,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value: AuthContextType = {
     user,
-    token,
-    refreshToken,
-    isAuthenticated: !!user && !!token,
+    token, // Kept for backward compatibility, but tokens are in httpOnly cookies
+    refreshToken, // Kept for backward compatibility, but tokens are in httpOnly cookies
+    isAuthenticated: !!user, // Authentication is verified via httpOnly cookies
     isLoading,
     login,
     logout,

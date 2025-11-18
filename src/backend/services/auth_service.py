@@ -29,7 +29,7 @@ from utils.security import get_or_generate_secret_key
 # JWT Configuration
 SECRET_KEY = get_or_generate_secret_key()
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))  # 30 minutes (reduced for better security - use refresh token for longer sessions)
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))  # 30 days
 
 # Security Configuration
@@ -191,6 +191,15 @@ class AuthService:
                 )
                 
                 if not user:
+                    from utils.security_logging import log_authentication_event, SecurityEventType
+                    log_authentication_event(
+                        SecurityEventType.LOGIN_FAILURE,
+                        username=username,
+                        success=False,
+                        ip_address=ip_address,
+                        user_agent=user_agent,
+                        details={"reason": "user_not_found"}
+                    )
                     logger.warning(f"User not found: {username}")
                     session.add(attempt)
                     session.commit()
@@ -198,6 +207,16 @@ class AuthService:
                 
                 # Check if account is locked
                 if user.locked_until and user.locked_until > datetime.now():
+                    from utils.security_logging import log_authentication_event, SecurityEventType
+                    log_authentication_event(
+                        SecurityEventType.ACCOUNT_LOCKED,
+                        username=username,
+                        success=False,
+                        ip_address=ip_address,
+                        user_agent=user_agent,
+                        user_id=user.id,
+                        details={"locked_until": user.locked_until.isoformat()}
+                    )
                     logger.warning(f"Account locked for user: {username}")
                     session.add(attempt)
                     session.commit()
@@ -217,6 +236,19 @@ class AuthService:
                     # Lock account if max attempts reached
                     if user.failed_login_attempts >= MAX_LOGIN_ATTEMPTS:
                         user.locked_until = datetime.now() + timedelta(minutes=ACCOUNT_LOCKOUT_MINUTES)
+                        from utils.security_logging import log_authentication_event, SecurityEventType
+                        log_authentication_event(
+                            SecurityEventType.ACCOUNT_LOCKED,
+                            username=username,
+                            success=False,
+                            ip_address=ip_address,
+                            user_agent=user_agent,
+                            user_id=user.id,
+                            details={
+                                "failed_attempts": user.failed_login_attempts,
+                                "locked_until": user.locked_until.isoformat()
+                            }
+                        )
                         logger.warning(
                             f"Account locked for user: {username} "
                             f"after {user.failed_login_attempts} failed attempts"
@@ -236,6 +268,15 @@ class AuthService:
                 session.add(attempt)
                 session.commit()
                 
+                from utils.security_logging import log_authentication_event, SecurityEventType
+                log_authentication_event(
+                    SecurityEventType.LOGIN_SUCCESS,
+                    username=username,
+                    success=True,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    user_id=user.id
+                )
                 logger.info(f"User authenticated successfully: {username}")
                 return user
                 

@@ -97,29 +97,19 @@ def _validate_security_settings(allowed_origins: List[str]) -> None:
         return
 
     # Validate SECRET_KEY
+    # Note: get_or_generate_secret_key() already validates SECRET_KEY and raises
+    # RuntimeError if not set or contains insecure patterns. This is a double-check.
     try:
         secret_key = get_or_generate_secret_key()
-        insecure_patterns = [
-            "your-secret-key",
-            "change-in-production",
-            "change_this",
-            "change_this_to_a_secure",
-            "CHANGE_THIS_TO_A_SECURE_RANDOM_KEY_MIN_32_CHARS"
-        ]
-        secret_key_lower = secret_key.lower()
-        for pattern in insecure_patterns:
-            if pattern.lower() in secret_key_lower:
-                raise RuntimeError(
-                    f"SECRET_KEY contains insecure pattern '{pattern}'. "
-                    "Please use a secure random key in production."
-                )
         
+        # Additional validation for production
         if len(secret_key) < 32:
             raise RuntimeError(
                 f"SECRET_KEY is too short ({len(secret_key)} chars). "
                 "Minimum 32 characters required for production."
             )
     except RuntimeError:
+        # Re-raise RuntimeError from get_or_generate_secret_key()
         raise
     except Exception as e:
         raise RuntimeError(f"SECRET_KEY validation failed: {e}")
@@ -158,9 +148,11 @@ async def lifespan(app: FastAPI):
     # Initialize database
     try:
         logger.info("📊 Initializing database connection...")
+        # Use use_migrations=True to avoid trying to create tables immediately
         db_initialized = init_database(
             database_url=None,  # Uses environment variable or default
-            create_tables=True,
+            create_tables=False,  # Don't create tables during startup
+            use_migrations=True,  # Use migrations for production
             echo=False,
             pool_size=10,
             max_overflow=20
@@ -168,7 +160,10 @@ async def lifespan(app: FastAPI):
         
         if db_initialized:
             logger.info("✅ Database initialized successfully")
-            ensure_default_admin_account()
+            try:
+                ensure_default_admin_account()
+            except Exception as e:
+                logger.warning(f"Could not create default admin account: {e}")
         else:
             logger.warning("⚠️ Database initialization failed - running in limited mode")
             
@@ -347,8 +342,8 @@ if APP_ENV == "production":
     # In production, be more restrictive
     allowed_methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 else:
-    # In development, allow all methods for flexibility
-    allowed_methods = ["*"]
+    # In development, restrict methods for security (even in dev)
+    allowed_methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
 # Define allowed headers (restrict for security)
 allowed_headers = [
@@ -363,8 +358,9 @@ if APP_ENV == "production":
     # In production, use explicit headers only
     pass  # Use the list above
 else:
-    # In development, allow all headers for flexibility
-    allowed_headers = ["*"]
+    # In development, restrict headers for security (even in dev)
+    # Use explicit headers list instead of "*"
+    pass  # Use the list above
 
 app.add_middleware(
     CORSMiddleware,

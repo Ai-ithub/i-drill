@@ -2,10 +2,12 @@
 Authentication API Routes
 Handles user login, registration, and profile management
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
-from datetime import timedelta
+from datetime import timedelta, datetime
+from typing import Optional
 import logging
+import os
 
 from api.models.schemas import (
     Token,
@@ -24,14 +26,83 @@ from services.auth_service import auth_service, ACCESS_TOKEN_EXPIRE_MINUTES
 from services.email_service import email_service
 from api.dependencies import (
     get_current_active_user,
-    get_current_admin_user
+    get_current_admin_user,
+    ACCESS_TOKEN_COOKIE_NAME,
+    REFRESH_TOKEN_COOKIE_NAME,
+    get_token_from_cookie_or_header
 )
-from api.dependencies import oauth2_scheme
 from utils.security import validate_password_strength, mask_sensitive_data
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
+
+# Cookie configuration
+APP_ENV = os.getenv("APP_ENV", "development")
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "true" if APP_ENV == "production" else "false").lower() == "true"
+COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")  # lax, strict, or none
+COOKIE_HTTPONLY = True  # Always httpOnly for security
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+
+
+def set_auth_cookies(
+    response: Response,
+    access_token: str,
+    refresh_token: str,
+    access_token_expires_seconds: int,
+    refresh_token_expires_days: int = REFRESH_TOKEN_EXPIRE_DAYS
+):
+    """
+    Set httpOnly cookies for access and refresh tokens
+    
+    Args:
+        response: FastAPI Response object
+        access_token: JWT access token
+        refresh_token: JWT refresh token
+        access_token_expires_seconds: Access token expiration in seconds
+        refresh_token_expires_days: Refresh token expiration in days
+    """
+    # Set access token cookie
+    response.set_cookie(
+        key=ACCESS_TOKEN_COOKIE_NAME,
+        value=access_token,
+        max_age=access_token_expires_seconds,
+        httponly=COOKIE_HTTPONLY,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        path="/"
+    )
+    
+    # Set refresh token cookie
+    response.set_cookie(
+        key=REFRESH_TOKEN_COOKIE_NAME,
+        value=refresh_token,
+        max_age=refresh_token_expires_days * 24 * 60 * 60,  # Convert days to seconds
+        httponly=COOKIE_HTTPONLY,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        path="/"
+    )
+
+
+def clear_auth_cookies(response: Response):
+    """
+    Clear authentication cookies
+    
+    Args:
+        response: FastAPI Response object
+    """
+    response.delete_cookie(
+        key=ACCESS_TOKEN_COOKIE_NAME,
+        path="/",
+        samesite=COOKIE_SAMESITE
+    )
+    response.delete_cookie(
+        key=REFRESH_TOKEN_COOKIE_NAME,
+        path="/",
+        samesite=COOKIE_SAMESITE
+    )
+
 
 # Rate limiting helper for auth endpoints
 # Note: Rate limiting is configured in app.py with specific limits per endpoint type
@@ -123,13 +194,15 @@ async def register(
 @router.post("/login", response_model=Token)
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
-    request: Request = None
+    request: Request = None,
+    response: Response = None
 ):
     """
     Login with username and password
     
-    Returns a JWT access token and refresh token for authentication.
+    Sets httpOnly cookies with JWT access token and refresh token.
     Token expires in 24 hours by default.
+    Also returns tokens in response body for backward compatibility.
     """
     try:
         # Authenticate user (with request for IP tracking)
@@ -160,14 +233,38 @@ async def login(
         # Create refresh token
         refresh_token = auth_service.create_refresh_token(user.id)
         
+        # Set httpOnly cookies
+        if response is None:
+            response = Response()
+        set_auth_cookies(
+            response=response,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            access_token_expires_seconds=ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        )
+        
         logger.info(f"User logged in: {user.username}")
         
-        return Token(
+        # Return tokens in response body for backward compatibility
+        # Frontend should use cookies, but API clients can still use response body
+        token_response = Token(
             access_token=access_token,
             token_type="bearer",
             expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # in seconds
             refresh_token=refresh_token
         )
+        
+        # Create a JSONResponse with cookies set
+        from fastapi.responses import JSONResponse
+        json_response = JSONResponse(content=token_response.dict())
+        set_auth_cookies(
+            response=json_response,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            access_token_expires_seconds=ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        )
+        
+        return json_response
         
     except HTTPException:
         raise
@@ -187,7 +284,8 @@ async def login_json(
     """
     Login with JSON payload (alternative to form data)
     
-    Returns a JWT access token and refresh token for authentication.
+    Sets httpOnly cookies with JWT access token and refresh token.
+    Also returns tokens in response body for backward compatibility.
     Useful for programmatic access.
     """
     try:
@@ -221,12 +319,24 @@ async def login_json(
         
         logger.info(f"User logged in (JSON): {user.username}")
         
-        return Token(
+        # Set httpOnly cookies
+        from fastapi.responses import JSONResponse
+        token_response = Token(
             access_token=access_token,
             token_type="bearer",
             expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             refresh_token=refresh_token
         )
+        
+        json_response = JSONResponse(content=token_response.dict())
+        set_auth_cookies(
+            response=json_response,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            access_token_expires_seconds=ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        )
+        
+        return json_response
         
     except HTTPException:
         raise
@@ -261,23 +371,41 @@ async def get_current_user_profile(
 
 @router.post("/logout")
 async def logout(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
     current_user: UserDB = Depends(get_current_active_user)
 ):
     """
     Logout current user
     
-    Blacklists the current access token.
+    Blacklists the current access token, clears authentication cookies,
+    and disconnects all WebSocket connections for the user.
     """
     try:
-        auth_service.blacklist_token(token, current_user.id, reason="logout")
+        # Get token from cookie or header
+        token = await get_token_from_cookie_or_header(request)
+        
+        if token:
+            auth_service.blacklist_token(token, current_user.id, reason="logout")
+        
+        # Disconnect all WebSocket connections for this user
+        try:
+            from services.websocket_manager import websocket_manager
+            disconnected_count = await websocket_manager.disconnect_user(current_user.id)
+            logger.info(f"Disconnected {disconnected_count} WebSocket connection(s) for user: {current_user.username}")
+        except Exception as ws_error:
+            logger.warning(f"Error disconnecting WebSocket connections: {ws_error}")
         
         logger.info(f"User logged out: {current_user.username}")
         
-        return {
+        # Clear cookies
+        from fastapi.responses import JSONResponse
+        response = JSONResponse(content={
             "success": True,
             "message": "Logged out successfully"
-        }
+        })
+        clear_auth_cookies(response)
+        
+        return response
         
     except Exception as e:
         logger.error(f"Error during logout: {e}")
@@ -289,20 +417,34 @@ async def logout(
 
 @router.post("/refresh", response_model=Token)
 async def refresh_token(
-    refresh_request: TokenRefreshRequest
+    request: Request,
+    refresh_request: Optional[TokenRefreshRequest] = None
 ):
     """
     Refresh access token using refresh token
     
-    Returns a new access token and refresh token.
+    Reads refresh token from cookie (preferred) or request body (fallback).
+    Returns a new access token and refresh token in httpOnly cookies.
     """
     try:
         from jose import jwt
         from services.auth_service import SECRET_KEY, ALGORITHM
         
+        # Get refresh token from cookie (preferred) or request body (fallback)
+        refresh_token_value = request.cookies.get(REFRESH_TOKEN_COOKIE_NAME)
+        
+        if not refresh_token_value and refresh_request:
+            refresh_token_value = refresh_request.refresh_token
+        
+        if not refresh_token_value:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token not provided"
+            )
+        
         # Decode refresh token
         try:
-            payload = jwt.decode(refresh_request.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+            payload = jwt.decode(refresh_token_value, SECRET_KEY, algorithms=[ALGORITHM])
             token_type = payload.get("type")
             user_id = payload.get("user_id")
             
@@ -337,17 +479,29 @@ async def refresh_token(
         )
         
         # Create new refresh token
-        refresh_token = auth_service.create_refresh_token(user.id)
+        new_refresh_token = auth_service.create_refresh_token(user.id)
         
         # Blacklist old refresh token
-        auth_service.blacklist_token(refresh_request.refresh_token, user.id, reason="refresh")
+        auth_service.blacklist_token(refresh_token_value, user.id, reason="refresh")
         
-        return Token(
+        # Set new cookies
+        from fastapi.responses import JSONResponse
+        token_response = Token(
             access_token=access_token,
             token_type="bearer",
             expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            refresh_token=refresh_token
+            refresh_token=new_refresh_token
         )
+        
+        json_response = JSONResponse(content=token_response.dict())
+        set_auth_cookies(
+            response=json_response,
+            access_token=access_token,
+            refresh_token=new_refresh_token,
+            access_token_expires_seconds=ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        )
+        
+        return json_response
         
     except HTTPException:
         raise
@@ -475,14 +629,14 @@ async def confirm_password_reset(
 @router.put("/me/password", response_model=dict)
 async def update_password(
     password_change: PasswordChangeRequest,
-    current_user: UserDB = Depends(get_current_active_user),
-    token: str = Depends(oauth2_scheme)
+    request: Request,
+    current_user: UserDB = Depends(get_current_active_user)
 ):
     """
     Update current user's password
     
     Requires the current password for verification.
-    Blacklists the current token after password change.
+    Blacklists the current token after password change and clears cookies.
     """
     try:
         # Verify current password
@@ -515,15 +669,22 @@ async def update_password(
                 detail="Failed to update password"
             )
         
-        # Blacklist current token (force re-login)
-        auth_service.blacklist_token(token, current_user.id, reason="password_change")
+        # Get token and blacklist it (force re-login)
+        token = await get_token_from_cookie_or_header(request)
+        if token:
+            auth_service.blacklist_token(token, current_user.id, reason="password_change")
+        
+        # Clear cookies
+        from fastapi.responses import JSONResponse
+        response = JSONResponse(content={
+            "success": True,
+            "message": "Password updated successfully. Please login again."
+        })
+        clear_auth_cookies(response)
         
         logger.info(f"Password updated for user: {current_user.username}")
         
-        return {
-            "success": True,
-            "message": "Password updated successfully. Please login again."
-        }
+        return response
         
     except HTTPException:
         raise

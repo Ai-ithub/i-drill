@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { Activity, Zap, TrendingUp, AlertCircle, Thermometer, Gauge, Droplets, Wind, Eye } from 'lucide-react'
 import { useWebSocket } from '@/hooks/useWebSocket'
+import { useAuth } from '@/context/AuthContext'
 
 interface SensorData {
   timestamp: string
@@ -76,10 +77,12 @@ export default function RealTimeMonitoring() {
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting')
   const [useMockData, setUseMockData] = useState(false)
 
-  // WebSocket connection
+  // WebSocket connection with authentication
   const wsBaseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8001/api/v1'
+  const { token } = useAuth() // Get token for WebSocket authentication (fallback to cookie)
   const { data: wsData, isConnected } = useWebSocket(
-    `${wsBaseUrl}/sensor-data/ws/${rigId}`
+    `${wsBaseUrl}/sensor-data/ws/${rigId}`,
+    { token } // Token will be sent as query parameter, but cookies (httpOnly) are preferred
   )
 
   // Update connection status

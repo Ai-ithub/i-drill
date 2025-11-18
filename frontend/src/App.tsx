@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './utils/queryClient'
 import { I18nProvider } from './i18n'
+import { AuthProvider } from './context/AuthContext'
 import NewLayout from './components/Layout/NewLayout'
 import { ToastContainer } from './components/UI/Toast'
 import Dashboard from './pages/Dashboard/Dashboard'
@@ -18,42 +19,46 @@ import Data from './pages/Data/Data'
 import RTO from './pages/RTO/RTO'
 import DVR from './pages/DVR/DVR'
 import PDM from './pages/PDM/PDM'
+import Login from './pages/Login/Login'
 
 function App() {
   return (
     <I18nProvider>
       <QueryClientProvider client={queryClient}>
         <Router>
-          <Routes>
-            <Route
-              path="/*"
-              element={
-                <NewLayout>
-                  <Routes>
-                    <Route path="/" element={<RealTimeMonitoring />} />
-                    <Route path="/dashboard" element={<Dashboard />} />
-                    <Route path="/data" element={<Data />} />
-                    <Route path="/realtime" element={<RealTimeMonitoring />} />
-                    <Route path="/historical" element={<Navigate to="/data?tab=historical" replace />} />
-                    <Route path="/rto" element={<RTO />} />
-                    <Route path="/dvr-page" element={<DVR />} />
-                    <Route path="/pdm" element={<PDM />} />
-                    <Route path="/predictions" element={<Predictions />} />
-                    <Route path="/maintenance" element={<Maintenance />} />
-                    <Route path="/display/gauge" element={<GaugePage />} />
-                    <Route path="/display/sensor" element={<SensorPage />} />
-                    <Route path="/display/control" element={<ControlPage />} />
-                    <Route path="/display/rpm" element={<RPMPage />} />
-                    <Route path="/display/rl" element={<RLControl />} />
-                    <Route path="/dvr" element={<DVRMonitoring />} />
-                    <Route path="*" element={<Navigate to="/" replace />} />
-                  </Routes>
-                </NewLayout>
-              }
-            />
-          </Routes>
+          <AuthProvider>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route
+                path="/*"
+                element={
+                  <NewLayout>
+                    <Routes>
+                      <Route path="/" element={<RealTimeMonitoring />} />
+                      <Route path="/dashboard" element={<Dashboard />} />
+                      <Route path="/data" element={<Data />} />
+                      <Route path="/realtime" element={<RealTimeMonitoring />} />
+                      <Route path="/historical" element={<Navigate to="/data?tab=historical" replace />} />
+                      <Route path="/rto" element={<RTO />} />
+                      <Route path="/dvr-page" element={<DVR />} />
+                      <Route path="/pdm" element={<PDM />} />
+                      <Route path="/predictions" element={<Predictions />} />
+                      <Route path="/maintenance" element={<Maintenance />} />
+                      <Route path="/display/gauge" element={<GaugePage />} />
+                      <Route path="/display/sensor" element={<SensorPage />} />
+                      <Route path="/display/control" element={<ControlPage />} />
+                      <Route path="/display/rpm" element={<RPMPage />} />
+                      <Route path="/display/rl" element={<RLControl />} />
+                      <Route path="/dvr" element={<DVRMonitoring />} />
+                      <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                  </NewLayout>
+                }
+              />
+            </Routes>
+            <ToastContainer />
+          </AuthProvider>
         </Router>
-        <ToastContainer />
       </QueryClientProvider>
     </I18nProvider>
   )
