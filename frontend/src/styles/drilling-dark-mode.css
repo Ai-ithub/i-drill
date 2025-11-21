@@ -1,0 +1,174 @@
+/**
+ * Dark Mode Optimizations for Drilling Rig Environment
+ * Optimized for use in low-light conditions, reducing eye strain
+ */
+
+/* Enhanced dark mode for drilling operations */
+html.dark {
+  /* Reduced brightness for night operations */
+  filter: brightness(0.95);
+  
+  /* High contrast for better visibility */
+  --drilling-bg-primary: #0a0a0f;
+  --drilling-bg-secondary: #12121a;
+  --drilling-text-primary: #f8f9fa;
+  --drilling-text-secondary: #cbd5e1;
+  
+  /* Critical alert colors - highly visible */
+  --drilling-alert-critical: #ff4444;
+  --drilling-alert-warning: #ffaa00;
+  --drilling-alert-info: #00aaff;
+  
+  /* Gauge colors - optimized for dark environment */
+  --drilling-gauge-normal: #10b981;
+  --drilling-gauge-warning: #f59e0b;
+  --drilling-gauge-danger: #ef4444;
+  
+  /* Reduced blue light emission */
+  --drilling-blue-tint: #1a1a2e;
+}
+
+/* Dark mode optimizations for gauges */
+html.dark .gauge-container {
+  background: var(--drilling-bg-primary);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+html.dark .gauge-value {
+  color: var(--drilling-text-primary);
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
+}
+
+/* Enhanced visibility for critical alerts in dark mode */
+html.dark .alert-critical {
+  background: rgba(255, 68, 68, 0.15);
+  border: 2px solid var(--drilling-alert-critical);
+  box-shadow: 0 0 20px rgba(255, 68, 68, 0.3);
+  animation: pulse-critical 2s infinite;
+}
+
+@keyframes pulse-critical {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(255, 68, 68, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(255, 68, 68, 0.6);
+  }
+}
+
+/* Emergency stop button - highly visible in dark mode */
+html.dark .emergency-stop {
+  background: var(--drilling-alert-critical);
+  box-shadow: 0 0 25px rgba(255, 68, 68, 0.5);
+  animation: pulse-emergency 1.5s infinite;
+}
+
+@keyframes pulse-emergency {
+  0%, 100% {
+    box-shadow: 0 0 25px rgba(255, 68, 68, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(255, 68, 68, 0.8);
+  }
+}
+
+/* Improved card visibility in dark mode */
+html.dark .card {
+  background: var(--drilling-bg-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Better contrast for text in dark mode */
+html.dark .text-slate-900 {
+  color: var(--drilling-text-primary);
+}
+
+html.dark .text-slate-500 {
+  color: var(--drilling-text-secondary);
+}
+
+/* Chart optimizations for dark mode */
+html.dark .recharts-cartesian-grid line {
+  stroke: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .recharts-text {
+  fill: var(--drilling-text-secondary);
+}
+
+/* Responsive optimizations for mobile/tablet */
+@media (max-width: 768px) {
+  /* Larger touch targets for mobile */
+  .mobile-control-button {
+    min-height: 48px;
+    min-width: 48px;
+    font-size: 16px;
+  }
+  
+  /* Stack gauges vertically on mobile */
+  .gauge-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  /* Larger text for mobile readability */
+  .mobile-text {
+    font-size: 18px;
+  }
+  
+  /* Full-width cards on mobile */
+  .mobile-card {
+    width: 100%;
+    margin: 0;
+  }
+}
+
+/* Tablet optimizations */
+@media (min-width: 769px) and (max-width: 1024px) {
+  /* 2-column layout for tablets */
+  .tablet-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  /* Medium-sized gauges for tablets */
+  .tablet-gauge {
+    width: 160px;
+    height: 160px;
+  }
+}
+
+/* High DPI display optimizations */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  /* Sharper borders and text */
+  .gauge-container,
+  .card {
+    border-width: 0.5px;
+  }
+  
+  /* Better font rendering */
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Landscape orientation optimizations for tablets */
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: landscape) {
+  /* Horizontal layout for landscape tablets */
+  .landscape-dashboard {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+}
+
+/* Print styles - hide non-essential elements */
+@media print {
+  .no-print {
+    display: none;
+  }
+  
+  .print-only {
+    display: block;
+  }
+}
+

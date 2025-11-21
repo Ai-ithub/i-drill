@@ -1,0 +1,140 @@
+# SCADA/PLC Connection Configuration Example
+# Copy this file to scada_config.yaml and configure for your rig
+
+# Rig 1000 HP Configuration
+rigs:
+  rig_1000hp:
+    protocol: modbus  # Options: modbus, opcua, mqtt
+    read_interval: 1.0  # Read interval in seconds
+    
+    # Modbus Configuration (if protocol is modbus)
+    connection_config:
+      protocol: TCP  # TCP or RTU
+      host: "192.168.1.100"  # IP address for TCP
+      port: 502  # Modbus TCP port
+      slave_id: 1  # Modbus unit ID
+      timeout: 3.0
+      # For RTU:
+      # serial_port: "/dev/ttyUSB0"  # or "COM3" on Windows
+      # baudrate: 9600
+    
+    # Parameter Mapping: Maps parameter names to Modbus addresses
+    parameter_mapping:
+      WOB:
+        address: 0
+        register_type: holding
+        data_type: float32
+      RPM:
+        address: 2
+        register_type: holding
+        data_type: uint16
+      Torque:
+        address: 3
+        register_type: holding
+        data_type: float32
+      ROP:
+        address: 5
+        register_type: holding
+        data_type: float32
+      Mud_Flow_Rate:
+        address: 7
+        register_type: holding
+        data_type: float32
+      Standpipe_Pressure:
+        address: 9
+        register_type: holding
+        data_type: float32
+      Casing_Pressure:
+        address: 11
+        register_type: holding
+        data_type: float32
+      Hook_Load:
+        address: 13
+        register_type: holding
+        data_type: float32
+      Block_Position:
+        address: 15
+        register_type: holding
+        data_type: float32
+      Pump_Status:
+        address: 17
+        register_type: coil
+        data_type: bool
+      Power_Consumption:
+        address: 18
+        register_type: holding
+        data_type: float32
+      Temperature_Bit:
+        address: 20
+        register_type: input
+        data_type: float32
+      Temperature_Motor:
+        address: 22
+        register_type: input
+        data_type: float32
+      Temperature_Surface:
+        address: 24
+        register_type: input
+        data_type: float32
+
+  # OPC UA Configuration Example
+  rig_opcua_example:
+    protocol: opcua
+    read_interval: 1.0
+    
+    connection_config:
+      endpoint_url: "opc.tcp://192.168.1.100:4840"
+      username: "admin"  # Optional
+      password: "password"  # Optional
+      security_policy: "None"
+      security_mode: "None"
+      timeout: 10.0
+    
+    parameter_mapping:
+      WOB: "ns=2;s=WOB"
+      RPM: "ns=2;s=RPM"
+      Torque: "ns=2;s=Torque"
+      ROP: "ns=2;s=ROP"
+      Mud_Flow_Rate: "ns=2;s=MudFlowRate"
+      Standpipe_Pressure: "ns=2;s=StandpipePressure"
+      Casing_Pressure: "ns=2;s=CasingPressure"
+      Hook_Load: "ns=2;s=HookLoad"
+      Block_Position: "ns=2;s=BlockPosition"
+      Pump_Status: "ns=2;s=PumpStatus"
+      Power_Consumption: "ns=2;s=PowerConsumption"
+      Temperature_Bit: "ns=2;s=TemperatureBit"
+      Temperature_Motor: "ns=2;s=TemperatureMotor"
+      Temperature_Surface: "ns=2;s=TemperatureSurface"
+
+  # MQTT Configuration Example
+  rig_mqtt_example:
+    protocol: mqtt
+    read_interval: 1.0  # Not used for MQTT (event-driven)
+    
+    connection_config:
+      broker_host: "192.168.1.100"
+      broker_port: 1883
+      username: "mqtt_user"  # Optional
+      password: "mqtt_password"  # Optional
+      client_id: "i-drill-rig-1000hp"
+      keepalive: 60
+      clean_session: true
+      tls_enabled: false
+      qos: 1
+    
+    parameter_mapping:
+      WOB: "rig/1000hp/sensors/WOB"
+      RPM: "rig/1000hp/sensors/RPM"
+      Torque: "rig/1000hp/sensors/Torque"
+      ROP: "rig/1000hp/sensors/ROP"
+      Mud_Flow_Rate: "rig/1000hp/sensors/MudFlowRate"
+      Standpipe_Pressure: "rig/1000hp/sensors/StandpipePressure"
+      Casing_Pressure: "rig/1000hp/sensors/CasingPressure"
+      Hook_Load: "rig/1000hp/sensors/HookLoad"
+      Block_Position: "rig/1000hp/sensors/BlockPosition"
+      Pump_Status: "rig/1000hp/sensors/PumpStatus"
+      Power_Consumption: "rig/1000hp/sensors/PowerConsumption"
+      Temperature_Bit: "rig/1000hp/sensors/TemperatureBit"
+      Temperature_Motor: "rig/1000hp/sensors/TemperatureMotor"
+      Temperature_Surface: "rig/1000hp/sensors/TemperatureSurface"
+
